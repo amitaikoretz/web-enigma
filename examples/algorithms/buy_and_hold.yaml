@@ -1,0 +1,12 @@
+global_config:
+  timezone: "UTC"
+runs:
+  - run_id: "buy_and_hold_single"
+    start_date: "2024-01-01"
+    end_date: "2024-01-19"
+    data:
+      type: csv
+      path: "examples/data/sample_daily.csv"
+    strategy: "buy_and_hold"
+    strategy_params:
+      stake: 10

@@ -1,0 +1,21 @@
+global_config:
+  timezone: UTC
+  default_broker:
+    cash: 10000
+    commission: 0.001
+
+runs:
+  - run_id: buy_oco_atr_tp_trailing_demo
+    name: Buy OCO ATR TP/Trailing Demo
+    start_date: 2024-01-01
+    end_date: 2024-01-19
+    data:
+      type: csv
+      path: examples/data/sample_daily.csv
+      date_format: "%Y-%m-%d"
+    strategy: buy_oco_atr_tp_trailing
+    strategy_params:
+      stake: 1
+      atr_period: 5
+      trail_atr_mult: 1.5
+      tp_atr_mult: 3.0

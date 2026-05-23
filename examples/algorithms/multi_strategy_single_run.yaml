@@ -1,0 +1,38 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 10000
+    commission: 0.001
+    slippage_perc: 0.0
+    sizer: fixed
+
+runs:
+  - run_id: "csv_intraday_pack"
+    name: "CSV Multi-Strategy Intraday Pack"
+    start_date: "2024-01-01"
+    end_date: "2024-01-19"
+    data:
+      type: csv
+      path: "examples/data/sample_daily.csv"
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 3
+          slow: 8
+          stake: 1
+          stop_loss_pct: 0.01
+          take_profit_pct: 0.02
+      - name: "rsi_reversion"
+        params:
+          period: 7
+          oversold: 30
+          overbought: 60
+          stake: 1
+          stop_loss_pct: 0.008
+          take_profit_pct: 0.015
+      - name: "breakout_channel"
+        params:
+          lookback: 5
+          stake: 1
+          stop_loss_pct: 0.01
+          take_profit_pct: 0.02

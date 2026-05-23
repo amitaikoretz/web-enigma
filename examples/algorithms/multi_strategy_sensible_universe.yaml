@@ -1,0 +1,193 @@
+global_config:
+  timezone: "America/New_York"
+  default_broker:
+    cash: 100000
+    commission: 0.0005
+    slippage_perc: 0.0002
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+
+runs:
+  - run_id: "spy_universe_pack"
+    name: "SPY Multi-Strategy"
+    start_date: "2021-01-01"
+    end_date: "2025-12-31"
+    data:
+      type: yahoo
+      symbol: SPY
+      interval: 1d
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 10
+          slow: 30
+          stake: 50
+          stop_loss_pct: 0.01
+          take_profit_pct: 0.02
+          max_hold_bars: 20
+      - name: "rsi_reversion"
+        params:
+          period: 14
+          oversold: 30
+          overbought: 60
+          stake: 50
+          stop_loss_pct: 0.008
+          take_profit_pct: 0.015
+          max_hold_bars: 12
+      - name: "breakout_channel"
+        params:
+          lookback: 20
+          stake: 50
+          stop_loss_pct: 0.01
+          take_profit_pct: 0.025
+          max_hold_bars: 15
+
+  - run_id: "qqq_universe_pack"
+    name: "QQQ Multi-Strategy"
+    start_date: "2021-01-01"
+    end_date: "2025-12-31"
+    data:
+      type: yahoo
+      symbol: QQQ
+      interval: 1d
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 8
+          slow: 21
+          stake: 35
+          stop_loss_pct: 0.012
+          take_profit_pct: 0.025
+          max_hold_bars: 20
+      - name: "buy_oco_atr_tp_sl"
+        params:
+          stake: 35
+          atr_period: 14
+          entry_sma: 20
+          sl_atr_mult: 1.4
+          tp_atr_mult: 2.8
+          max_hold_bars: 20
+      - name: "buy_oco_atr_tp_trailing"
+        params:
+          stake: 35
+          atr_period: 14
+          entry_sma: 20
+          trail_atr_mult: 1.0
+          tp_atr_mult: 2.5
+          max_hold_bars: 25
+
+  - run_id: "iwm_universe_pack"
+    name: "IWM Multi-Strategy"
+    start_date: "2021-01-01"
+    end_date: "2025-12-31"
+    data:
+      type: yahoo
+      symbol: IWM
+      interval: 1d
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 10
+          slow: 30
+          stake: 40
+          stop_loss_pct: 0.012
+          take_profit_pct: 0.025
+          max_hold_bars: 20
+      - name: "rsi_reversion"
+        params:
+          period: 12
+          oversold: 28
+          overbought: 58
+          stake: 40
+          stop_loss_pct: 0.009
+          take_profit_pct: 0.016
+          max_hold_bars: 12
+      - name: "breakout_channel"
+        params:
+          lookback: 18
+          stake: 40
+          stop_loss_pct: 0.012
+          take_profit_pct: 0.03
+          max_hold_bars: 16
+
+  - run_id: "xlf_universe_pack"
+    name: "XLF Multi-Strategy"
+    start_date: "2021-01-01"
+    end_date: "2025-12-31"
+    data:
+      type: yahoo
+      symbol: XLF
+      interval: 1d
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 12
+          slow: 35
+          stake: 100
+          stop_loss_pct: 0.01
+          take_profit_pct: 0.02
+          max_hold_bars: 22
+      - name: "rsi_reversion"
+        params:
+          period: 14
+          oversold: 32
+          overbought: 62
+          stake: 100
+          stop_loss_pct: 0.008
+          take_profit_pct: 0.015
+          max_hold_bars: 14
+
+  - run_id: "aapl_universe_pack"
+    name: "AAPL Multi-Strategy"
+    start_date: "2021-01-01"
+    end_date: "2025-12-31"
+    data:
+      type: yahoo
+      symbol: AAPL
+      interval: 1d
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 8
+          slow: 26
+          stake: 25
+          stop_loss_pct: 0.015
+          take_profit_pct: 0.03
+          max_hold_bars: 18
+      - name: "buy_oco_atr_tp_sl"
+        params:
+          stake: 25
+          atr_period: 14
+          entry_sma: 20
+          sl_atr_mult: 1.5
+          tp_atr_mult: 3.0
+          max_hold_bars: 20
+
+  - run_id: "msft_universe_pack"
+    name: "MSFT Multi-Strategy"
+    start_date: "2021-01-01"
+    end_date: "2025-12-31"
+    data:
+      type: yahoo
+      symbol: MSFT
+      interval: 1d
+    strategies:
+      - name: "sma_cross"
+        params:
+          fast: 8
+          slow: 24
+          stake: 25
+          stop_loss_pct: 0.012
+          take_profit_pct: 0.025
+          max_hold_bars: 18
+      - name: "buy_oco_atr_tp_trailing"
+        params:
+          stake: 25
+          atr_period: 14
+          entry_sma: 20
+          trail_atr_mult: 1.0
+          tp_atr_mult: 2.5
+          max_hold_bars: 24

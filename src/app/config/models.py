@@ -1,0 +1,137 @@
+from __future__ import annotations
+
+from datetime import date
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.strategies.registry import STRATEGY_REGISTRY, validate_strategy_params
+
+
+class BrokerConfig(BaseModel):
+    cash: float = Field(default=10000.0, gt=0)
+    commission: float = Field(default=0.001, ge=0)
+    slippage_perc: float = Field(default=0.0, ge=0)
+    sizer: Literal["fixed"] = "fixed"
+
+
+class AnalyzerConfig(BaseModel):
+    include_equity_curve: bool = True
+    include_trade_log: bool = True
+    include_order_log: bool = True
+
+
+class DataCacheConfig(BaseModel):
+    enabled: bool = True
+    directory: str = ".cache/backtest-data"
+    refresh_policy: Literal["ttl"] = "ttl"
+    ttl_by_interval: dict[str, int] = Field(
+        default_factory=lambda: {
+            "1m": 10 * 60,
+            "5m": 30 * 60,
+            "15m": 60 * 60,
+            "1h": 6 * 60 * 60,
+            "1d": 24 * 60 * 60,
+        }
+    )
+
+
+class CsvDataSource(BaseModel):
+    type: Literal["csv"]
+    path: str
+    datetime_column: str = "datetime"
+    open_column: str = "open"
+    high_column: str = "high"
+    low_column: str = "low"
+    close_column: str = "close"
+    volume_column: str = "volume"
+    openinterest_column: str = "openinterest"
+    date_format: str = "%Y-%m-%d"
+
+
+class YahooDataSource(BaseModel):
+    type: Literal["yahoo"]
+    symbol: str
+    interval: str = "1d"
+
+
+class AlpacaDataSource(BaseModel):
+    type: Literal["alpaca"]
+    symbol: str
+    interval: str = "1d"
+    feed: Literal["iex", "sip", "otc"] = "iex"
+
+
+DataSource = CsvDataSource | YahooDataSource | AlpacaDataSource
+
+
+class StrategyConfig(BaseModel):
+    name: str
+    params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "StrategyConfig":
+        if self.name not in STRATEGY_REGISTRY:
+            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
+            raise ValueError(f"Unknown strategy '{self.name}'. Available: {available}")
+        self.params = validate_strategy_params(self.name, self.params)
+        return self
+
+
+class BacktestRunConfig(BaseModel):
+    run_id: str
+    name: str | None = None
+    start_date: date
+    end_date: date
+    data: DataSource
+    strategy: str | None = None
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    strategies: list[StrategyConfig] | None = None
+    broker: BrokerConfig | None = None
+    analyzers: AnalyzerConfig = Field(default_factory=AnalyzerConfig)
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "BacktestRunConfig":
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must be <= end_date")
+        return self
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "BacktestRunConfig":
+        has_single = self.strategy is not None
+        has_multi = bool(self.strategies)
+        if not has_single and not has_multi:
+            raise ValueError("Run must define either 'strategy' or a non-empty 'strategies' list")
+
+        if has_single:
+            assert self.strategy is not None
+            if self.strategy not in STRATEGY_REGISTRY:
+                available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
+                raise ValueError(f"Unknown strategy '{self.strategy}'. Available: {available}")
+            self.strategy_params = validate_strategy_params(self.strategy, self.strategy_params)
+
+        if has_multi and self.strategies is not None:
+            names = [s.name for s in self.strategies]
+            if len(names) != len(set(names)):
+                raise ValueError("strategy names in 'strategies' must be unique within a run")
+        return self
+
+
+class GlobalConfig(BaseModel):
+    timezone: str = "UTC"
+    default_broker: BrokerConfig = Field(default_factory=BrokerConfig)
+    data_cache: DataCacheConfig = Field(default_factory=DataCacheConfig)
+
+
+class BacktestConfig(BaseModel):
+    global_config: GlobalConfig = Field(default_factory=GlobalConfig)
+    runs: list[BacktestRunConfig]
+
+    @model_validator(mode="after")
+    def ensure_runs(self) -> "BacktestConfig":
+        if not self.runs:
+            raise ValueError("At least one run is required")
+        ids = [r.run_id for r in self.runs]
+        if len(ids) != len(set(ids)):
+            raise ValueError("run_id values must be unique")
+        return self

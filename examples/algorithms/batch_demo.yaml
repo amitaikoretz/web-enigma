@@ -1,0 +1,51 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 10000
+    commission: 0.001
+    slippage_perc: 0.0
+    sizer: fixed
+
+runs:
+  - run_id: "csv_sma_cross"
+    name: "CSV SMA Demo"
+    start_date: "2024-01-01"
+    end_date: "2024-01-19"
+    data:
+      type: csv
+      path: "examples/data/sample_daily.csv"
+    strategy: "sma_cross"
+    strategy_params:
+      fast: 3
+      slow: 5
+      stake: 10
+    analyzers:
+      include_equity_curve: true
+      include_trade_log: true
+      include_order_log: true
+
+  - run_id: "csv_rsi_reversion"
+    name: "CSV RSI Demo"
+    start_date: "2024-01-01"
+    end_date: "2024-01-19"
+    data:
+      type: csv
+      path: "examples/data/sample_daily.csv"
+    strategy: "rsi_reversion"
+    strategy_params:
+      period: 5
+      oversold: 35
+      overbought: 65
+      stake: 5
+
+  - run_id: "yahoo_buy_and_hold"
+    name: "Yahoo Buy & Hold Demo"
+    start_date: "2024-01-01"
+    end_date: "2024-03-31"
+    data:
+      type: yahoo
+      symbol: AAPL
+      interval: 1d
+    strategy: "buy_and_hold"
+    strategy_params:
+      stake: 2

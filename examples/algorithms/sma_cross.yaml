@@ -1,0 +1,14 @@
+global_config:
+  timezone: "UTC"
+runs:
+  - run_id: "sma_cross_single"
+    start_date: "2024-01-01"
+    end_date: "2024-04-19"
+    data:
+      type: csv
+      path: "examples/data/sample_daily.csv"
+    strategy: "sma_cross"
+    strategy_params:
+      fast: 3
+      slow: 5
+      stake: 10
