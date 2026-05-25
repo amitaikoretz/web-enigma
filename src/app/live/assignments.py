@@ -19,6 +19,8 @@ class RedisBackend(Protocol):
 
     def get_members(self, key: str) -> set[str]: ...
 
+    def scan_keys(self, pattern: str) -> list[str]: ...
+
 
 class InMemoryRedisBackend:
     def __init__(self) -> None:
@@ -41,15 +43,28 @@ class InMemoryRedisBackend:
     def get_members(self, key: str) -> set[str]:
         return set(self._sets.get(key, set()))
 
+    def scan_keys(self, pattern: str) -> list[str]:
+        keys = set(self._values) | set(self._sets)
+        if pattern.endswith("*"):
+            prefix = pattern[:-1]
+            return sorted(key for key in keys if key.startswith(prefix))
+        return sorted(key for key in keys if key == pattern)
 
-_BACKENDS_BY_URL: dict[str, InMemoryRedisBackend] = {}
+
+_BACKENDS_BY_URL: dict[str, RedisBackend] = {}
 
 
-def get_shared_redis_backend(url: str) -> InMemoryRedisBackend:
+def get_shared_redis_backend(url: str) -> RedisBackend:
     backend = _BACKENDS_BY_URL.get(url)
-    if backend is None:
+    if backend is not None:
+        return backend
+    if url.startswith("memory://"):
         backend = InMemoryRedisBackend()
-        _BACKENDS_BY_URL[url] = backend
+    else:
+        from app.live.redis_backend import RedisClientBackend
+
+        backend = RedisClientBackend(url)
+    _BACKENDS_BY_URL[url] = backend
     return backend
 
 
@@ -97,6 +112,37 @@ class RedisAssignmentStore:
 
     def clear_worker_heartbeat(self, worker_id: str) -> None:
         self.backend.delete(self._heartbeat_key(worker_id))
+
+    def list_shard_assignments(self) -> dict[int, set[str]]:
+        prefix = f"{self.key_prefix}:assignments:shard:"
+        assignments: dict[int, set[str]] = {}
+        for key in self.backend.scan_keys(f"{prefix}*"):
+            shard_id = int(key.removeprefix(prefix))
+            assignments[shard_id] = self.backend.get_members(key)
+        return assignments
+
+    def list_worker_heartbeats(self) -> list[WorkerHeartbeat]:
+        prefix = f"{self.key_prefix}:worker:"
+        suffix = ":heartbeat"
+        heartbeats: list[WorkerHeartbeat] = []
+        for key in self.backend.scan_keys(f"{prefix}*"):
+            if not key.endswith(suffix):
+                continue
+            raw = self.backend.get(key)
+            if raw is None:
+                continue
+            payload = json.loads(raw)
+            heartbeats.append(
+                WorkerHeartbeat(
+                    worker_id=payload["worker_id"],
+                    pod_name=payload["pod_name"],
+                    shard_id=int(payload["shard_id"]),
+                    status=RuntimeContractState(payload["status"]),
+                    owned_symbol_count=int(payload["owned_symbol_count"]),
+                    updated_at=datetime.fromisoformat(payload["updated_at"]),
+                )
+            )
+        return heartbeats
 
     def _assignment_version_key(self) -> str:
         return f"{self.key_prefix}:assignments:version"

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime, time
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 from backtesting import Strategy
 
+from app.strategies.auditor_logging import log_auditor_rejection
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyDecision
+from app.strategies.regime import RegimeClassifier, regime_params_from_strategy
 
 
 def _sma(values: Sequence[float], period: int) -> np.ndarray:
@@ -81,6 +84,73 @@ def _ema(values: Sequence[float], period: int) -> np.ndarray:
         prev = alpha * arr[i] + (1.0 - alpha) * prev
         out[i] = prev
     return out
+
+
+SESSION_CLOSE_REASON = "session_close"
+US_EASTERN = ZoneInfo("America/New_York")
+RTH_OPEN = time(9, 30)
+RTH_CLOSE = time(16, 0)
+
+
+def _to_eastern(timestamp: datetime | Any) -> datetime:
+    if hasattr(timestamp, "to_pydatetime"):
+        timestamp = timestamp.to_pydatetime()
+    if not isinstance(timestamp, datetime):
+        raise TypeError(f"Expected datetime, got {type(timestamp)!r}")
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=ZoneInfo("UTC"))
+    return timestamp.astimezone(US_EASTERN)
+
+
+def _minutes_since_rth_open(bar: Bar) -> int | None:
+    eastern = _to_eastern(bar.timestamp)
+    session_open = datetime.combine(eastern.date(), RTH_OPEN, tzinfo=US_EASTERN)
+    session_close = datetime.combine(eastern.date(), RTH_CLOSE, tzinfo=US_EASTERN)
+    if eastern < session_open or eastern >= session_close:
+        return None
+    return int((eastern - session_open).total_seconds() // 60)
+
+
+def _in_session_window(bar: Bar, start_minutes: int, end_minutes: int) -> bool:
+    if start_minutes <= 0 and end_minutes <= 0:
+        return True
+    minutes_since_open = _minutes_since_rth_open(bar)
+    if minutes_since_open is None:
+        return False
+    if start_minutes > 0 and minutes_since_open < start_minutes:
+        return False
+    if end_minutes > 0 and minutes_since_open > end_minutes:
+        return False
+    return True
+
+
+def _close_strength(bar: Bar) -> float:
+    bar_range = float(bar.high) - float(bar.low)
+    if bar_range <= 0:
+        return 1.0
+    return (float(bar.close) - float(bar.low)) / bar_range
+
+
+def _bar_session_date(timestamp: datetime | Any) -> date:
+    if hasattr(timestamp, "to_pydatetime"):
+        timestamp = timestamp.to_pydatetime()
+    if isinstance(timestamp, datetime):
+        return timestamp.date()
+    return date.fromisoformat(str(timestamp)[:10])
+
+
+def _is_last_bar_of_session(session_dates: Sequence[date], bar_index: int) -> bool:
+    if bar_index >= len(session_dates) - 1:
+        return True
+    return session_dates[bar_index] != session_dates[bar_index + 1]
+
+
+def _is_new_session(session_dates: Sequence[date], bar_index: int) -> bool:
+    return bar_index == 0 or session_dates[bar_index] != session_dates[bar_index - 1]
+
+
+def _is_only_bar_of_session(session_dates: Sequence[date], bar_index: int) -> bool:
+    return _is_new_session(session_dates, bar_index) and _is_last_bar_of_session(session_dates, bar_index)
 
 
 def _session_vwap(bars: Sequence[Bar]) -> np.ndarray:
@@ -194,6 +264,79 @@ def _bars_held(context: StrategyContext) -> int:
         return context.position.bars_held
     bars = _entry_bars(context)
     return max(0, len(bars) - 1)
+
+
+def _volume_rally_entry_signal(
+    *,
+    volume_ok: bool,
+    breakout_ok: bool,
+    vwap_ok: bool,
+    expansion_ok: bool,
+    macd_ok: bool,
+    adx_ok: bool,
+    min_confirmations: int,
+) -> bool:
+    if not (volume_ok and breakout_ok):
+        return False
+    optional_passed = sum((vwap_ok, expansion_ok, macd_ok, adx_ok))
+    optional_required = min_confirmations - 2
+    return optional_passed >= optional_required
+
+
+def _benchmark_regime_ok(context: StrategyContext, params: dict[str, Any]) -> bool:
+    benchmark_symbol = str(params.get("benchmark_symbol", "")).strip()
+    if not benchmark_symbol:
+        return True
+    benchmark_bars = context.benchmark_bars
+    if not benchmark_bars:
+        return False
+
+    closes = _closes(benchmark_bars)
+    highs = _highs(benchmark_bars)
+    lows = _lows(benchmark_bars)
+    sma_period = int(params["benchmark_sma_period"])
+    adx_period = int(params["benchmark_adx_period"])
+    adx_min = float(params["benchmark_adx_min"])
+    require_above_sma = bool(params["benchmark_require_above_sma"])
+
+    sma = _sma(closes, sma_period)
+    adx = _adx(highs, lows, closes, adx_period)
+    if require_above_sma and np.isnan(sma[-1]):
+        return False
+
+    above_sma = require_above_sma and float(closes[-1]) > float(sma[-1])
+    adx_ok = adx_min > 0 and not np.isnan(adx[-1]) and float(adx[-1]) >= adx_min
+
+    if require_above_sma and adx_min > 0:
+        return above_sma or adx_ok
+    if require_above_sma:
+        return above_sma
+    if adx_min > 0:
+        return adx_ok
+    return True
+
+
+def _bars_from_dataframe(feed: Any) -> list[Bar]:
+    bars: list[Bar] = []
+    for idx, row in feed.iterrows():
+        timestamp = idx.to_pydatetime() if hasattr(idx, "to_pydatetime") else idx
+        bars.append(
+            Bar(
+                timestamp=timestamp,
+                open=float(row["Open"]),
+                high=float(row["High"]),
+                low=float(row["Low"]),
+                close=float(row["Close"]),
+                volume=float(row["Volume"]),
+                is_complete=True,
+            )
+        )
+    return bars
+
+
+def _benchmark_bars_as_of(current_bar: Bar, all_benchmark_bars: Sequence[Bar]) -> tuple[Bar, ...]:
+    current_ts = current_bar.timestamp
+    return tuple(bar for bar in all_benchmark_bars if bar.timestamp <= current_ts)
 
 
 def _should_exit_by_risk(context: StrategyContext, stop_loss_pct: float, take_profit_pct: float) -> bool:
@@ -402,20 +545,65 @@ class BreakoutChannelCore(BasePortableStrategy):
 class VolumeRallyCore(BasePortableStrategy):
     def __init__(self, params: dict[str, Any]):
         super().__init__(params)
+        self._regime = RegimeClassifier(regime_params_from_strategy(params))
         self._last_exit_bar_index: int | None = None
+        self._session_trade_date: date | None = None
+        self._session_trades_count = 0
+        self._breakeven_armed = False
+        self._entry_atr: float | None = None
+        self._last_entry_regime: str | None = None
+
+    def entry_regime_label(self) -> str | None:
+        return self._last_entry_regime
 
     def load_state(self, state: dict[str, Any] | None) -> None:
         if not state:
             self._last_exit_bar_index = None
+            self._session_trade_date = None
+            self._session_trades_count = 0
+            self._breakeven_armed = False
+            self._entry_atr = None
+            self._last_entry_regime = None
+            self._regime.load_state(None)
             return
         raw_index = state.get("last_exit_bar_index")
         self._last_exit_bar_index = int(raw_index) if raw_index is not None else None
+        raw_session_date = state.get("session_trade_date")
+        self._session_trade_date = date.fromisoformat(raw_session_date) if raw_session_date else None
+        self._session_trades_count = int(state.get("session_trades_count", 0))
+        self._breakeven_armed = bool(state.get("breakeven_armed", False))
+        raw_entry_atr = state.get("entry_atr")
+        self._entry_atr = float(raw_entry_atr) if raw_entry_atr is not None else None
+        self._last_entry_regime = state.get("last_entry_regime")
+        self._regime.load_state(state.get("regime"))
 
     def dump_state(self) -> dict[str, Any]:
-        return {"last_exit_bar_index": self._last_exit_bar_index}
+        return {
+            "last_exit_bar_index": self._last_exit_bar_index,
+            "session_trade_date": self._session_trade_date.isoformat() if self._session_trade_date else None,
+            "session_trades_count": self._session_trades_count,
+            "breakeven_armed": self._breakeven_armed,
+            "entry_atr": self._entry_atr,
+            "last_entry_regime": self._last_entry_regime,
+            "regime": self._regime.dump_state(),
+        }
 
     def _current_bar_index(self, context: StrategyContext) -> int:
         return len(context.bars) - 1
+
+    def _sync_session_state(self, context: StrategyContext) -> None:
+        session_date = _bar_session_date(context.bar.timestamp)
+        if self._session_trade_date is None:
+            self._session_trade_date = session_date
+        elif self._session_trade_date != session_date:
+            self._session_trade_date = session_date
+            self._session_trades_count = 0
+
+    def _mark_exit(self, context: StrategyContext) -> None:
+        self._last_exit_bar_index = self._current_bar_index(context)
+        self._session_trades_count += 1
+        self._breakeven_armed = False
+        self._entry_atr = None
 
     def _in_cooldown(self, context: StrategyContext) -> bool:
         cooldown_bars = int(self.params["cooldown_bars"])
@@ -424,7 +612,33 @@ class VolumeRallyCore(BasePortableStrategy):
         bars_since_exit = self._current_bar_index(context) - self._last_exit_bar_index
         return bars_since_exit < cooldown_bars
 
+    def _position_atr(self, context: StrategyContext, atr: np.ndarray) -> float:
+        if self._entry_atr is not None and self._entry_atr > 0:
+            return self._entry_atr
+        return float(atr[-1])
+
+    def _maybe_arm_breakeven(self, context: StrategyContext, atr_value: float) -> None:
+        breakeven_mult = float(self.params["breakeven_atr_mult"])
+        if breakeven_mult <= 0 or self._breakeven_armed:
+            return
+        entry_price = float(context.position.entry_price or 0.0)
+        if context.bar.close >= entry_price + breakeven_mult * atr_value:
+            self._breakeven_armed = True
+
+    def _effective_stop(self, entry_price: float, atr_value: float) -> float:
+        initial_sl_mult = float(self.params["initial_sl_atr_mult"])
+        sl_mult = float(self.params["sl_atr_mult"])
+        if initial_sl_mult > 0 and not self._breakeven_armed:
+            stop_mult = initial_sl_mult
+        else:
+            stop_mult = sl_mult
+        fixed_stop = entry_price - atr_value * stop_mult
+        if self._breakeven_armed:
+            return max(fixed_stop, entry_price)
+        return fixed_stop
+
     def on_bar(self, context: StrategyContext) -> StrategyDecision:
+        self._sync_session_state(context)
         closes = _closes(context.bars)
         highs = _highs(context.bars)
         lows = _lows(context.bars)
@@ -454,35 +668,46 @@ class VolumeRallyCore(BasePortableStrategy):
         ):
             return StrategyDecision.hold("warmup")
 
+        regime = self._regime.update(context.bars)
+
         if context.position.is_open:
-            atr_value = float(atr[-1])
+            if regime.label == "high_vol":
+                self._mark_exit(context)
+                return StrategyDecision.close("regime_high_vol")
+            atr_value = self._position_atr(context, atr)
             if atr_value <= 0:
                 return StrategyDecision.hold("warmup")
+
+            entry_price = float(context.position.entry_price or 0.0)
+            stale_bars = int(self.params["stale_bars"])
+            if stale_bars > 0 and _bars_held(context) >= stale_bars:
+                min_progress = float(self.params["min_progress_atr"]) * atr_value
+                if context.bar.close - entry_price < min_progress:
+                    self._mark_exit(context)
+                    return StrategyDecision.close("stale_exit")
+
+            self._maybe_arm_breakeven(context, atr_value)
 
             entry_bars = _entry_bars(context)
             highest_close = max((bar.close for bar in entry_bars), default=context.bar.close)
             trailing_stop = highest_close - atr_value * float(self.params["trail_atr_mult"])
-            entry_price = float(context.position.entry_price or 0.0)
-            fixed_stop = entry_price - atr_value * float(self.params["sl_atr_mult"])
+            effective_stop = self._effective_stop(entry_price, atr_value)
             target_price = entry_price + atr_value * float(self.params["tp_atr_mult"])
             time_exit = _bars_held(context) >= int(self.params["max_hold_bars"])
 
             if context.bar.close <= trailing_stop:
-                self._last_exit_bar_index = self._current_bar_index(context)
+                self._mark_exit(context)
                 return StrategyDecision.close("trailing_exit")
-            if context.bar.close <= fixed_stop:
-                self._last_exit_bar_index = self._current_bar_index(context)
+            if context.bar.close <= effective_stop:
+                self._mark_exit(context)
                 return StrategyDecision.close("atr_stop")
             if context.bar.close >= target_price:
-                self._last_exit_bar_index = self._current_bar_index(context)
+                self._mark_exit(context)
                 return StrategyDecision.close("atr_target")
             if time_exit:
-                self._last_exit_bar_index = self._current_bar_index(context)
+                self._mark_exit(context)
                 return StrategyDecision.close("time_exit")
             return StrategyDecision.hold()
-
-        if self._in_cooldown(context):
-            return StrategyDecision.hold("cooldown")
 
         lookback = int(self.params["breakout_lookback"])
         if len(context.bars) <= lookback:
@@ -502,10 +727,48 @@ class VolumeRallyCore(BasePortableStrategy):
             and float(histogram[-1]) > float(histogram[-2])
         )
         adx_ok = float(adx[-1]) >= float(self.params["adx_min"])
+        signal_ok = _volume_rally_entry_signal(
+            volume_ok=volume_ok,
+            breakout_ok=breakout_ok,
+            vwap_ok=vwap_ok,
+            expansion_ok=expansion_ok,
+            macd_ok=macd_ok,
+            adx_ok=adx_ok,
+            min_confirmations=int(self.params["min_confirmations"]),
+        )
 
-        if volume_ok and breakout_ok and vwap_ok and expansion_ok and macd_ok and adx_ok:
-            return StrategyDecision.buy(float(self.params["stake"]), "confirmed_breakout")
-        return StrategyDecision.hold()
+        if self._in_cooldown(context):
+            return StrategyDecision.hold("cooldown", auditor_rejection=signal_ok)
+
+        session_start = int(self.params["session_start_minutes"])
+        session_end = int(self.params["session_end_minutes"])
+        if not _in_session_window(context.bar, session_start, session_end):
+            return StrategyDecision.hold("session_window", auditor_rejection=signal_ok)
+
+        max_trades = int(self.params["max_trades_per_session"])
+        if max_trades > 0 and self._session_trades_count >= max_trades:
+            return StrategyDecision.hold("session_trade_cap", auditor_rejection=signal_ok)
+
+        if not signal_ok:
+            return StrategyDecision.hold()
+
+        if regime.label == "ranging":
+            return StrategyDecision.hold("regime_ranging", auditor_rejection=signal_ok)
+        if regime.label == "high_vol":
+            return StrategyDecision.hold("regime_high_vol", auditor_rejection=True)
+
+        if not _benchmark_regime_ok(context, self.params):
+            reason = "benchmark_regime" if context.benchmark_bars else "benchmark_warmup"
+            return StrategyDecision.hold(reason, auditor_rejection=signal_ok)
+
+        min_close_strength = float(self.params["min_close_strength"])
+        if min_close_strength > 0 and _close_strength(context.bar) < min_close_strength:
+            return StrategyDecision.hold("weak_close", auditor_rejection=True)
+
+        self._entry_atr = float(atr[-1])
+        self._breakeven_armed = False
+        self._last_entry_regime = regime.label
+        return StrategyDecision.buy(float(self.params["stake"]), "confirmed_breakout")
 
 
 class PortableBacktestingStrategy(Strategy):
@@ -513,6 +776,7 @@ class PortableBacktestingStrategy(Strategy):
     strategy_factory: Any = None
     strategy_params: dict[str, Any] = {}
     strategy_symbol: str | None = None
+    benchmark_feed: Any = None
 
     def init(self) -> None:
         self.core: StrategyCore = self.strategy_factory(dict(self.strategy_params))
@@ -520,10 +784,14 @@ class PortableBacktestingStrategy(Strategy):
         self.trade_log: list[dict[str, Any]] = []
         self.execution_events: list[ExecutionEvent] = []
         self._bars_history: list[Bar] = []
+        self._all_benchmark_bars: list[Bar] = _bars_from_dataframe(self.benchmark_feed) if self.benchmark_feed is not None else []
+        self._session_dates = [_bar_session_date(ts) for ts in self.data.index]
         self._logged_entry_keys: set[tuple[int, int]] = set()
         self._closed_trade_count = 0
         self._last_entry_reason: str | None = None
+        self._last_entry_regime: str | None = None
         self._last_exit_reason: str | None = None
+        self.rejection_log: list[dict[str, Any]] = []
 
     def _append_current_bar(self) -> None:
         current_size = len(self.data.Close)
@@ -643,29 +911,82 @@ class PortableBacktestingStrategy(Strategy):
                     "pnl": float(trade_event.pnl or 0.0),
                     "pnlcomm": float(trade_event.pnlcomm or 0.0),
                     "reason": self._last_exit_reason,
+                    "regime_label": self._last_entry_regime,
                 }
             )
             self._last_exit_reason = None
+            self._last_entry_regime = None
         self._closed_trade_count = len(self.closed_trades)
+
+    def _current_data_index(self) -> int:
+        return len(self.data.Close) - 1
+
+    def _enforce_flat_at_session_open(self, data_index: int) -> None:
+        if data_index == 0 or not _is_new_session(self._session_dates, data_index):
+            return
+        self.orders.cancel()
+        if self.position:
+            self._close_open_position_for_session()
+
+    def _enforce_flat_by_session_close(self, data_index: int) -> None:
+        if not _is_last_bar_of_session(self._session_dates, data_index):
+            return
+        if not _is_only_bar_of_session(self._session_dates, data_index):
+            self.orders.cancel()
+        if self.position:
+            self._close_open_position_for_session()
+
+    def _close_open_position_for_session(self) -> None:
+        if not self.position:
+            return
+        self._last_exit_reason = SESSION_CLOSE_REASON
+        self.position.close()
 
     def next(self) -> None:
         self._append_current_bar()
+        data_index = self._current_data_index()
+        self._enforce_flat_at_session_open(data_index)
+
         self._record_entry_events()
         self._record_closed_trade_events()
+        current_bar = self._bars_history[-1]
+        benchmark_bars = (
+            _benchmark_bars_as_of(current_bar, self._all_benchmark_bars) if self._all_benchmark_bars else None
+        )
         context = StrategyContext(
-            bar=self._bars_history[-1],
+            bar=current_bar,
             bars=tuple(self._bars_history),
             position=self._position_state(),
             symbol=self.strategy_symbol,
             equity=float(self.equity),
+            benchmark_bars=benchmark_bars,
         )
         decision = self.core.on_bar(context)
+        if decision.action == "hold" and decision.auditor_rejection:
+            rejection = {
+                "datetime": context.bar.iso_timestamp,
+                "symbol": self.strategy_symbol,
+                "reason": decision.reason,
+            }
+            self.rejection_log.append(rejection)
+            log_auditor_rejection(
+                symbol=self.strategy_symbol,
+                timestamp=context.bar.iso_timestamp,
+                reason=decision.reason,
+            )
         if decision.action == "buy" and not self.position:
             self._last_entry_reason = decision.reason
+            entry_regime = getattr(self.core, "entry_regime_label", None)
+            self._last_entry_regime = entry_regime() if callable(entry_regime) else None
             self.buy(size=float(decision.size or 0.0))
         elif decision.action == "close" and self.position:
             self._last_exit_reason = decision.reason
             self.position.close()
+
+        self._enforce_flat_by_session_close(data_index)
+
+        self._record_entry_events()
+        self._record_closed_trade_events()
 
 
 def build_portable_strategy_adapter(
@@ -674,6 +995,7 @@ def build_portable_strategy_adapter(
     strategy_factory: Any,
     strategy_params: dict[str, Any],
     symbol: str | None,
+    benchmark_feed: Any = None,
 ) -> type[PortableBacktestingStrategy]:
     return type(
         f"{strategy_name.title().replace('_', '')}BacktestingAdapter",
@@ -683,5 +1005,6 @@ def build_portable_strategy_adapter(
             "strategy_factory": strategy_factory,
             "strategy_params": dict(strategy_params),
             "strategy_symbol": symbol,
+            "benchmark_feed": benchmark_feed,
         },
     )

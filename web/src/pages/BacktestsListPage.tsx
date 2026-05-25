@@ -6,6 +6,7 @@ import {
   CircularProgress,
   IconButton,
   Link,
+  LinearProgress,
   Paper,
   Stack,
   Table,
@@ -16,7 +17,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 
 import { backtestConfigUrl, backtestReportUrl, deleteBacktest, fetchBacktests } from '../api/backtests'
@@ -34,6 +35,12 @@ export function BacktestsListPage() {
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<BacktestListItem | null>(null)
+  const hasActiveJobs = useMemo(
+    () => items.some((item) => item.status === 'pending' || item.status === 'running'),
+    [items],
+  )
+  const refreshIntervalMs =
+    platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
 
   useEffect(() => {
     let cancelled = false
@@ -58,6 +65,37 @@ export function BacktestsListPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!hasActiveJobs) {
+      return undefined
+    }
+
+    let cancelled = false
+
+    const refresh = async () => {
+      try {
+        const response = await fetchBacktests()
+        if (!cancelled) {
+          setItems(response)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to refresh backtests')
+        }
+      }
+    }
+
+    void refresh()
+    const timer = window.setInterval(() => {
+      void refresh()
+    }, refreshIntervalMs)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [hasActiveJobs, refreshIntervalMs])
 
   async function confirmDelete() {
     if (!deleteTarget) {
@@ -125,6 +163,9 @@ export function BacktestsListPage() {
               {items.map((item) => {
                 const hasReport = item.status === 'completed'
                 const isDeleting = deletingId === item.id
+                const isActive = item.status === 'pending' || item.status === 'running'
+                const progressValue =
+                  item.total_runs === 0 ? 0 : (item.completed_runs / item.total_runs) * 100
 
                 return (
                   <TableRow
@@ -156,8 +197,29 @@ export function BacktestsListPage() {
                     <TableCell>
                       {item.selection.symbols.length} symbols / {item.selection.strategies.length} strategies
                     </TableCell>
-                    <TableCell>
-                      {item.completed_runs}/{item.total_runs}
+                    <TableCell sx={{ minWidth: 160 }}>
+                      {isActive ? (
+                        <Stack spacing={0.75}>
+                          <Typography variant="body2" color="text.secondary">
+                            {item.completed_runs}/{item.total_runs}
+                          </Typography>
+                          <LinearProgress
+                            variant={item.total_runs === 0 ? 'indeterminate' : 'determinate'}
+                            value={progressValue}
+                            color="primary"
+                            sx={{
+                              height: 8,
+                              borderRadius: 1,
+                              bgcolor: 'action.hover',
+                              '& .MuiLinearProgress-bar': {
+                                borderRadius: 1,
+                              },
+                            }}
+                          />
+                        </Stack>
+                      ) : (
+                        `${item.completed_runs}/${item.total_runs}`
+                      )}
                     </TableCell>
                     <TableCell>
                       {hasReport ? (

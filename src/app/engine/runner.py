@@ -16,6 +16,15 @@ from app.data.loaders import (
     build_csv_data_feed,
     build_yahoo_data_feed_with_cache,
 )
+from app.engine.aggregates import compute_report_aggregates
+from app.engine.metrics import (
+    build_order_records,
+    build_rejection_records,
+    compute_filter_diagnostics,
+    compute_risk_metrics,
+    compute_trade_diagnostics,
+    enrich_trade_records,
+)
 from app.output.models import BacktestReport, EquityPoint, RunError, RunResult, RunSummary
 from app.strategies.implementations import build_portable_strategy_adapter
 from app.strategies.registry import get_strategy_definition
@@ -32,6 +41,44 @@ class RunExecutionOptions:
 class DataFeedBuildResult:
     feed: pd.DataFrame
     cache_status: str | None = None
+
+
+def _benchmark_symbol_for_strategy(strategy_name: str, params: dict[str, Any]) -> str | None:
+    if strategy_name != "volume_rally":
+        return None
+    symbol = str(params.get("benchmark_symbol", "")).strip().upper()
+    return symbol or None
+
+
+def _load_benchmark_feed(
+    run: BacktestRunConfig,
+    benchmark_symbol: str,
+    cache_config: DataCacheConfig,
+    cache_refresh: bool,
+) -> pd.DataFrame:
+    if run.data.type not in {"yahoo", "alpaca"}:
+        raise ValueError(
+            f"Benchmark filter symbol '{benchmark_symbol}' requires a yahoo or alpaca data source"
+        )
+    if run.data.type == "yahoo":
+        data = run.data.model_copy(update={"symbol": benchmark_symbol})
+        feed, _ = build_yahoo_data_feed_with_cache(
+            data,
+            run.start_date,
+            run.end_date,
+            cache_config=cache_config,
+            force_refresh=cache_refresh,
+        )
+        return feed
+    data = run.data.model_copy(update={"symbol": benchmark_symbol})
+    feed, _ = build_alpaca_data_feed_with_cache(
+        data,
+        run.start_date,
+        run.end_date,
+        cache_config=cache_config,
+        force_refresh=cache_refresh,
+    )
+    return feed
 
 
 def _build_data_feed(run: BacktestRunConfig, cache_config: DataCacheConfig, cache_refresh: bool) -> DataFeedBuildResult:
@@ -185,6 +232,8 @@ def run_backtests_with_hooks(
     raw_bytes = json.dumps(config_raw, sort_keys=True, default=str).encode("utf-8")
     digest = hashlib.sha256(raw_bytes).hexdigest()
 
+    aggregates = compute_report_aggregates(results)
+
     return BacktestReport(
         generated_at=datetime.now(timezone.utc),
         app_version=__version__,
@@ -196,6 +245,7 @@ def run_backtests_with_hooks(
         failed_runs=failed,
         status=status,
         results=results,
+        aggregates=aggregates,
     )
 
 
@@ -210,11 +260,16 @@ def _run_single(
 
     broker = run.broker or config.global_config.default_broker
     strategy_def = get_strategy_definition(strategy_entry.name)
+    benchmark_symbol = _benchmark_symbol_for_strategy(strategy_entry.name, strategy_entry.params)
+    benchmark_feed = None
+    if benchmark_symbol:
+        benchmark_feed = _load_benchmark_feed(run, benchmark_symbol, cache_config, cache_refresh)
     strategy_cls = build_portable_strategy_adapter(
         strategy_name=strategy_entry.name,
         strategy_factory=strategy_def.factory,
         strategy_params=strategy_entry.params,
         symbol=_strategy_symbol(run),
+        benchmark_feed=benchmark_feed,
     )
 
     bt = Backtest(
@@ -222,6 +277,7 @@ def _run_single(
         strategy_cls,
         cash=float(broker.cash),
         commission=float(broker.commission),
+        spread=float(broker.slippage_perc),
         trade_on_close=run.execution.fill_model == "close",
         finalize_trades=True,
     )
@@ -249,28 +305,60 @@ def _run_single(
         ]
 
     strategy_obj = stats.get("_strategy")
-    orders: list[dict[str, Any]] = []
-    trades: list[dict[str, Any]] = []
+    raw_orders: list[dict[str, Any]] = []
+    raw_trades: list[dict[str, Any]] = []
+    raw_rejections: list[dict[str, Any]] = []
     if strategy_obj is not None:
-        orders = getattr(strategy_obj, "order_log", []) if run.analyzers.include_order_log else []
-        trades = getattr(strategy_obj, "trade_log", []) if run.analyzers.include_trade_log else []
+        raw_orders = getattr(strategy_obj, "order_log", []) if run.analyzers.include_order_log else []
+        raw_trades = getattr(strategy_obj, "trade_log", []) if run.analyzers.include_trade_log else []
+        raw_rejections = getattr(strategy_obj, "rejection_log", [])
+
+    orders = build_order_records(raw_orders)
+    trades = enrich_trade_records(raw_trades, closed_trades)
+    rejections = build_rejection_records(raw_rejections)
+
+    return_pct = ((end_value - start_value) / start_value * 100.0) if start_value else 0.0
+    trade_diagnostics = compute_trade_diagnostics(
+        trades,
+        orders,
+        start_value=start_value,
+        end_value=end_value,
+    )
+    filter_diagnostics = compute_filter_diagnostics(rejections, total_trades=total_trades)
+    risk_metrics = compute_risk_metrics(stats, return_pct=return_pct)
 
     analyzers: dict[str, Any] = {
         "sharpe": {"sharperatio": sharpe},
         "drawdown": {"max": {"drawdown": drawdown}},
         "trades": trade_data,
         "execution": {"fill_model": run.execution.fill_model},
+        "resolution": run.data.interval if hasattr(run.data, "interval") else None,
+        "trade_diagnostics": trade_diagnostics.model_dump(),
+        "filter_diagnostics": filter_diagnostics.model_dump(),
+        "risk_metrics": risk_metrics.model_dump(),
+        "distributions": (
+            trade_diagnostics.distributions.model_dump()
+            if trade_diagnostics.distributions is not None
+            else None
+        ),
+        "filters": {
+            "rejections": [rejection.model_dump() for rejection in rejections],
+            **filter_diagnostics.model_dump(),
+        },
     }
 
     summary = RunSummary(
         start_value=start_value,
         end_value=end_value,
-        return_pct=((end_value - start_value) / start_value * 100.0) if start_value else 0.0,
+        return_pct=return_pct,
         max_drawdown_pct=drawdown,
         sharpe_ratio=sharpe,
         total_trades=total_trades,
         won_trades=won_trades,
         lost_trades=lost_trades,
+        trade_diagnostics=trade_diagnostics,
+        filter_diagnostics=filter_diagnostics,
+        risk_metrics=risk_metrics,
     )
 
     return RunResult(
@@ -284,5 +372,6 @@ def _run_single(
         analyzers=analyzers,
         orders=orders,
         trades=trades,
+        rejections=rejections,
         equity_curve=equity_curve if run.analyzers.include_equity_curve else [],
     ), data_feed_result.cache_status

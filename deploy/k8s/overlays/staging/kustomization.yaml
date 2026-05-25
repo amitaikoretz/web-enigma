@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Point images at your registry before deploying:
+#
+# images:
+#   - name: backtest-app
+#     newName: ghcr.io/your-org/backtest-app
+#     newTag: v0.1.0
+#   - name: backtest-web
+#     newName: ghcr.io/your-org/backtest-web
+#     newTag: v0.1.0
+#
+# Create app-secrets with managed Postgres/Redis URLs:
+#
+#   kubectl create secret generic app-secrets -n backtest \
+#     --from-literal=DATABASE_URL='postgresql+psycopg://...' \
+#     --from-literal=ALPACA_API_KEY='...' \
+#     --from-literal=ALPACA_SECRET_KEY='...'
+#
+# Patch redis URLs in deployment-api.yaml and configmap-live.yaml when Redis is
+# external (not a Service named redis in this namespace).

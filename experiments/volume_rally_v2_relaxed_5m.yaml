@@ -1,0 +1,105 @@
+# volume_rally v2 relaxed: loosen entry filters one step vs v2 strict.
+# Changes vs volume_rally_v2_5m.yaml:
+#   volume_spike_mult: 3.5 -> 3.0
+#   session_start_minutes: 30 -> 15  (entries from 9:45 ET)
+#   min_close_strength: 0.65 -> 0.55
+#
+# Run:
+#   backtest run \
+#     --config experiments/volume_rally_v2_relaxed_5m.yaml \
+#     --output /tmp/volume-rally-v2-relaxed-5m.json
+
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 10000
+    commission: 0.0
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "5m": 315360000
+
+runs:
+  - run_id: "v2_relaxed_aapl_5m"
+    name: "AAPL volume_rally v2 relaxed 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data:
+      type: alpaca
+      symbol: AAPL
+      interval: 5m
+      feed: iex
+    strategy: "volume_rally"
+    strategy_params:
+      stake: 10
+      volume_window: 20
+      volume_spike_mult: 3.0
+      breakout_lookback: 20
+      atr_period: 14
+      atr_expansion_mult: 0.5
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal: 9
+      adx_period: 14
+      adx_min: 25.0
+      sl_atr_mult: 1.5
+      tp_atr_mult: 4.0
+      trail_atr_mult: 2.5
+      max_hold_bars: 72
+      cooldown_bars: 20
+      session_start_minutes: 15
+      session_end_minutes: 360
+      min_close_strength: 0.55
+      max_trades_per_session: 1
+      initial_sl_atr_mult: 1.0
+      breakeven_atr_mult: 1.0
+      stale_bars: 12
+      min_progress_atr: 0.5
+    analyzers:
+      include_equity_curve: true
+      include_trade_log: true
+      include_order_log: true
+
+  - run_id: "v2_relaxed_amd_5m"
+    name: "AMD volume_rally v2 relaxed 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data:
+      type: alpaca
+      symbol: AMD
+      interval: 5m
+      feed: iex
+    strategy: "volume_rally"
+    strategy_params:
+      stake: 10
+      volume_window: 20
+      volume_spike_mult: 3.0
+      breakout_lookback: 20
+      atr_period: 14
+      atr_expansion_mult: 0.5
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal: 9
+      adx_period: 14
+      adx_min: 25.0
+      sl_atr_mult: 1.5
+      tp_atr_mult: 4.0
+      trail_atr_mult: 2.5
+      max_hold_bars: 72
+      cooldown_bars: 20
+      session_start_minutes: 15
+      session_end_minutes: 360
+      min_close_strength: 0.55
+      max_trades_per_session: 1
+      initial_sl_atr_mult: 1.0
+      breakeven_atr_mult: 1.0
+      stale_bars: 12
+      min_progress_atr: 0.5
+    analyzers:
+      include_equity_curve: true
+      include_trade_log: true
+      include_order_log: true

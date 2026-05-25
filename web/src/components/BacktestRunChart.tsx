@@ -76,12 +76,9 @@ export function BacktestRunChart({
 
   return (
     <Stack spacing={1}>
-      <Stack direction="row" spacing={2} sx={{ alignItems: 'baseline', flexWrap: 'wrap', gap: 1 }}>
-        <Typography variant="subtitle1">Price chart</Typography>
-        <Typography variant="caption" color="text.secondary">
-          Blue/orange arrows = orders · Green/red circles = closed trades (PnL)
-        </Typography>
-      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        Blue/orange arrows = orders · Green/red circles = closed trades (PnL)
+      </Typography>
 
       <Box
         sx={{

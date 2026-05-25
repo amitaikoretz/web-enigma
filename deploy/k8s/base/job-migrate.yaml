@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  labels:
+    app.kubernetes.io/name: migrate
+    app.kubernetes.io/component: migrate
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: migrate
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: backtest-app:latest
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - secretRef:
+                name: app-secrets

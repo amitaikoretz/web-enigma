@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
 
 from app.live.assignments import RedisBackend
@@ -78,6 +78,16 @@ class RedisLeaseStore:
             leased_at=datetime.fromisoformat(payload["leased_at"]),
             expires_at=datetime.fromisoformat(payload["expires_at"]),
         )
+
+    def list_active_leases(self, *, active_at: datetime | None = None) -> list[LeaseRecord]:
+        now = active_at or datetime.now(UTC)
+        prefix = f"{self.key_prefix}:lease:symbol:"
+        leases: list[LeaseRecord] = []
+        for key in self.backend.scan_keys(f"{prefix}*"):
+            lease = self.get_symbol_lease(key.removeprefix(prefix))
+            if lease is not None and lease.expires_at > now:
+                leases.append(lease)
+        return leases
 
     def _lease_key(self, symbol_key: str) -> str:
         return f"{self.key_prefix}:lease:symbol:{symbol_key}"

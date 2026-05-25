@@ -11,7 +11,9 @@ from sqlalchemy.orm import sessionmaker
 from app.cli import main
 from app.live.assignments import RedisAssignmentStore, get_shared_redis_backend
 from app.live.control_flags import RedisControlFlagStore
-from app.live.controller import ContractsControllerService, NoopWorkerScaler, compute_shard_id
+from app.live.assignment_publisher import compute_shard_id
+from app.live.controller import ContractsControllerService, NoopWorkerScaler
+from app.live.revocation import RedisContractRevocationStore
 from app.live.leases import RedisLeaseStore
 from app.live.models import SessionPhase, TradingContractSnapshot, WorkerEventCreate
 from app.live.persistence import (
@@ -41,6 +43,9 @@ class RecordingWorkerEventRepository:
     def record(self, event: WorkerEventCreate) -> None:
         self.events.append(event)
 
+    def list_events(self, query) -> list:
+        return []
+
 
 def _sample_contract(contract_id: str, symbol: str, strategy: str = "buy_and_hold") -> TradingContractSnapshot:
     return TradingContractSnapshot(
@@ -58,7 +63,7 @@ def _sample_contract(contract_id: str, symbol: str, strategy: str = "buy_and_hol
 def test_live_runtime_repositories_and_stores_construct():
     engine = create_engine("sqlite:///:memory:", future=True)
     session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
-    backend = get_shared_redis_backend("redis://test-construct")
+    backend = get_shared_redis_backend("memory://test-construct")
 
     assert RedisAssignmentStore(backend=backend)
     assert RedisLeaseStore(backend=backend)
@@ -72,7 +77,7 @@ def test_live_runtime_repositories_and_stores_construct():
 
 
 def test_controller_sync_groups_contracts_by_symbol_and_scales_open():
-    backend = get_shared_redis_backend("redis://controller-open")
+    backend = get_shared_redis_backend("memory://controller-open")
     assignment_store = RedisAssignmentStore(backend=backend)
     event_repo = RecordingWorkerEventRepository()
     contracts = [
@@ -103,7 +108,7 @@ def test_controller_sync_groups_contracts_by_symbol_and_scales_open():
 
 
 def test_controller_sync_scales_to_zero_when_closed():
-    backend = get_shared_redis_backend("redis://controller-closed")
+    backend = get_shared_redis_backend("memory://controller-closed")
     assignment_store = RedisAssignmentStore(backend=backend)
     scaler = NoopWorkerScaler()
     service = ContractsControllerService(
@@ -124,7 +129,7 @@ def test_controller_sync_scales_to_zero_when_closed():
 
 
 def test_worker_startup_registers_heartbeat_and_acquires_leases():
-    backend = get_shared_redis_backend("redis://worker-startup")
+    backend = get_shared_redis_backend("memory://worker-startup")
     assignment_store = RedisAssignmentStore(backend=backend)
     lease_store = RedisLeaseStore(backend=backend)
     control_flags = RedisControlFlagStore(backend=backend)
@@ -154,7 +159,7 @@ def test_worker_startup_registers_heartbeat_and_acquires_leases():
 
 
 def test_worker_drain_releases_leases_and_clears_heartbeat():
-    backend = get_shared_redis_backend("redis://worker-drain")
+    backend = get_shared_redis_backend("memory://worker-drain")
     assignment_store = RedisAssignmentStore(backend=backend)
     lease_store = RedisLeaseStore(backend=backend)
     control_flags = RedisControlFlagStore(backend=backend)
@@ -182,6 +187,79 @@ def test_worker_drain_releases_leases_and_clears_heartbeat():
     assert lease_store.get_symbol_lease("MSFT") is None
     assert backend.get("ta:worker:worker-2:heartbeat") is None
     assert any(event.event_type == "worker_draining" for event in event_repo.events)
+
+
+def test_worker_releases_lease_when_symbol_removed_from_assignments():
+    backend = get_shared_redis_backend("memory://worker-release-unassigned")
+    assignment_store = RedisAssignmentStore(backend=backend)
+    lease_store = RedisLeaseStore(backend=backend)
+    control_flags = RedisControlFlagStore(backend=backend)
+    event_repo = RecordingWorkerEventRepository()
+    shard_id = compute_shard_id("MSFT", 2)
+    assignment_store.publish_assignments(1, {0: set(), 1: set()})
+    assignment_store.publish_assignments(2, {0: {"MSFT"} if shard_id == 0 else set(), 1: {"MSFT"} if shard_id == 1 else set()})
+
+    worker = WorkerRuntimeCoordinator(
+        worker_id="worker-release",
+        pod_name="pod-release",
+        shard_id=shard_id,
+        assignment_store=assignment_store,
+        lease_store=lease_store,
+        control_flag_store=control_flags,
+        contracts_api_client=FakeContractsApiClient([_sample_contract("aa0d74d7-7a8d-4fe4-a20f-b5d30e935010", "MSFT")]),
+        worker_event_repository=event_repo,
+        heartbeat_interval_seconds=1,
+        lease_ttl_seconds=20,
+    )
+    worker.run_forever(max_iterations=1)
+    assert "MSFT" in worker.owned_symbols
+
+    assignment_store.publish_assignments(3, {0: set(), 1: set()})
+    worker.run_forever(max_iterations=1)
+
+    assert worker.owned_symbols == set()
+    assert lease_store.get_symbol_lease("MSFT") is None
+    assert any(event.event_type == "symbol_released" for event in event_repo.events)
+
+
+def test_worker_drops_revoked_contract_but_keeps_symbol_lease_for_remaining_contract():
+    backend = get_shared_redis_backend("memory://worker-revoke-one")
+    assignment_store = RedisAssignmentStore(backend=backend)
+    lease_store = RedisLeaseStore(backend=backend)
+    control_flags = RedisControlFlagStore(backend=backend)
+    revocation_store = RedisContractRevocationStore(backend=backend)
+    event_repo = RecordingWorkerEventRepository()
+    shard_id = compute_shard_id("AAPL", 2)
+    contract_a = _sample_contract("aa0d74d7-7a8d-4fe4-a20f-b5d30e935011", "AAPL", "buy_and_hold")
+    contract_b = _sample_contract("aa0d74d7-7a8d-4fe4-a20f-b5d30e935012", "AAPL", "sma_cross")
+    assignment_store.publish_assignments(
+        1,
+        {0: {"AAPL"} if shard_id == 0 else set(), 1: {"AAPL"} if shard_id == 1 else set()},
+    )
+
+    worker = WorkerRuntimeCoordinator(
+        worker_id="worker-revoke",
+        pod_name="pod-revoke",
+        shard_id=shard_id,
+        assignment_store=assignment_store,
+        lease_store=lease_store,
+        control_flag_store=control_flags,
+        contracts_api_client=FakeContractsApiClient([contract_a, contract_b]),
+        revocation_store=revocation_store,
+        worker_event_repository=event_repo,
+        heartbeat_interval_seconds=1,
+        lease_ttl_seconds=20,
+    )
+    worker.run_forever(max_iterations=1)
+    assert "AAPL" in worker.owned_symbols
+    assert set(worker.owned_contracts) == {contract_a.contract_id, contract_b.contract_id}
+
+    revocation_store.revoke_contract(contract_a.contract_id, revision=2)
+    worker.run_forever(max_iterations=1)
+
+    assert "AAPL" in worker.owned_symbols
+    assert worker.owned_contracts == {contract_b.contract_id: contract_b}
+    assert any(event.event_type == "contract_revoked" for event in event_repo.events)
 
 
 def test_cli_live_controller_invokes_builder(monkeypatch, tmp_path: Path):

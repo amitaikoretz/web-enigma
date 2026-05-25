@@ -10,6 +10,7 @@ from app.live.control_flags import RedisControlFlagStore
 from app.live.controller import ContractsControllerService, HttpContractsApiClient, NoopWorkerScaler
 from app.live.leases import RedisLeaseStore
 from app.live.market_data import NoopMarketDataAdapter
+from app.live.revocation import RedisContractRevocationStore
 from app.live.persistence import (
     SqlAlchemyBrokerFillRepository,
     SqlAlchemyBrokerOrderRepository,
@@ -54,6 +55,13 @@ def build_live_worker(config: LiveTradingConfig, shard_id: int) -> WorkerRuntime
         assignment_store=assignment_store,
         lease_store=lease_store,
         control_flag_store=control_flag_store,
+        contracts_api_client=HttpContractsApiClient(
+            base_url=config.global_config.controller.contracts_api_base_url,
+        ),
+        revocation_store=RedisContractRevocationStore(
+            backend=backend,
+            key_prefix=config.global_config.redis.key_prefix,
+        ),
         worker_event_repository=SqlAlchemyWorkerEventRepository(session_factory),
         heartbeat_interval_seconds=config.global_config.redis.heartbeat_interval_seconds,
         lease_ttl_seconds=config.global_config.redis.lease_ttl_seconds,

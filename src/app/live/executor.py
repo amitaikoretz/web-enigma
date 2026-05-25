@@ -12,6 +12,8 @@ from urllib.request import Request, urlopen
 
 from app.config.models import AlpacaExecutionConfig, AlpacaTradingRunConfig
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyRuntimeSnapshot
+from app.strategies.auditor_logging import log_auditor_rejection
+from app.strategies.implementations import _benchmark_bars_as_of
 from app.strategies.registry import get_strategy_definition, resolve_warmup_bars
 
 
@@ -308,15 +310,34 @@ class AlpacaStrategyExecutor:
 
         self._sync_position_from_broker()
         position = self._position_for_history(complete_bars)
+        benchmark_symbol = str(self.run.strategy_params.get("benchmark_symbol", "")).strip().upper()
+        benchmark_bars: tuple[Bar, ...] | None = None
+        if benchmark_symbol:
+            raw_benchmark_bars = self.bar_source.get_recent_bars(
+                symbol=benchmark_symbol,
+                interval=self.run.interval,
+                feed=self.run.feed,
+                limit=self.warmup_bars + 2,
+            )
+            complete_benchmark_bars = tuple(bar for bar in raw_benchmark_bars if bar.is_complete)
+            benchmark_bars = _benchmark_bars_as_of(latest, complete_benchmark_bars) if complete_benchmark_bars else None
         context = StrategyContext(
             bar=latest,
             bars=tuple(complete_bars),
             position=position,
             symbol=self.run.symbol,
             equity=None,
+            benchmark_bars=benchmark_bars,
         )
         decision = self.core.on_bar(context)
         events: list[ExecutionEvent] = []
+
+        if decision.action == "hold" and decision.auditor_rejection:
+            log_auditor_rejection(
+                symbol=self.run.symbol,
+                timestamp=latest.iso_timestamp,
+                reason=decision.reason,
+            )
 
         if decision.action == "buy" and not position.is_open:
             order_id = self._client_order_id("buy", latest)

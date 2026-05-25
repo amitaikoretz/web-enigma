@@ -6,6 +6,7 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.strategies.core import StrategyDefinition
+from app.strategies.regime import resolve_regime_warmup_bars
 from app.strategies.implementations import (
     BreakoutChannelCore,
     BuyAndHoldCore,
@@ -97,11 +98,55 @@ class VolumeRallyParams(BaseModel):
     trail_atr_mult: float = Field(default=1.5, gt=0)
     max_hold_bars: int = Field(default=48, ge=1)
     cooldown_bars: int = Field(default=0, ge=0)
+    session_start_minutes: int = Field(default=0, ge=0)
+    session_end_minutes: int = Field(default=0, ge=0)
+    min_close_strength: float = Field(default=0.0, ge=0.0, le=1.0)
+    max_trades_per_session: int = Field(default=0, ge=0)
+    initial_sl_atr_mult: float = Field(default=0.0, ge=0.0)
+    breakeven_atr_mult: float = Field(default=0.0, ge=0.0)
+    stale_bars: int = Field(default=0, ge=0)
+    min_progress_atr: float = Field(default=0.5, ge=0.0)
+    min_confirmations: int = Field(
+        default=3,
+        ge=2,
+        le=6,
+        description=(
+            "Minimum entry confirmations. Volume spike and breakout are always required; "
+            "the remaining filters (VWAP, expansion, MACD, ADX) count toward this total. "
+            "6 requires all filters (legacy behavior)."
+        ),
+    )
+    volatility_regime_window: int = Field(
+        default=0,
+        ge=0,
+        description="Legacy: when > 0, enables regime gating and maps to regime_vol_window.",
+    )
+    volatility_regime_max_mult: float = Field(default=2.0, gt=0)
+    volatility_regime_min_mult: float = Field(default=0.5, gt=0)
+    regime_enabled: bool = Field(
+        default=False,
+        description="Enable market regime gating (trending/ranging/high_vol). Also enabled when volatility_regime_window > 0.",
+    )
+    regime_adx_min: float = Field(default=20.0, ge=0.0)
+    regime_sma_period: int = Field(default=20, ge=2)
+    regime_vol_window: int = Field(default=50, ge=2)
+    regime_vol_high_mult: float = Field(default=1.5, gt=0)
+    regime_confirmation_bars: int = Field(default=3, ge=1)
+    benchmark_symbol: str = Field(
+        default="",
+        description="Benchmark symbol for market regime filter (e.g. SPY). Empty disables the filter.",
+    )
+    benchmark_sma_period: int = Field(default=20, ge=2)
+    benchmark_adx_period: int = Field(default=14, ge=2)
+    benchmark_adx_min: float = Field(default=25.0, ge=0.0)
+    benchmark_require_above_sma: bool = Field(default=True)
 
     @model_validator(mode="after")
     def _validate_windows(self) -> "VolumeRallyParams":
         if self.macd_fast >= self.macd_slow:
             raise ValueError("macd_fast must be smaller than macd_slow")
+        if self.benchmark_symbol.strip() and not self.benchmark_require_above_sma and self.benchmark_adx_min <= 0:
+            raise ValueError("benchmark filter requires benchmark_require_above_sma or benchmark_adx_min > 0")
         return self
 
 
@@ -171,7 +216,12 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
     ),
     "volume_rally": StrategySpec(
         name="volume_rally",
-        description="Confirmed breakout/rally detector using session VWAP, volume, MACD, ADX entries and ATR exits.",
+        description=(
+            "Confirmed breakout/rally with tiered entry filters (volume + breakout required, "
+            "plus min_confirmations of VWAP/expansion/MACD/ADX), optional market-regime gating and "
+            "benchmark (SPY/QQQ) filters, and ATR exits. "
+            "Optional session window, close-strength filter, per-session trade cap, breakeven floor, and stale-trade exit."
+        ),
         params_model=VolumeRallyParams,
         factory=VolumeRallyCore,
         warmup_bars=lambda params: max(
@@ -180,6 +230,12 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
             int(params["atr_period"]),
             int(params["macd_slow"]) + int(params["macd_signal"]),
             int(params["adx_period"]) * 2,
+            resolve_regime_warmup_bars(params),
+            (
+                max(int(params["benchmark_sma_period"]), int(params["benchmark_adx_period"]) * 2)
+                if str(params.get("benchmark_symbol", "")).strip()
+                else 0
+            ),
         ),
     ),
 }

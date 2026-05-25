@@ -20,8 +20,8 @@ export const defaultPlatformSettings: PlatformSettings = {
     feed: 'iex',
     broker: {
       cash: 10000,
-      commission: 0.001,
-      slippage_perc: 0,
+      commission: 0,
+      slippage_perc: 0.0005,
       sizer: 'fixed',
     },
     analyzers: {

@@ -10,8 +10,8 @@ from app.strategies.registry import STRATEGY_REGISTRY, validate_strategy_params
 
 class BrokerConfig(BaseModel):
     cash: float = Field(default=10000.0, gt=0)
-    commission: float = Field(default=0.001, ge=0)
-    slippage_perc: float = Field(default=0.0, ge=0)
+    commission: float = Field(default=0.0, ge=0)
+    slippage_perc: float = Field(default=0.0005, ge=0)
     sizer: Literal["fixed"] = "fixed"
 
 

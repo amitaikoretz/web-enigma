@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: backtest
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: backtest
+    includeSelectors: false
+
+resources:
+  - namespace.yaml
+  - configmap-live.yaml
+  - job-migrate.yaml
+  - deployment-api.yaml
+  - service-api.yaml
+  - deployment-controller.yaml
+  - service-worker.yaml
+  - statefulset-workers.yaml
+  - cronjob-reconciler.yaml
+  - deployment-web.yaml
+  - service-web.yaml
+
+images:
+  - name: backtest-app
+    newName: backtest-app
+    newTag: latest
+  - name: backtest-web
+    newName: backtest-web
+    newTag: latest

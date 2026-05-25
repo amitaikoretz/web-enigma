@@ -1,0 +1,80 @@
+# volume_rally v2 core universe — 12-month validation (Jun 2025 – May 2026).
+# Same tuned params as volume_rally_v2_core_5m.yaml; longer window for sample size.
+#
+# Run:
+#   backtest run \
+#     --config experiments/volume_rally_v2_core_12m.yaml \
+#     --output /tmp/volume-rally-v2-core-12m.json
+
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 10000
+    commission: 0.0
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "5m": 315360000
+
+x-v2-core-params: &v2_core_params
+  stake: 10
+  volume_window: 20
+  volume_spike_mult: 2.8
+  breakout_lookback: 20
+  atr_period: 14
+  atr_expansion_mult: 0.5
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  adx_period: 14
+  adx_min: 25.0
+  sl_atr_mult: 1.5
+  tp_atr_mult: 4.0
+  trail_atr_mult: 2.5
+  max_hold_bars: 72
+  cooldown_bars: 20
+  session_start_minutes: 5
+  session_end_minutes: 360
+  min_close_strength: 0.50
+  max_trades_per_session: 1
+  initial_sl_atr_mult: 1.0
+  breakeven_atr_mult: 1.0
+  stale_bars: 12
+  min_progress_atr: 0.5
+
+x-v2-analyzers: &v2_analyzers
+  include_equity_curve: true
+  include_trade_log: true
+  include_order_log: true
+
+runs:
+  - run_id: "v2_core_12m_aapl_5m"
+    name: "AAPL volume_rally v2 core 12m"
+    start_date: "2025-06-01"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: AAPL, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *v2_core_params
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_core_12m_amd_5m"
+    name: "AMD volume_rally v2 core 12m"
+    start_date: "2025-06-01"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: AMD, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *v2_core_params
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_core_12m_msft_5m"
+    name: "MSFT volume_rally v2 core 12m"
+    start_date: "2025-06-01"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: MSFT, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *v2_core_params
+    analyzers: *v2_analyzers

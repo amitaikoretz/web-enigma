@@ -31,6 +31,8 @@ class TradingContract(Base):
     end_datetime: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     maximum_trade_size: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
     total_invested: Mapped[float] = mapped_column(Numeric(18, 8), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

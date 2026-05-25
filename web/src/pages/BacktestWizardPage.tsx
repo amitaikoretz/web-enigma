@@ -180,7 +180,7 @@ export function BacktestWizardPage() {
 
   const handleResolutionChange = (nextResolution: Resolution) => {
     setResolution(nextResolution)
-    setStrategyOverrides((current) => {
+    setStrategyOverrides((_current) => {
       const nextOverrides: Record<string, Record<string, unknown>> = {}
       for (const strategy of selectedStrategies) {
         nextOverrides[strategy.name] = buildStrategyParams(strategy, nextResolution)

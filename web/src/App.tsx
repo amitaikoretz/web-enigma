@@ -1,7 +1,9 @@
+import AssignmentIcon from '@mui/icons-material/Assignment'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import CloseIcon from '@mui/icons-material/Close'
 import InsightsIcon from '@mui/icons-material/Insights'
 import MenuIcon from '@mui/icons-material/Menu'
+import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
 import {
   AppBar,
@@ -24,10 +26,14 @@ import { useSettings } from './settings/useSettings'
 import { BacktestDetailPage } from './pages/BacktestDetailPage'
 import { BacktestsListPage } from './pages/BacktestsListPage'
 import { BacktestWizardPage } from './pages/BacktestWizardPage'
+import { ContractsPage } from './pages/ContractsPage'
+import { RuntimePage } from './pages/RuntimePage'
 import { SettingsPage } from './pages/SettingsPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
+  { label: 'Contracts', to: '/contracts', icon: <AssignmentIcon /> },
+  { label: 'Runtime', to: '/runtime', icon: <MonitorHeartIcon /> },
   { label: 'Chart', to: '/chart', icon: <BarChartIcon /> },
   { label: 'Settings', to: '/settings', icon: <SettingsSuggestIcon /> },
 ]
@@ -197,6 +203,8 @@ function App() {
           <Route path="/backtests" element={<BacktestsListPage />} />
           <Route path="/backtests/new" element={<BacktestWizardPage />} />
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
+          <Route path="/contracts" element={<ContractsPage />} />
+          <Route path="/runtime" element={<RuntimePage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </Container>

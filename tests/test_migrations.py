@@ -39,8 +39,11 @@ def test_alembic_upgrade_creates_trading_contracts_table(tmp_path):
         "end_datetime",
         "maximum_trade_size",
         "total_invested",
+        "revision",
+        "deleted_at",
         "created_at",
     }.issubset(columns)
+    assert "ix_trading_contracts_deleted_at" in indexes
     assert "ix_trading_contracts_symbol_strategy" in indexes
     assert "ix_trading_contracts_start_datetime" in indexes
     assert "ix_trading_contracts_end_datetime" in indexes
