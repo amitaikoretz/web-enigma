@@ -1,4 +1,5 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import ReplayIcon from '@mui/icons-material/Replay'
 import {
   Alert,
   Box,
@@ -7,6 +8,7 @@ import {
   Link,
   Paper,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
@@ -29,6 +31,7 @@ import {
   resolveReportAggregates,
 } from '../utils/backtestAggregates'
 import { formatInTimezone } from '../utils/datetime'
+import { hasPrefillableInputConfig } from '../utils/backtestConfigPrefill'
 
 function formatTimestamp(
   value: string,
@@ -141,6 +144,7 @@ export function BacktestDetailPage() {
   }, [backtestId, refreshIntervalMs])
 
   const report = detail?.report ?? null
+  const canRerun = hasPrefillableInputConfig(report?.input_config)
   const resolvedAggregates = useMemo(
     () => (report ? resolveReportAggregates(report) : null),
     [report],
@@ -194,7 +198,26 @@ export function BacktestDetailPage() {
               )}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Tooltip
+              title={
+                canRerun
+                  ? 'Open the wizard with this backtest configuration'
+                  : 'Available after the backtest completes and its configuration is saved.'
+              }
+            >
+              <span>
+                <Button
+                  component={RouterLink}
+                  to={`/backtests/new?from=${metadata.id}`}
+                  variant="outlined"
+                  startIcon={<ReplayIcon />}
+                  disabled={!canRerun}
+                >
+                  Re-run backtest
+                </Button>
+              </span>
+            </Tooltip>
             <BacktestStatusChip status={metadata.status} />
             {metadata.report_status && <ReportStatusChip status={metadata.report_status} />}
           </Stack>
