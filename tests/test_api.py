@@ -10,13 +10,19 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from app.api import create_app
+from app.api.live_runtime_deps import LiveRuntimeStores, get_live_runtime_stores
 from app.api_logging import build_timestamped_log_file
 from app.config.models import DataCacheConfig
 from app.db.base import Base
+from app.db.models import WorkerEvent
 from app.db.session import get_db_session
+from app.live.assignments import RedisAssignmentStore, get_shared_redis_backend, heartbeat_from_runtime
+from app.live.control_flags import RedisControlFlagStore
+from app.live.leases import RedisLeaseStore
+from app.live.models import LeaseAcquireRequest, RuntimeContractState
 from app.output.models import BacktestReport
 
 
@@ -78,6 +84,41 @@ def _build_contract_client(tmp_path) -> tuple[TestClient, sessionmaker[Session]]
 
     app.dependency_overrides[get_db_session] = override_db_session
     return TestClient(app), test_session_factory
+
+
+def _build_live_runtime_client(tmp_path) -> tuple[TestClient, sessionmaker[Session], LiveRuntimeStores]:
+    app = create_app(
+        DataCacheConfig(directory=str(tmp_path)),
+        output_dir=tmp_path / "api-results",
+        log_file=tmp_path / "api.log",
+    )
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    test_session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+
+    def override_db_session():
+        session = test_session_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    redis_url = f"memory://live-runtime-api-{id(tmp_path)}"
+    backend = get_shared_redis_backend(redis_url)
+    stores = LiveRuntimeStores(
+        assignment_store=RedisAssignmentStore(backend=backend, key_prefix="ta"),
+        lease_store=RedisLeaseStore(backend=backend, key_prefix="ta"),
+        control_flag_store=RedisControlFlagStore(backend=backend, key_prefix="ta"),
+    )
+
+    app.dependency_overrides[get_db_session] = override_db_session
+    app.dependency_overrides[get_live_runtime_stores] = lambda: stores
+    return TestClient(app), test_session_factory, stores
 
 
 def _csv_backtest_payload() -> dict[str, object]:
@@ -279,7 +320,7 @@ def test_run_backtest_write_failure_returns_500(tmp_path, monkeypatch):
     def fail_write(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr("app.api.write_backtest_report_json", fail_write)
+    monkeypatch.setattr("app.api.routes.backtests_run.write_backtest_report_json", fail_write)
 
     response = client.post(
         "/backtests/run",
@@ -753,7 +794,7 @@ def test_run_single_day_backtest_returns_bars_when_backtest_fails(tmp_path, monk
     monkeypatch.setenv("ALPACA_API_KEY", "k")
     monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
     monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
-    monkeypatch.setattr("app.api.run_backtests", fake_run_backtests)
+    monkeypatch.setattr("app.api.routes.backtests_run.run_backtests", fake_run_backtests)
     client = _build_client(tmp_path)
 
     response = client.post("/backtests/single-day", json=_single_day_request())
@@ -763,6 +804,56 @@ def test_run_single_day_backtest_returns_bars_when_backtest_fails(tmp_path, monk
     assert len(body["bars"]) == 3
     assert body["backtest"]["status"] == "failed"
     assert body["backtest"]["error"]["message"] == "simulated failure"
+
+
+def test_list_trading_contracts_returns_all_ordered_and_filters(tmp_path):
+    client, _ = _build_contract_client(tmp_path)
+    payloads = [
+        {
+            "symbol": "AAPL",
+            "strategy": "sma_cross",
+            "strategy_params": {"fast": 5, "slow": 10},
+            "start_datetime": "2026-05-24T10:00:00+00:00",
+            "end_datetime": "2026-05-24T16:00:00+00:00",
+            "maximum_trade_size": 1000,
+            "total_invested": 2500,
+        },
+        {
+            "symbol": "MSFT",
+            "strategy": "rsi_reversion",
+            "strategy_params": {"period": 7, "oversold": 30, "overbought": 70},
+            "start_datetime": "2026-05-24T14:00:00+00:00",
+            "end_datetime": "2026-05-24T20:00:00+00:00",
+            "maximum_trade_size": 2000,
+            "total_invested": 3000,
+        },
+        {
+            "symbol": "AAPL",
+            "strategy": "buy_and_hold",
+            "strategy_params": {"stake": 1},
+            "start_datetime": "2026-05-24T05:00:00+00:00",
+            "end_datetime": "2026-05-24T12:00:00+00:00",
+            "maximum_trade_size": 500,
+            "total_invested": 900,
+        },
+    ]
+    for payload in payloads:
+        create_response = client.post("/trading-contracts", json=payload)
+        assert create_response.status_code == 201
+
+    response = client.get("/trading-contracts")
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["symbol"] for item in body] == ["MSFT", "AAPL", "AAPL"]
+    assert [item["strategy"] for item in body] == ["rsi_reversion", "sma_cross", "buy_and_hold"]
+
+    symbol_response = client.get("/trading-contracts", params={"symbol": "aapl"})
+    assert symbol_response.status_code == 200
+    assert [item["strategy"] for item in symbol_response.json()] == ["sma_cross", "buy_and_hold"]
+
+    strategy_response = client.get("/trading-contracts", params={"strategy": "rsi_reversion"})
+    assert strategy_response.status_code == 200
+    assert [item["symbol"] for item in strategy_response.json()] == ["MSFT"]
 
 
 def test_get_active_trading_contracts_excludes_end_boundary(tmp_path):
@@ -785,3 +876,207 @@ def test_get_active_trading_contracts_excludes_end_boundary(tmp_path):
     response = client.get("/trading-contracts/active", params={"active_at": "2026-05-24T16:00:00+00:00"})
     assert response.status_code == 200
     assert response.json() == []
+
+
+def _create_sample_contract(client, *, symbol: str = "AAPL", strategy: str = "sma_cross") -> dict:
+    response = client.post(
+        "/trading-contracts",
+        json={
+            "symbol": symbol,
+            "strategy": strategy,
+            "strategy_params": {"fast": 5, "slow": 10} if strategy == "sma_cross" else {"stake": 1},
+            "start_datetime": "2026-05-24T10:00:00+00:00",
+            "end_datetime": "2026-05-24T16:00:00+00:00",
+            "maximum_trade_size": 1000,
+            "total_invested": 2500,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_update_trading_contract_bumps_revision_and_invalidates_assignments(tmp_path, monkeypatch):
+    from app.contract_mutations import reset_contract_mutation_service
+    from app.live.assignments import get_shared_redis_backend
+
+    monkeypatch.setenv("LIVE_REDIS_URL", "memory://api-update-contract")
+    reset_contract_mutation_service()
+    client, _ = _build_contract_client(tmp_path)
+    created = _create_sample_contract(client)
+    backend = get_shared_redis_backend("memory://api-update-contract")
+
+    response = client.patch(
+        f"/trading-contracts/{created['id']}",
+        json={"maximum_trade_size": 1500, "total_invested": 3000},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["maximum_trade_size"] == 1500
+    assert body["total_invested"] == 3000
+    assert body["revision"] == 2
+    assert backend.get("ta:control:revoked:contract:" + created["id"]) is not None
+    assert int(backend.get("ta:assignments:version")) >= 1
+
+
+def test_delete_trading_contract_soft_deletes_and_bumps_assignments(tmp_path, monkeypatch):
+    from app.contract_mutations import reset_contract_mutation_service
+    from app.live.assignments import get_shared_redis_backend
+
+    monkeypatch.setenv("LIVE_REDIS_URL", "memory://api-delete-contract")
+    reset_contract_mutation_service()
+    client, _ = _build_contract_client(tmp_path)
+    created = _create_sample_contract(client)
+    backend = get_shared_redis_backend("memory://api-delete-contract")
+
+    delete_response = client.delete(f"/trading-contracts/{created['id']}")
+    assert delete_response.status_code == 200
+    deleted_body = delete_response.json()
+    assert deleted_body["deleted_at"] is not None
+    assert deleted_body["revision"] == 2
+
+    list_response = client.get("/trading-contracts")
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+
+    active_response = client.get(
+        "/trading-contracts/active",
+        params={"active_at": "2026-05-24T12:00:00+00:00"},
+    )
+    assert active_response.status_code == 200
+    assert active_response.json() == []
+
+    second_delete = client.delete(f"/trading-contracts/{created['id']}")
+    assert second_delete.status_code == 404
+    assert backend.get("ta:control:revoked:contract:" + created["id"]) is not None
+
+
+def test_update_deleted_trading_contract_returns_not_found(tmp_path, monkeypatch):
+    from app.contract_mutations import reset_contract_mutation_service
+
+    monkeypatch.setenv("LIVE_REDIS_URL", "memory://api-update-deleted")
+    reset_contract_mutation_service()
+    client, _ = _build_contract_client(tmp_path)
+    created = _create_sample_contract(client)
+    assert client.delete(f"/trading-contracts/{created['id']}").status_code == 200
+
+    response = client.patch(
+        f"/trading-contracts/{created['id']}",
+        json={"maximum_trade_size": 1200},
+    )
+    assert response.status_code == 404
+
+
+def test_get_live_runtime_returns_redis_state_and_postgres_events(tmp_path):
+    client, session_factory, stores = _build_live_runtime_client(tmp_path)
+    now = datetime.now(UTC)
+
+    stores.assignment_store.publish_assignments(2, {0: {"AAPL@1m"}, 1: {"MSFT@1m"}})
+    stores.assignment_store.set_worker_heartbeat(
+        heartbeat_from_runtime(
+            worker_id="worker-0",
+            pod_name="pod-0",
+            shard_id=0,
+            status=RuntimeContractState.TRADABLE,
+            owned_symbol_count=1,
+            updated_at=now,
+        )
+    )
+    stores.lease_store.acquire_symbol_lease(
+        LeaseAcquireRequest(
+            worker_id="worker-0",
+            pod_name="pod-0",
+            shard_id=0,
+            symbol_key="AAPL@1m",
+            assignment_version=2,
+            leased_at=now,
+            expires_at=now + timedelta(minutes=5),
+        )
+    )
+    stores.control_flag_store.backend.set("ta:control:kill_switch", '{"enabled": true}')
+    stores.control_flag_store.backend.set('ta:control:pause:symbol:AAPL@1m', '{"enabled": true}')
+
+    with session_factory() as session:
+        session.add(
+            WorkerEvent(
+                worker_id="controller",
+                event_type="controller_sync",
+                severity="info",
+                payload={"assignment_version": 2},
+                created_at=now - timedelta(minutes=1),
+            )
+        )
+        session.add(
+            WorkerEvent(
+                worker_id="worker-0",
+                shard_id=0,
+                symbol_key="AAPL@1m",
+                event_type="lease_acquired",
+                severity="info",
+                payload={"symbol_key": "AAPL@1m"},
+                created_at=now,
+            )
+        )
+        session.add(
+            WorkerEvent(
+                worker_id="reconciler",
+                event_type="reconciliation_run",
+                severity="info",
+                payload={"status": "completed"},
+                created_at=now - timedelta(minutes=2),
+            )
+        )
+        session.commit()
+
+    response = client.get("/live/runtime")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["state"]["assignment_version"] == 2
+    assert body["state"]["assignments"] == [
+        {"shard_id": 0, "symbol_keys": ["AAPL@1m"]},
+        {"shard_id": 1, "symbol_keys": ["MSFT@1m"]},
+    ]
+    assert len(body["state"]["workers"]) == 1
+    assert body["state"]["workers"][0]["worker_id"] == "worker-0"
+    assert body["state"]["workers"][0]["status"] == "tradable"
+    assert len(body["state"]["leases"]) == 1
+    assert body["state"]["leases"][0]["symbol_key"] == "AAPL@1m"
+    assert body["state"]["control_flags"]["kill_switch_enabled"] is True
+    assert body["state"]["control_flags"]["paused_symbols"] == ["AAPL@1m"]
+
+    assert len(body["events"]) == 3
+    assert body["events"][0]["event_type"] == "lease_acquired"
+    assert body["events"][1]["event_type"] == "controller_sync"
+    assert body["events"][2]["event_type"] == "reconciliation_run"
+
+
+def test_get_live_runtime_filters_events_by_worker_id(tmp_path):
+    client, session_factory, _stores = _build_live_runtime_client(tmp_path)
+    now = datetime.now(UTC)
+
+    with session_factory() as session:
+        session.add(
+            WorkerEvent(
+                worker_id="controller",
+                event_type="controller_sync",
+                severity="info",
+                payload={},
+                created_at=now,
+            )
+        )
+        session.add(
+            WorkerEvent(
+                worker_id="worker-0",
+                event_type="worker_started",
+                severity="info",
+                payload={},
+                created_at=now - timedelta(seconds=1),
+            )
+        )
+        session.commit()
+
+    response = client.get("/live/runtime", params={"worker_id": "controller", "limit": 10})
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["events"]) == 1
+    assert body["events"][0]["worker_id"] == "controller"

@@ -13,6 +13,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 
 from app.api import app as fastapi_app
 from app.api_logging import DEFAULT_LOG_DIR, build_timestamped_log_file, configure_api_logging
+from app.strategies.auditor_logging import configure_strategy_logging
 from app.config.models import AlpacaTradingConfig, BacktestConfig, LiveTradingConfig
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
 from app.live.executor import build_alpaca_executor
@@ -55,6 +56,8 @@ def _cmd_run(
     except (ValueError, ValidationError) as exc:
         print(f"Config validation failed: {exc}")
         return 2
+
+    configure_strategy_logging()
 
     with Progress(
         SpinnerColumn(),

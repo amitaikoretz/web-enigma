@@ -2,6 +2,57 @@ export type BacktestJobStatus = 'pending' | 'running' | 'completed' | 'failed'
 export type BacktestReportStatus = 'success' | 'partial_failure' | 'failure'
 export type BacktestFeed = 'iex' | 'sip' | 'otc'
 
+export interface HistogramBin {
+  start: number
+  end: number
+  count: number
+  label: string | null
+}
+
+export interface TradeDistribution {
+  hold_time_bins: HistogramBin[]
+  hold_time_unit: 'minutes' | 'bars'
+  size_bins: HistogramBin[]
+  size_value_bins: HistogramBin[] | null
+}
+
+export interface TradeDiagnostics {
+  net_pnl: number
+  gross_pnl: number
+  total_commission: number
+  commission_pct_of_gross: number | null
+  profit_factor: number | null
+  expectancy: number | null
+  avg_win: number | null
+  avg_loss: number | null
+  payoff_ratio: number | null
+  win_rate_pct: number | null
+  median_hold_minutes: number | null
+  mean_hold_minutes: number | null
+  best_trade_pnl: number | null
+  worst_trade_pnl: number | null
+  exit_reason_counts: Record<string, number>
+  exit_reason_pnl: Record<string, number>
+  dominant_exit_reason: string | null
+  distributions: TradeDistribution | null
+}
+
+export interface FilterDiagnostics {
+  rejection_counts: Record<string, number>
+  total_rejections: number
+  signal_to_trade_pct: number | null
+}
+
+export interface RiskMetrics {
+  sortino_ratio: number | null
+  calmar_ratio: number | null
+  buy_hold_return_pct: number | null
+  alpha_vs_buy_hold_pct: number | null
+  exposure_time_pct: number | null
+  avg_drawdown_pct: number | null
+  max_drawdown_duration: string | null
+}
+
 export interface BacktestRunSummary {
   start_value: number
   end_value: number
@@ -11,6 +62,9 @@ export interface BacktestRunSummary {
   total_trades: number
   won_trades: number
   lost_trades: number
+  trade_diagnostics?: TradeDiagnostics | null
+  filter_diagnostics?: FilterDiagnostics | null
+  risk_metrics?: RiskMetrics | null
 }
 
 export interface BacktestRunError {
@@ -35,6 +89,16 @@ export interface BacktestTradeRecord {
   value: number
   pnl: number
   pnlcomm: number
+  reason?: string | null
+  entry_datetime?: string | null
+  hold_minutes?: number | null
+  hold_bars?: number | null
+}
+
+export interface BacktestRejectionRecord {
+  datetime: string | null
+  symbol: string | null
+  reason: string | null
 }
 
 export interface BacktestRunResult {
@@ -48,7 +112,39 @@ export interface BacktestRunResult {
   analyzers: Record<string, unknown>
   orders: BacktestOrderRecord[]
   trades: BacktestTradeRecord[]
+  rejections?: BacktestRejectionRecord[]
   error: BacktestRunError | null
+}
+
+export interface EquityPoint {
+  datetime: string
+  value: number
+}
+
+export interface StrategyAggregate {
+  strategy: string
+  symbols: string[]
+  run_ids: string[]
+  successful_runs: number
+  failed_runs: number
+  summary: BacktestRunSummary
+  equity_curve: EquityPoint[]
+}
+
+export interface PortfolioAggregate {
+  total_net_pnl: number
+  total_trades: number
+  won_trades: number
+  lost_trades: number
+  win_rate_pct: number | null
+  combined_return_pct: number | null
+  best_run_id: string | null
+  worst_run_id: string | null
+}
+
+export interface ReportAggregates {
+  portfolio: PortfolioAggregate | null
+  by_strategy: StrategyAggregate[]
 }
 
 export interface BacktestReport {
@@ -62,6 +158,7 @@ export interface BacktestReport {
   failed_runs: number
   status: BacktestReportStatus
   results: BacktestRunResult[]
+  aggregates?: ReportAggregates | null
 }
 
 export interface BacktestSelectionSummary {
@@ -128,4 +225,12 @@ export interface BacktestCreateRequest {
   execution?: {
     fill_model: 'close' | 'next_bar'
   }
+}
+
+export interface BacktestPortfolioSummary {
+  total_net_pnl: number
+  total_trades: number
+  won_trades: number
+  lost_trades: number
+  win_rate_pct: number | null
 }

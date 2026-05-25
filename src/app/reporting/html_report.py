@@ -39,6 +39,14 @@ def _build_view_model(report: BacktestReport) -> dict[str, Any]:
     total_trades = sum((r.summary.total_trades for r in successful if r.summary is not None), start=0)
     won_trades = sum((r.summary.won_trades for r in successful if r.summary is not None), start=0)
     lost_trades = sum((r.summary.lost_trades for r in successful if r.summary is not None), start=0)
+    portfolio_net_pnl = sum(
+        (
+            (r.summary.trade_diagnostics.net_pnl if r.summary and r.summary.trade_diagnostics else 0.0)
+            for r in successful
+            if r.summary is not None
+        ),
+        start=0.0,
+    )
 
     run_cards: list[dict[str, Any]] = []
     for run in report.results:
@@ -47,6 +55,11 @@ def _build_view_model(report: BacktestReport) -> dict[str, Any]:
             "equity_curve": [p.model_dump() for p in run.equity_curve],
             "orders": [o.model_dump() for o in run.orders],
             "trades": [t.model_dump() for t in run.trades],
+            "rejections": [r.model_dump() for r in run.rejections],
+            "analyzers": run.analyzers,
+            "trade_diagnostics": None if summary is None or summary.trade_diagnostics is None else summary.trade_diagnostics.model_dump(),
+            "filter_diagnostics": None if summary is None or summary.filter_diagnostics is None else summary.filter_diagnostics.model_dump(),
+            "risk_metrics": None if summary is None or summary.risk_metrics is None else summary.risk_metrics.model_dump(),
         }
         timestamps = _extract_timestamps(run_dict)
         run_cards.append(
@@ -93,6 +106,7 @@ def _build_view_model(report: BacktestReport) -> dict[str, Any]:
             "won_trades": won_trades,
             "lost_trades": lost_trades,
             "win_rate_pct": (won_trades / total_trades * 100.0) if total_trades else None,
+            "portfolio_net_pnl": portfolio_net_pnl if len(successful) > 1 else None,
             "failed_run_ids": [r.run_id for r in failed],
         },
         "runs": run_cards,
@@ -139,6 +153,11 @@ def _render_html(view: dict[str, Any], title: str) -> str:
     .chip.status-success {{ background-color: #dcedc8; color: #33691e; }}
     .chip.status-failed {{ background-color: #ffcdd2; color: #b71c1c; }}
     table.striped > tbody > tr:nth-child(odd) {{ background-color: rgba(0, 150, 136, 0.06); }}
+    .histogram-row {{ display: grid; grid-template-columns: 120px 1fr 40px; gap: 10px; align-items: center; margin: 8px 0; }}
+    .histogram-track {{ background: #eceff1; border-radius: 6px; height: 16px; overflow: hidden; }}
+    .histogram-fill {{ background: #00897b; height: 100%; min-width: 4px; }}
+    .histogram-section {{ margin-top: 18px; }}
+    .histogram-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }}
   </style>
 </head>
 <body>
@@ -208,6 +227,9 @@ def _render_html(view: dict[str, Any], title: str) -> str:
             </thead>
             <tbody id="run-metrics-body"></tbody>
           </table>
+          <div id="run-distributions" class="histogram-section"></div>
+          <div id="run-exit-reasons" class="histogram-section"></div>
+          <div id="run-filter-funnel" class="histogram-section"></div>
         </div>
       </div>
       <div id="tab-orders" class="col s12">
@@ -275,6 +297,9 @@ def _render_html(view: dict[str, Any], title: str) -> str:
         metricCard("Worst Return", fmtPct(a.worst_return_pct)),
         metricCard("Avg Drawdown", fmtPct(a.avg_drawdown_pct)),
         metricCard("Total Trades", fmtNumber(a.total_trades, 0)),
+        a.portfolio_net_pnl !== null && a.portfolio_net_pnl !== undefined
+          ? metricCard("Portfolio Net PnL", fmtNumber(a.portfolio_net_pnl, 2))
+          : "",
       ].join("");
     }}
 
@@ -468,7 +493,42 @@ def _render_html(view: dict[str, Any], title: str) -> str:
     }}
 
 
+    function renderHistogramSection(title, bins) {{
+      if (!bins || !bins.length) {{
+        return `<div><h6>${{title}}</h6><p class="small-note">No data.</p></div>`;
+      }}
+      const maxCount = Math.max(...bins.map(b => b.count || 0), 1);
+      const rows = bins.map(bin => {{
+        const label = bin.label || `${{bin.start}}-${{bin.end}}`;
+        const width = ((bin.count || 0) / maxCount) * 100;
+        return `
+          <div class="histogram-row">
+            <div>${{escapeHtml(label)}}</div>
+            <div class="histogram-track"><div class="histogram-fill" style="width:${{width}}%"></div></div>
+            <div>${{bin.count || 0}}</div>
+          </div>`;
+      }}).join("");
+      return `<div><h6>${{title}}</h6>${{rows}}</div>`;
+    }}
+
+    function renderKeyValueTable(title, rows) {{
+      if (!rows.length) return "";
+      return `
+        <div class="histogram-section">
+          <h6>${{title}}</h6>
+          <table class="striped responsive-table">
+            <thead><tr><th>Key</th><th>Value</th></tr></thead>
+            <tbody>
+              ${{rows.map(([k, v]) => `<tr><td>${{escapeHtml(k)}}</td><td>${{v}}</td></tr>`).join("")}}
+            </tbody>
+          </table>
+        </div>`;
+    }}
+
     function renderRunMetricsTable(run) {{
+      const td = run.trade_diagnostics || {{}};
+      const fd = run.filter_diagnostics || {{}};
+      const rm = run.risk_metrics || {{}};
       const rows = [
         ["Run ID", fmtRaw(run.run_id)],
         ["Name", fmtRaw(run.name)],
@@ -485,6 +545,20 @@ def _render_html(view: dict[str, Any], title: str) -> str:
         ["Total Trades", fmtNumber(run.total_trades, 0)],
         ["Won Trades", fmtNumber(run.won_trades, 0)],
         ["Lost Trades", fmtNumber(run.lost_trades, 0)],
+        ["Net PnL", fmtNumber(td.net_pnl, 2)],
+        ["Gross PnL", fmtNumber(td.gross_pnl, 2)],
+        ["Commission", fmtNumber(td.total_commission, 2)],
+        ["Profit Factor", fmtNumber(td.profit_factor, 3)],
+        ["Expectancy", fmtNumber(td.expectancy, 2)],
+        ["Win Rate (%)", fmtPct(td.win_rate_pct)],
+        ["Median Hold (min)", fmtNumber(td.median_hold_minutes, 1)],
+        ["Sortino Ratio", fmtNumber(rm.sortino_ratio, 3)],
+        ["Calmar Ratio", fmtNumber(rm.calmar_ratio, 3)],
+        ["Buy & Hold Return (%)", fmtPct(rm.buy_hold_return_pct)],
+        ["Alpha vs Buy & Hold (%)", fmtPct(rm.alpha_vs_buy_hold_pct)],
+        ["Exposure Time (%)", fmtPct(rm.exposure_time_pct)],
+        ["Signal-to-Trade (%)", fmtPct(fd.signal_to_trade_pct)],
+        ["Auditor Rejections", fmtNumber(fd.total_rejections, 0)],
       ];
       const body = document.getElementById("run-metrics-body");
       body.innerHTML = rows.map(([k, v]) => `
@@ -493,6 +567,23 @@ def _render_html(view: dict[str, Any], title: str) -> str:
           <td>${{v}}</td>
         </tr>
       `).join("");
+
+      const distributions = (td.distributions) || {{}};
+      document.getElementById("run-distributions").innerHTML = `
+        <h6>Trade Distributions</h6>
+        <div class="histogram-grid">
+          ${{renderHistogramSection("Hold Time", distributions.hold_time_bins || [])}}
+          ${{renderHistogramSection("Trade Size", distributions.size_bins || [])}}
+        </div>`;
+
+      const exitRows = Object.entries(td.exit_reason_counts || {{}}).map(([reason, count]) => [
+        reason,
+        `${{count}} / PnL ${{fmtNumber((td.exit_reason_pnl || {{}})[reason], 2)}}`,
+      ]);
+      document.getElementById("run-exit-reasons").innerHTML = renderKeyValueTable("Exit Reasons", exitRows);
+
+      const filterRows = Object.entries(fd.rejection_counts || {{}}).map(([reason, count]) => [reason, fmtNumber(count, 0)]);
+      document.getElementById("run-filter-funnel").innerHTML = renderKeyValueTable("Filter Funnel", filterRows);
     }}
 
     function renderRun(run) {{
@@ -543,7 +634,7 @@ def _render_html(view: dict[str, Any], title: str) -> str:
             <td>${{fmtNumber(t.value, 2)}}</td>
             <td>${{fmtNumber(t.pnl, 2)}}</td>
             <td>${{fmtNumber(t.pnlcomm, 2)}}</td>
-            <td>${{pickTradeType(t)}}</td>
+            <td>${{fmtRaw(t.reason || pickTradeType(t))}} / hold ${{fmtNumber(t.hold_minutes, 1)}}m</td>
           </tr>`).join("")
         : `<tr><td colspan="7">No trade data for this run.</td></tr>`;
     }}

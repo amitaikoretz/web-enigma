@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import time
-from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Protocol
 from urllib.parse import urlencode
@@ -11,6 +9,12 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from app.live.assignments import AssignmentStore
+from app.live.assignment_publisher import (
+    compute_assignments,
+    compute_shard_id,
+    group_contracts_by_symbol,
+    publish_assignments_for_contracts,
+)
 from app.live.models import ControllerSyncResult, SessionPhase, TradingContractSnapshot, WorkerEventCreate, WorkerEventSeverity
 from app.live.persistence import WorkerEventRepository
 from app.live.session import SessionCalendar
@@ -92,11 +96,13 @@ class ContractsControllerService:
         now = active_at or datetime.now(UTC)
         phase = self.session_calendar.get_phase(now)
         contracts = self.contracts_api_client.get_active_contracts(active_at=now)
-        grouped = _group_contracts_by_symbol(contracts)
-        assignments = _compute_assignments(grouped.keys(), self.shard_count)
-        current_version = self.assignment_store.get_assignment_version()
-        next_version = current_version + 1
-        self.assignment_store.publish_assignments(next_version, assignments)
+        grouped = group_contracts_by_symbol(contracts)
+        assignments = compute_assignments(grouped.keys(), self.shard_count)
+        next_version = publish_assignments_for_contracts(
+            self.assignment_store,
+            contracts,
+            self.shard_count,
+        )
         desired_replicas = 0 if phase is SessionPhase.CLOSED else self.scale_up_replicas
         self.worker_scaler.scale_to(desired_replicas)
         self._record_event(
@@ -141,22 +147,3 @@ class ContractsControllerService:
                 payload=payload,
             )
         )
-
-
-def _group_contracts_by_symbol(contracts: list[TradingContractSnapshot]) -> dict[str, list[TradingContractSnapshot]]:
-    grouped: dict[str, list[TradingContractSnapshot]] = defaultdict(list)
-    for contract in contracts:
-        grouped[contract.symbol_key].append(contract)
-    return grouped
-
-
-def compute_shard_id(symbol_key: str, shard_count: int) -> int:
-    digest = hashlib.sha256(symbol_key.encode("utf-8")).hexdigest()
-    return int(digest[:8], 16) % shard_count
-
-
-def _compute_assignments(symbol_keys: object, shard_count: int) -> dict[int, set[str]]:
-    assignments = {shard_id: set() for shard_id in range(shard_count)}
-    for symbol_key in sorted(symbol_keys):
-        assignments[compute_shard_id(str(symbol_key), shard_count)].add(str(symbol_key))
-    return assignments

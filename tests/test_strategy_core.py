@@ -1,22 +1,34 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
-from app.strategies.core import Bar, PositionState, StrategyContext
+import numpy as np
+
+from app.strategies.core import Bar, PositionState, StrategyContext, StrategyDecision
 from app.strategies.implementations import (
     BreakoutChannelCore,
     BuyAndHoldCore,
     BuyOcoAtrTpSlCore,
     BuyOcoAtrTpTrailingCore,
     RsiReversionCore,
+    SESSION_CLOSE_REASON,
     SmaCrossCore,
     VolumeRallyCore,
+    _close_strength,
+    _in_session_window,
+    _is_last_bar_of_session,
+    _is_new_session,
+    _minutes_since_rth_open,
     _session_vwap,
+    _volume_rally_entry_signal,
+    _benchmark_regime_ok,
 )
 from app.strategies.registry import validate_strategy_params
 
 
 BASE_TS = datetime(2024, 1, 1, tzinfo=UTC)
+US_EASTERN = ZoneInfo("America/New_York")
 
 
 def _bars(closes: list[float], highs: list[float] | None = None, lows: list[float] | None = None) -> list[Bar]:
@@ -35,8 +47,17 @@ def _bars(closes: list[float], highs: list[float] | None = None, lows: list[floa
     ]
 
 
-def _context(bars: list[Bar], position: PositionState | None = None) -> StrategyContext:
-    return StrategyContext(bar=bars[-1], bars=tuple(bars), position=position or PositionState())
+def _context(
+    bars: list[Bar],
+    position: PositionState | None = None,
+    benchmark_bars: list[Bar] | None = None,
+) -> StrategyContext:
+    return StrategyContext(
+        bar=bars[-1],
+        bars=tuple(bars),
+        position=position or PositionState(),
+        benchmark_bars=tuple(benchmark_bars) if benchmark_bars else None,
+    )
 
 
 def test_sma_cross_core_buy_signal_after_warmup():
@@ -213,6 +234,260 @@ def test_volume_rally_core_requires_adx_threshold():
     assert decision.action == "hold"
 
 
+def test_volume_rally_entry_signal_requires_volume_and_breakout():
+    assert _volume_rally_entry_signal(
+        volume_ok=False,
+        breakout_ok=True,
+        vwap_ok=True,
+        expansion_ok=True,
+        macd_ok=True,
+        adx_ok=True,
+        min_confirmations=2,
+    ) is False
+    assert _volume_rally_entry_signal(
+        volume_ok=True,
+        breakout_ok=False,
+        vwap_ok=True,
+        expansion_ok=True,
+        macd_ok=True,
+        adx_ok=True,
+        min_confirmations=2,
+    ) is False
+
+
+def test_volume_rally_entry_signal_tiered_optional_filters():
+    assert _volume_rally_entry_signal(
+        volume_ok=True,
+        breakout_ok=True,
+        vwap_ok=True,
+        expansion_ok=True,
+        macd_ok=True,
+        adx_ok=False,
+        min_confirmations=6,
+    ) is False
+    assert _volume_rally_entry_signal(
+        volume_ok=True,
+        breakout_ok=True,
+        vwap_ok=True,
+        expansion_ok=True,
+        macd_ok=True,
+        adx_ok=False,
+        min_confirmations=4,
+    ) is True
+    assert _volume_rally_entry_signal(
+        volume_ok=True,
+        breakout_ok=True,
+        vwap_ok=False,
+        expansion_ok=False,
+        macd_ok=True,
+        adx_ok=True,
+        min_confirmations=4,
+    ) is True
+
+
+def test_volume_rally_tiered_confirmation_allows_entry_when_one_optional_fails():
+    core = VolumeRallyCore(_volume_rally_params(adx_min=101.0, min_confirmations=4))
+    bars = _bars(
+        [10, 10.5, 11, 11.4, 11.7, 12.4],
+        highs=[10.2, 10.7, 11.1, 11.5, 11.8, 12.6],
+        lows=[9.8, 10.2, 10.7, 11.0, 11.3, 11.8],
+    )
+    bars[-1] = Bar(
+        timestamp=bars[-1].timestamp,
+        open=11.8,
+        high=12.6,
+        low=11.8,
+        close=12.4,
+        volume=3000.0,
+    )
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "buy"
+    assert decision.reason == "confirmed_breakout"
+
+
+def test_volume_rally_tiered_confirmation_still_requires_volume_spike():
+    core = VolumeRallyCore(_volume_rally_params(min_confirmations=2))
+    bars = _bars(
+        [10, 10.5, 11, 11.4, 11.7, 12.4],
+        highs=[10.2, 10.7, 11.1, 11.5, 11.8, 12.6],
+        lows=[9.8, 10.2, 10.7, 11.0, 11.3, 11.8],
+    )
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "hold"
+
+
+    params = validate_strategy_params(
+        "volume_rally",
+        {"benchmark_symbol": "", "benchmark_sma_period": 2, "benchmark_adx_period": 2},
+    )
+    assert _benchmark_regime_ok(_context(_bars([10, 11, 12])), params) is True
+
+
+def test_benchmark_regime_requires_above_sma():
+    params = validate_strategy_params(
+        "volume_rally",
+        {
+            "benchmark_symbol": "SPY",
+            "benchmark_sma_period": 2,
+            "benchmark_adx_period": 2,
+            "benchmark_adx_min": 0,
+            "benchmark_require_above_sma": True,
+        },
+    )
+    benchmark_bars = _bars([100, 101, 99])
+    assert _benchmark_regime_ok(_context(_bars([10, 11, 12]), benchmark_bars=benchmark_bars), params) is False
+    benchmark_bars = _bars([100, 101, 102])
+    assert _benchmark_regime_ok(_context(_bars([10, 11, 12]), benchmark_bars=benchmark_bars), params) is True
+
+
+def test_benchmark_regime_allows_adx_when_below_sma():
+    params = validate_strategy_params(
+        "volume_rally",
+        {
+            "benchmark_symbol": "SPY",
+            "benchmark_sma_period": 2,
+            "benchmark_adx_period": 2,
+            "benchmark_adx_min": 10.0,
+            "benchmark_require_above_sma": True,
+        },
+    )
+    benchmark_bars = _bars(
+        [100, 102, 104, 106, 108, 107],
+        highs=[101, 103, 105, 107, 109, 108],
+        lows=[99, 101, 103, 105, 107, 106],
+    )
+    assert _benchmark_regime_ok(_context(_bars([10, 11, 12]), benchmark_bars=benchmark_bars), params) is True
+
+
+def _volume_rally_breakout_bars() -> list[Bar]:
+    bars = _bars(
+        [10, 10.5, 11, 11.4, 11.7, 12.4],
+        highs=[10.2, 10.7, 11.1, 11.5, 11.8, 12.6],
+        lows=[9.8, 10.2, 10.7, 11.0, 11.3, 11.8],
+    )
+    bars[-1] = Bar(
+        timestamp=bars[-1].timestamp,
+        open=11.8,
+        high=12.6,
+        low=11.8,
+        close=12.4,
+        volume=3000.0,
+    )
+    return bars
+
+
+def test_volume_rally_core_blocks_entry_on_high_vol_regime():
+    core = VolumeRallyCore(
+        _volume_rally_params(
+            min_confirmations=4,
+            regime_enabled=True,
+            regime_vol_window=4,
+            regime_vol_high_mult=1.1,
+            regime_sma_period=3,
+            regime_confirmation_bars=1,
+            adx_period=2,
+        )
+    )
+    bars = _volume_rally_breakout_bars()
+    bars[-1] = Bar(
+        timestamp=bars[-1].timestamp,
+        open=11.8,
+        high=20.6,
+        low=11.8,
+        close=12.4,
+        volume=3000.0,
+    )
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "hold"
+    assert decision.reason == "regime_high_vol"
+    assert decision.auditor_rejection is True
+
+
+def test_volume_rally_core_blocks_entry_on_ranging_regime():
+    core = VolumeRallyCore(
+        _volume_rally_params(
+            min_confirmations=4,
+            regime_enabled=True,
+            regime_adx_min=100.0,
+            regime_sma_period=3,
+            regime_confirmation_bars=1,
+            adx_period=2,
+        )
+    )
+    decision = core.on_bar(_context(_volume_rally_breakout_bars()))
+    assert decision.action == "hold"
+    assert decision.reason == "regime_ranging"
+    assert decision.auditor_rejection is True
+
+
+def test_volume_rally_core_force_closes_on_high_vol_regime():
+    core = VolumeRallyCore(
+        _volume_rally_params(
+            regime_enabled=True,
+            regime_vol_window=4,
+            regime_vol_high_mult=1.1,
+            regime_sma_period=3,
+            regime_confirmation_bars=1,
+            adx_period=2,
+            sl_atr_mult=10.0,
+            trail_atr_mult=10.0,
+            tp_atr_mult=10.0,
+            max_hold_bars=100,
+        )
+    )
+    bars = _volume_rally_breakout_bars()
+    position = PositionState(
+        is_open=True,
+        size=1.0,
+        entry_price=11.0,
+        entry_bar_index=3,
+        entry_time=bars[3].iso_timestamp,
+    )
+    bars[-1] = Bar(
+        timestamp=bars[-1].timestamp,
+        open=11.8,
+        high=20.6,
+        low=11.8,
+        close=12.4,
+        volume=3000.0,
+    )
+    decision = core.on_bar(_context(bars, position))
+    assert decision.action == "close"
+    assert decision.reason == "regime_high_vol"
+
+
+def test_volume_rally_core_blocks_entry_on_benchmark_regime():
+    core = VolumeRallyCore(
+        validate_strategy_params(
+            "volume_rally",
+            {
+                "volume_window": 3,
+                "volume_spike_mult": 1.5,
+                "breakout_lookback": 3,
+                "atr_period": 2,
+                "atr_expansion_mult": 0.5,
+                "macd_fast": 2,
+                "macd_slow": 3,
+                "macd_signal": 2,
+                "adx_period": 2,
+                "adx_min": 10.0,
+                "min_confirmations": 4,
+                "benchmark_symbol": "SPY",
+                "benchmark_sma_period": 2,
+                "benchmark_adx_period": 2,
+                "benchmark_adx_min": 0,
+                "benchmark_require_above_sma": True,
+            },
+        )
+    )
+    bars = _volume_rally_breakout_bars()
+    benchmark_bars = _bars([100, 101, 99])
+    decision = core.on_bar(_context(bars, benchmark_bars=benchmark_bars))
+    assert decision.action == "hold"
+    assert decision.reason == "benchmark_regime"
+    assert decision.auditor_rejection is True
+
+
 def test_volume_rally_core_exit_on_atr_stop():
     core = VolumeRallyCore(_volume_rally_params(trail_atr_mult=10.0, sl_atr_mult=0.5))
     bars = _bars(
@@ -262,6 +537,21 @@ def test_session_vwap_resets_each_trading_day():
     assert values[0] == 10.0
     assert values[1] == 15.0
     assert values[2] == 30.0
+
+
+def test_session_boundary_helpers():
+    session_dates = [
+        datetime(2024, 1, 2, 9, 30).date(),
+        datetime(2024, 1, 2, 15, 59).date(),
+        datetime(2024, 1, 3, 9, 30).date(),
+    ]
+    assert _is_last_bar_of_session(session_dates, 0) is False
+    assert _is_last_bar_of_session(session_dates, 1) is True
+    assert _is_last_bar_of_session(session_dates, 2) is True
+    assert _is_new_session(session_dates, 0) is True
+    assert _is_new_session(session_dates, 1) is False
+    assert _is_new_session(session_dates, 2) is True
+    assert SESSION_CLOSE_REASON == "session_close"
 
 
 def test_volume_rally_core_holds_without_vwap_loss_exit():
@@ -364,7 +654,134 @@ def test_volume_rally_core_cooldown_zero_allows_immediate_reentry():
 def test_volume_rally_core_persists_cooldown_state():
     core = VolumeRallyCore(_volume_rally_params(cooldown_bars=3))
     core._last_exit_bar_index = 4
+    core._session_trade_date = date(2024, 1, 2)
+    core._session_trades_count = 1
+    core._breakeven_armed = True
+    core._entry_atr = 1.25
     state = core.dump_state()
     restored = VolumeRallyCore(_volume_rally_params(cooldown_bars=3))
     restored.load_state(state)
     assert restored._last_exit_bar_index == 4
+    assert restored._session_trade_date == date(2024, 1, 2)
+    assert restored._session_trades_count == 1
+    assert restored._breakeven_armed is True
+    assert restored._entry_atr == 1.25
+
+
+def _rth_bar(hour: int, minute: int, **kwargs: float) -> Bar:
+    values = {
+        "open": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "close": 100.5,
+        "volume": 1000.0,
+    }
+    values.update(kwargs)
+    return Bar(
+        timestamp=datetime(2024, 1, 2, hour, minute, tzinfo=US_EASTERN),
+        open=float(values["open"]),
+        high=float(values["high"]),
+        low=float(values["low"]),
+        close=float(values["close"]),
+        volume=float(values["volume"]),
+    )
+
+
+def test_volume_rally_v2_session_window_blocks_early_bar():
+    bar = _rth_bar(9, 45)
+    assert _minutes_since_rth_open(bar) == 15
+    assert _in_session_window(bar, 30, 360) is False
+
+
+def test_volume_rally_v2_session_window_allows_midday():
+    bar = _rth_bar(11, 0)
+    assert _minutes_since_rth_open(bar) == 90
+    assert _in_session_window(bar, 30, 360) is True
+
+
+def test_volume_rally_v2_close_strength_helper():
+    strong = _rth_bar(11, 0, open=100.0, high=101.0, low=99.0, close=100.9)
+    weak = _rth_bar(11, 0, open=100.0, high=110.0, low=99.0, close=101.0)
+    assert _close_strength(strong) >= 0.65
+    assert _close_strength(weak) < 0.65
+
+
+def test_volume_rally_v2_weak_close_rejects_low_strength_bar():
+    core = VolumeRallyCore(_volume_rally_params(min_close_strength=0.65))
+    bar = _rth_bar(11, 0, open=100.0, high=110.0, low=99.0, close=101.0)
+    assert _close_strength(bar) < float(core.params["min_close_strength"])
+
+
+def test_strategy_decision_auditor_rejection_flag():
+    decision = StrategyDecision.hold("weak_close", auditor_rejection=True)
+    assert decision.action == "hold"
+    assert decision.reason == "weak_close"
+    assert decision.auditor_rejection is True
+
+
+def test_volume_rally_v2_session_trade_cap():
+    core = VolumeRallyCore(_volume_rally_params(max_trades_per_session=1))
+    bars = _bars([10, 10.5, 11, 11.4, 11.7, 12.4])
+    core._session_trades_count = 1
+    core._session_trade_date = bars[-1].timestamp.date()
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "hold"
+    assert decision.reason == "session_trade_cap"
+
+
+def test_volume_rally_v2_stale_exit():
+    core = VolumeRallyCore(
+        _volume_rally_params(
+            stale_bars=2,
+            min_progress_atr=0.5,
+            sl_atr_mult=10.0,
+            trail_atr_mult=10.0,
+            tp_atr_mult=10.0,
+        )
+    )
+    core._entry_atr = 1.0
+    bars = _bars(
+        [10, 10.5, 11, 11.5, 12, 12.1],
+        highs=[10.4, 10.9, 11.4, 11.9, 12.4, 12.2],
+        lows=[9.6, 10.1, 10.6, 11.1, 11.6, 12.0],
+    )
+    position = PositionState(
+        is_open=True,
+        size=1.0,
+        entry_price=12.0,
+        entry_bar_index=3,
+        entry_time=bars[3].iso_timestamp,
+        bars_held=2,
+    )
+    decision = core.on_bar(_context(bars, position))
+    assert decision.action == "close"
+    assert decision.reason == "stale_exit"
+
+
+def test_volume_rally_v2_breakeven_floor():
+    core = VolumeRallyCore(
+        _volume_rally_params(
+            breakeven_atr_mult=1.0,
+            initial_sl_atr_mult=1.0,
+            sl_atr_mult=1.5,
+            trail_atr_mult=10.0,
+            tp_atr_mult=10.0,
+        )
+    )
+    core._entry_atr = 2.0
+    core._breakeven_armed = True
+    bars = _bars(
+        [10, 11, 12, 13, 14, 13.9],
+        highs=[10.4, 11.4, 12.4, 13.4, 14.4, 14.0],
+        lows=[9.6, 10.6, 11.6, 12.6, 13.6, 13.8],
+    )
+    position = PositionState(
+        is_open=True,
+        size=1.0,
+        entry_price=14.0,
+        entry_bar_index=4,
+        entry_time=bars[4].iso_timestamp,
+    )
+    decision = core.on_bar(_context(bars, position))
+    assert decision.action == "close"
+    assert decision.reason == "atr_stop"

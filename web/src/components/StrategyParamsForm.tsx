@@ -32,12 +32,14 @@ export interface StrategySelection {
 interface StrategyParamsFormProps {
   disabled?: boolean
   resolution?: Resolution
+  initialSelection?: StrategySelection | null
   onChange: (selection: StrategySelection) => void
 }
 
 export function StrategyParamsForm({
   disabled = false,
   resolution = '1d',
+  initialSelection = null,
   onChange,
 }: StrategyParamsFormProps) {
   const [strategies, setStrategies] = useState<StrategyMetadata[]>([])
@@ -55,7 +57,10 @@ export function StrategyParamsForm({
           return
         }
         setStrategies(items)
-        if (items.length > 0) {
+        if (initialSelection) {
+          setSelectedName(initialSelection.strategy)
+          setParams(initialSelection.strategyParams)
+        } else if (items.length > 0) {
           const first = items[0]
           setSelectedName(first.name)
           setParams(buildStrategyParams(first, resolution))
@@ -74,7 +79,7 @@ export function StrategyParamsForm({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [initialSelection, resolution])
 
   const selectedStrategy = useMemo(
     () => strategies.find((item) => item.name === selectedName) ?? null,
@@ -82,11 +87,11 @@ export function StrategyParamsForm({
   )
 
   useEffect(() => {
-    if (!selectedStrategy) {
+    if (!selectedStrategy || initialSelection) {
       return
     }
     setParams(buildStrategyParams(selectedStrategy, resolution))
-  }, [resolution, selectedStrategy])
+  }, [resolution, selectedStrategy, initialSelection])
 
   const paramCount = selectedStrategy ? Object.keys(selectedStrategy.parameters).length : 0
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import (
@@ -71,6 +73,18 @@ class ReconciliationRepository(Protocol):
 
 class WorkerEventRepository(Protocol):
     def record(self, event: WorkerEventCreate) -> None: ...
+
+    def list_events(self, query: WorkerEventQuery) -> list[WorkerEvent]: ...
+
+
+@dataclass(frozen=True)
+class WorkerEventQuery:
+    limit: int = 100
+    worker_id: str | None = None
+    event_type: str | None = None
+    symbol_key: str | None = None
+    since: datetime | None = None
+    until: datetime | None = None
 
 
 class SqlAlchemyTradeIntentRepository:
@@ -252,3 +266,18 @@ class SqlAlchemyWorkerEventRepository:
             )
             session.add(record)
             session.commit()
+
+    def list_events(self, query: WorkerEventQuery) -> list[WorkerEvent]:
+        with self.session_factory() as session:
+            stmt = select(WorkerEvent).order_by(WorkerEvent.created_at.desc()).limit(query.limit)
+            if query.worker_id is not None:
+                stmt = stmt.where(WorkerEvent.worker_id == query.worker_id)
+            if query.event_type is not None:
+                stmt = stmt.where(WorkerEvent.event_type == query.event_type)
+            if query.symbol_key is not None:
+                stmt = stmt.where(WorkerEvent.symbol_key == query.symbol_key)
+            if query.since is not None:
+                stmt = stmt.where(WorkerEvent.created_at >= query.since)
+            if query.until is not None:
+                stmt = stmt.where(WorkerEvent.created_at < query.until)
+            return list(session.execute(stmt).scalars().all())

@@ -1,0 +1,21 @@
+global_config:
+  redis:
+    url: redis://redis:6379/0
+    key_prefix: ta
+    heartbeat_interval_seconds: 5
+    lease_ttl_seconds: 20
+  runtime:
+    database_url_env: DATABASE_URL
+    broker_name: alpaca
+    run_mode: paper_live
+  session:
+    timezone: America/New_York
+    pre_open_warmup_minutes: 15
+    drain_timeout_minutes: 15
+  controller:
+    contracts_api_base_url: http://api:8000
+    poll_interval_seconds: 5
+    shard_count: 2
+  execution:
+    mode: paper
+contracts: []

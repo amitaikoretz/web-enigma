@@ -4,6 +4,24 @@ import { buildDefaultParams } from './strategyParams'
 
 type StrategyPresetOverrides = Record<string, unknown>
 
+const VOLUME_RALLY_V2_5M = {
+  stake: 10,
+  volume_spike_mult: 2.8,
+  trail_atr_mult: 2.5,
+  tp_atr_mult: 4.0,
+  cooldown_bars: 20,
+  max_hold_bars: 72,
+  session_start_minutes: 5,
+  session_end_minutes: 360,
+  min_close_strength: 0.5,
+  max_trades_per_session: 1,
+  initial_sl_atr_mult: 1.0,
+  sl_atr_mult: 1.5,
+  breakeven_atr_mult: 1.0,
+  stale_bars: 12,
+  min_progress_atr: 0.5,
+}
+
 const VOLUME_RALLY_PRESETS: Partial<Record<Resolution, StrategyPresetOverrides>> = {
   '1m': {
     stake: 10,
@@ -12,13 +30,7 @@ const VOLUME_RALLY_PRESETS: Partial<Record<Resolution, StrategyPresetOverrides>>
     cooldown_bars: 20,
     max_hold_bars: 48,
   },
-  '5m': {
-    stake: 10,
-    volume_spike_mult: 3.0,
-    trail_atr_mult: 1.5,
-    cooldown_bars: 10,
-    max_hold_bars: 48,
-  },
+  '5m': VOLUME_RALLY_V2_5M,
   '1d': {
     cooldown_bars: 0,
   },

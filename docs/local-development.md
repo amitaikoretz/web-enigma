@@ -127,6 +127,17 @@ The live runtime needs:
 
 See [live-runtime.md](./live-runtime.md) for the startup order and wiring model.
 
+## Docker Compose
+
+For a one-command local stack (Postgres, Redis, API, controller, workers):
+
+```bash
+cp .env.example .env   # add Alpaca credentials
+docker compose up --build
+```
+
+See [docs/docker-compose.md](./docs/docker-compose.md) for profiles, seeding contracts, and health checks.
+
 ## Other Useful Commands
 
 List built-in strategies:

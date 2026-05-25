@@ -4,47 +4,31 @@ import {
   Box,
   Button,
   CircularProgress,
-  LinearProgress,
   Link,
   Paper,
   Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material'
-import dayjs from 'dayjs'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router-dom'
 
 import { backtestReportUrl, fetchBacktestDetail, fetchBacktestStatus } from '../api/backtests'
+import { BacktestProgressPanel } from '../components/BacktestProgressPanel'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
 import { BacktestConfigInspector } from '../components/BacktestConfigInspector'
-import { BacktestRunChart } from '../components/BacktestRunChart'
-import { CollapsibleSection } from '../components/CollapsibleSection'
+import { BacktestRunDetailPanel } from '../components/BacktestRunDetailPanel'
+import { BacktestRunsComparisonTable } from '../components/BacktestRunsComparisonTable'
+import { BacktestStrategyAggregatePanel } from '../components/BacktestStrategyAggregatePanel'
+import { BacktestSummaryDashboard } from '../components/BacktestSummaryDashboard'
 import { useSettings } from '../settings/useSettings'
-import type { BacktestDetailResponse, BacktestRunResult, BacktestSelectionSummary } from '../types/backtests'
+import type { BacktestDetailResponse, BacktestListItem } from '../types/backtests'
+import type { ComparisonViewMode } from '../utils/backtestAggregates'
+import {
+  findRunById,
+  findStrategyAggregate,
+  resolveReportAggregates,
+} from '../utils/backtestAggregates'
 import { formatInTimezone } from '../utils/datetime'
-
-function formatPercent(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return '—'
-  }
-  return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
-}
-
-function formatTimestampOrDash(
-  value: string | null | undefined,
-  timezone: string,
-  timeDisplayFormat: '12h' | '24h',
-): string {
-  if (!value) {
-    return '—'
-  }
-  return formatInTimezone(value, timezone, timeDisplayFormat, true)
-}
 
 function formatTimestamp(
   value: string,
@@ -54,19 +38,18 @@ function formatTimestamp(
   return formatInTimezone(value, timezone, timeDisplayFormat, true)
 }
 
-function formatNumber(value: number | null | undefined, digits = 2): string {
-  if (value === null || value === undefined) {
-    return '—'
-  }
-  return value.toFixed(digits)
-}
-
 export function BacktestDetailPage() {
   const { platformSettings, appearance } = useSettings()
   const { backtestId = '' } = useParams()
   const [detail, setDetail] = useState<BacktestDetailResponse | null>(null)
+  const [metadata, setMetadata] = useState<BacktestListItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ComparisonViewMode>('symbol')
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+  const refreshIntervalMs =
+    platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
+  const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
 
   useEffect(() => {
     let cancelled = false
@@ -78,6 +61,7 @@ export function BacktestDetailPage() {
         const response = await fetchBacktestDetail(backtestId)
         if (!cancelled) {
           setDetail(response)
+          setMetadata((current) => current ?? response.metadata)
         }
       } catch (err) {
         if (!cancelled) {
@@ -97,49 +81,81 @@ export function BacktestDetailPage() {
   }, [backtestId])
 
   useEffect(() => {
-    if (!detail) {
-      return undefined
-    }
-    if (!['pending', 'running'].includes(detail.metadata.status)) {
+    if (!backtestId) {
       return undefined
     }
 
-    const timer = window.setInterval(async () => {
+    let cancelled = false
+    let timer: ReturnType<typeof window.setInterval> | undefined
+
+    const pollStatus = async (): Promise<boolean> => {
       try {
         const status = await fetchBacktestStatus(backtestId)
-        setDetail((current) =>
-          current
-            ? {
-                ...current,
-                metadata: status,
-              }
-            : current,
-        )
+        if (cancelled) {
+          return true
+        }
+
+        setMetadata(status)
+
         if (status.status === 'completed' || status.status === 'failed') {
           const nextDetail = await fetchBacktestDetail(backtestId)
-          setDetail(nextDetail)
+          if (!cancelled) {
+            setDetail(nextDetail)
+            setMetadata(nextDetail.metadata)
+            setLoading(false)
+          }
+          return true
         }
+
+        return false
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to refresh backtest status')
-        window.clearInterval(timer)
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to refresh backtest status')
+        }
+        return true
       }
-    }, platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000)
+    }
+
+    void (async () => {
+      const terminal = await pollStatus()
+      if (terminal || cancelled) {
+        return
+      }
+
+      timer = window.setInterval(() => {
+        void pollStatus().then((done) => {
+          if (done && timer !== undefined) {
+            window.clearInterval(timer)
+            timer = undefined
+          }
+        })
+      }, refreshIntervalMs)
+    })()
 
     return () => {
-      window.clearInterval(timer)
+      cancelled = true
+      if (timer !== undefined) {
+        window.clearInterval(timer)
+      }
     }
-  }, [backtestId, detail, platformSettings.platform_behavior.auto_refresh_interval_seconds])
+  }, [backtestId, refreshIntervalMs])
 
-  const metadata = detail?.metadata ?? null
   const report = detail?.report ?? null
-  const progressValue = useMemo(() => {
-    if (!metadata || metadata.total_runs === 0) {
-      return 0
-    }
-    return (metadata.completed_runs / metadata.total_runs) * 100
-  }, [metadata])
+  const resolvedAggregates = useMemo(
+    () => (report ? resolveReportAggregates(report) : null),
+    [report],
+  )
 
-  if (loading) {
+  const selectedRun =
+    report && selectedRowId && viewMode === 'symbol'
+      ? findRunById(report.results, selectedRowId)
+      : undefined
+  const selectedStrategyAggregate =
+    resolvedAggregates && selectedRowId && viewMode === 'strategy'
+      ? findStrategyAggregate(resolvedAggregates.aggregates, selectedRowId)
+      : undefined
+
+  if (loading && !metadata) {
     return (
       <Stack sx={{ py: 10, alignItems: 'center' }} spacing={1}>
         <CircularProgress />
@@ -148,11 +164,11 @@ export function BacktestDetailPage() {
     )
   }
 
-  if (error) {
+  if (error && !metadata) {
     return <Alert severity="error">{error}</Alert>
   }
 
-  if (!detail || !metadata) {
+  if (!metadata) {
     return <Alert severity="warning">Backtest detail is unavailable.</Alert>
   }
 
@@ -185,16 +201,13 @@ export function BacktestDetailPage() {
         </Stack>
       </Stack>
 
-      {(metadata.status === 'pending' || metadata.status === 'running') && (
-        <Paper sx={{ p: 3 }}>
-          <Stack spacing={1.5}>
-            <Typography variant="h6">Backtest in progress</Typography>
-            <Typography color="text.secondary">
-              {metadata.completed_runs} of {metadata.total_runs} runs completed.
-            </Typography>
-            <LinearProgress variant="determinate" value={progressValue} />
-          </Stack>
-        </Paper>
+      {error && <Alert severity="error">{error}</Alert>}
+
+      {isActive && (
+        <BacktestProgressPanel
+          completedRuns={metadata.completed_runs}
+          totalRuns={metadata.total_runs}
+        />
       )}
 
       {metadata.error_message && metadata.status === 'failed' && (
@@ -233,7 +246,7 @@ export function BacktestDetailPage() {
                 <Metric
                   label="Output JSON"
                   value={
-                    detail.output_path ? (
+                    detail?.output_path ? (
                       <Link
                         href={backtestReportUrl(metadata.id)}
                         target="_blank"
@@ -257,16 +270,46 @@ export function BacktestDetailPage() {
             configSha256={report.config_sha256}
           />
 
-          <Stack spacing={2}>
-            {report.results.map((result, index) => (
-              <RunResultCard
-                key={result.run_id}
-                result={result}
-                selection={metadata.selection}
-                defaultExpanded={index === 0}
+          {resolvedAggregates?.isDerived && (
+            <Alert severity="info">
+              Batch aggregates were computed in the browser from run results. Re-run this backtest to persist
+              strategy-level merged metrics in the report JSON.
+            </Alert>
+          )}
+
+          {resolvedAggregates?.aggregates.portfolio && (
+            <BacktestSummaryDashboard
+              portfolio={resolvedAggregates.aggregates.portfolio}
+              results={report.results}
+              bestRunId={resolvedAggregates.aggregates.portfolio.best_run_id}
+              worstRunId={resolvedAggregates.aggregates.portfolio.worst_run_id}
+            />
+          )}
+
+          <BacktestRunsComparisonTable
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            results={report.results}
+            aggregates={resolvedAggregates?.aggregates ?? { portfolio: null, by_strategy: [] }}
+            selectedRowId={selectedRowId}
+            onSelectRow={setSelectedRowId}
+          />
+
+          {selectedRun && (
+            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+              <BacktestRunDetailPanel result={selectedRun} selection={metadata.selection} />
+            </Paper>
+          )}
+
+          {selectedStrategyAggregate && resolvedAggregates && (
+            <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+              <BacktestStrategyAggregatePanel
+                aggregate={selectedStrategyAggregate}
+                results={report.results}
+                missingMergedRiskMetrics={resolvedAggregates.missingMergedRiskMetrics}
               />
-            ))}
-          </Stack>
+            </Paper>
+          )}
         </>
       ) : (
         <Paper sx={{ p: 3 }}>
@@ -279,7 +322,7 @@ export function BacktestDetailPage() {
   )
 }
 
-function Metric({ label, value }: { label: string; value: ReactNode }) {
+function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <Box>
       <Typography variant="overline" color="text.secondary">
@@ -287,183 +330,5 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
       </Typography>
       {typeof value === 'string' ? <Typography>{value}</Typography> : value}
     </Box>
-  )
-}
-
-function RunResultCard({
-  result,
-  selection,
-  defaultExpanded = false,
-}: {
-  result: BacktestRunResult
-  selection: BacktestSelectionSummary
-  defaultExpanded?: boolean
-}) {
-  const { platformSettings, appearance } = useSettings()
-  const summary = result.summary
-  const sortedTrades = [...result.trades].sort((left, right) => {
-    const leftValue = left.datetime ? dayjs(left.datetime).valueOf() : Number.NEGATIVE_INFINITY
-    const rightValue = right.datetime ? dayjs(right.datetime).valueOf() : Number.NEGATIVE_INFINITY
-    return leftValue - rightValue
-  })
-  const sortedOrders = [...result.orders].sort((left, right) => {
-    const leftValue = left.datetime ? dayjs(left.datetime).valueOf() : Number.NEGATIVE_INFINITY
-    const rightValue = right.datetime ? dayjs(right.datetime).valueOf() : Number.NEGATIVE_INFINITY
-    return leftValue - rightValue
-  })
-  const firstTrade = sortedTrades[0] ?? null
-  const lastTrade = sortedTrades.at(-1) ?? null
-  const latestOrders = [...sortedOrders].reverse().slice(0, 5)
-
-  const runTitle = (
-    <Stack spacing={0.25}>
-      <Typography variant="h6">
-        {result.symbol ?? 'Unknown symbol'} / {result.strategy}
-      </Typography>
-      {summary && (
-        <Typography variant="body2" color="text.secondary">
-          Return {formatPercent(summary.return_pct)} · Sharpe {summary.sharpe_ratio?.toFixed(2) ?? '—'} ·{' '}
-          {summary.total_trades} trades
-        </Typography>
-      )}
-    </Stack>
-  )
-
-  return (
-    <CollapsibleSection
-      defaultExpanded={defaultExpanded}
-      title={runTitle}
-      subtitle={result.name ?? result.run_id}
-      actions={
-        <BacktestStatusChip status={result.status === 'success' ? 'completed' : 'failed'} />
-      }
-    >
-      <Stack spacing={2}>
-        {result.error && <Alert severity="error">{result.error.message}</Alert>}
-
-        {summary && (
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-            <Metric label="Return" value={formatPercent(summary.return_pct)} />
-            <Metric label="Sharpe" value={summary.sharpe_ratio?.toFixed(2) ?? '—'} />
-            <Metric label="Max drawdown" value={formatPercent(summary.max_drawdown_pct)} />
-            <Metric label="Trades" value={String(summary.total_trades)} />
-            <Metric label="Wins / losses" value={`${summary.won_trades} / ${summary.lost_trades}`} />
-          </Stack>
-        )}
-
-        {result.status === 'success' && result.symbol && (
-          <BacktestRunChart
-            symbol={result.symbol}
-            startDate={selection.start_date}
-            endDate={selection.end_date}
-            resolution={selection.resolution}
-            orders={result.orders}
-            trades={result.trades}
-          />
-        )}
-
-        <Stack spacing={0.5}>
-          <Typography variant="subtitle1">Trade activity</Typography>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-            <Metric label="Orders" value={String(result.orders.length)} />
-            <Metric label="Trade records" value={String(result.trades.length)} />
-            <Metric
-              label="First trade"
-              value={formatTimestampOrDash(
-                firstTrade?.datetime,
-                platformSettings.platform_behavior.timezone,
-                appearance.time_display_format,
-              )}
-            />
-            <Metric
-              label="Last trade"
-              value={formatTimestampOrDash(
-                lastTrade?.datetime,
-                platformSettings.platform_behavior.timezone,
-                appearance.time_display_format,
-              )}
-            />
-            <Metric label="Data source" value={result.data_source} />
-          </Stack>
-        </Stack>
-
-        <CollapsibleSection
-          title={`Trade records (${result.trades.length})`}
-          defaultExpanded={sortedTrades.length > 0 && sortedTrades.length <= 10}
-        >
-          {result.trades.length > 0 ? (
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>When</TableCell>
-                  <TableCell align="right">Size</TableCell>
-                  <TableCell align="right">Price</TableCell>
-                  <TableCell align="right">Value</TableCell>
-                  <TableCell align="right">PnL</TableCell>
-                  <TableCell align="right">PnL after fees</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {sortedTrades.map((trade, index) => (
-                  <TableRow key={`${trade.datetime ?? 'no-datetime'}-${index}`}>
-                    <TableCell>
-                      {formatTimestampOrDash(
-                        trade.datetime,
-                        platformSettings.platform_behavior.timezone,
-                        appearance.time_display_format,
-                      )}
-                    </TableCell>
-                    <TableCell align="right">{formatNumber(trade.size, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(trade.price, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(trade.value, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(trade.pnl, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(trade.pnlcomm, 2)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <Typography color="text.secondary">No trade records were emitted for this run.</Typography>
-          )}
-        </CollapsibleSection>
-
-        {latestOrders.length > 0 && (
-          <CollapsibleSection title={`Recent orders (${latestOrders.length})`} defaultExpanded={false}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>When</TableCell>
-                  <TableCell>Side</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell align="right">Size</TableCell>
-                  <TableCell align="right">Price</TableCell>
-                  <TableCell align="right">Value</TableCell>
-                  <TableCell align="right">Commission</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {latestOrders.map((order, index) => (
-                  <TableRow key={`${order.datetime ?? 'no-datetime'}-${order.status}-${index}`}>
-                    <TableCell>
-                      {formatTimestampOrDash(
-                        order.datetime,
-                        platformSettings.platform_behavior.timezone,
-                        appearance.time_display_format,
-                      )}
-                    </TableCell>
-                    <TableCell>{order.is_buy ? 'Buy' : 'Sell'}</TableCell>
-                    <TableCell>{order.status}</TableCell>
-                    <TableCell align="right">{formatNumber(order.size, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(order.price, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(order.value, 2)}</TableCell>
-                    <TableCell align="right">{formatNumber(order.commission, 2)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CollapsibleSection>
-        )}
-      </Stack>
-    </CollapsibleSection>
   )
 }

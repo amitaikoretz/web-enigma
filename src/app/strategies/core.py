@@ -42,6 +42,7 @@ class StrategyContext:
     position: PositionState
     symbol: str | None = None
     equity: float | None = None
+    benchmark_bars: Sequence[Bar] | None = None
 
 
 @dataclass(frozen=True)
@@ -49,10 +50,11 @@ class StrategyDecision:
     action: DecisionAction = "hold"
     size: float | None = None
     reason: str | None = None
+    auditor_rejection: bool = False
 
     @classmethod
-    def hold(cls, reason: str | None = None) -> "StrategyDecision":
-        return cls(action="hold", reason=reason)
+    def hold(cls, reason: str | None = None, *, auditor_rejection: bool = False) -> "StrategyDecision":
+        return cls(action="hold", reason=reason, auditor_rejection=auditor_rejection)
 
     @classmethod
     def buy(cls, size: float, reason: str | None = None) -> "StrategyDecision":

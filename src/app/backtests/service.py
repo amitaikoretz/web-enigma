@@ -23,6 +23,7 @@ from app.config.models import (
     BrokerConfig,
 )
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
+from app.strategies.auditor_logging import configure_strategy_logging
 from app.output import BacktestReport, write_backtest_report_json
 from app.output.models import RunResult
 
@@ -86,7 +87,7 @@ def _selection_from_report(report: BacktestReport) -> BacktestSelectionSummary:
 def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) -> dict[str, Any]:
     broker = payload.broker or BrokerConfig()
     analyzers = payload.analyzers or AnalyzerConfig(
-        include_equity_curve=False,
+        include_equity_curve=True,
         include_trade_log=True,
         include_order_log=True,
     )
@@ -329,6 +330,7 @@ class BacktestJobService:
             self.repository.write_metadata(current)
 
         try:
+            configure_strategy_logging()
             report = run_backtests_with_hooks(
                 config,
                 config_raw,

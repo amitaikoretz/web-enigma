@@ -1,0 +1,146 @@
+# volume_rally v2 per-symbol volume spikes: same v2 tuned base, stricter spike
+# on high-vol names to cut false breakouts (NVDA/TSLA churn in uniform run).
+#
+# Spike tiers:
+#   2.8 — AAPL, AMD (proven movers on this window)
+#   3.0 — MSFT, GOOGL, META, AMZN
+#   3.5 — NVDA
+#   4.0 — TSLA
+#
+# Run:
+#   backtest run \
+#     --config experiments/volume_rally_v2_symbol_spikes_5m.yaml \
+#     --output /tmp/volume-rally-v2-symbol-spikes-5m.json
+
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 10000
+    commission: 0.0
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "5m": 315360000
+
+x-v2-base: &v2_base
+  stake: 10
+  volume_window: 20
+  breakout_lookback: 20
+  atr_period: 14
+  atr_expansion_mult: 0.5
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  adx_period: 14
+  adx_min: 25.0
+  sl_atr_mult: 1.5
+  tp_atr_mult: 4.0
+  trail_atr_mult: 2.5
+  max_hold_bars: 72
+  cooldown_bars: 20
+  session_start_minutes: 5
+  session_end_minutes: 360
+  min_close_strength: 0.50
+  max_trades_per_session: 1
+  initial_sl_atr_mult: 1.0
+  breakeven_atr_mult: 1.0
+  stale_bars: 12
+  min_progress_atr: 0.5
+
+x-spike-28: &spike_28
+  <<: *v2_base
+  volume_spike_mult: 2.8
+
+x-spike-30: &spike_30
+  <<: *v2_base
+  volume_spike_mult: 3.0
+
+x-spike-35: &spike_35
+  <<: *v2_base
+  volume_spike_mult: 3.5
+
+x-spike-40: &spike_40
+  <<: *v2_base
+  volume_spike_mult: 4.0
+
+x-v2-analyzers: &v2_analyzers
+  include_equity_curve: true
+  include_trade_log: true
+  include_order_log: true
+
+runs:
+  - run_id: "v2_spike_aapl_5m"
+    name: "AAPL volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: AAPL, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_28
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_amd_5m"
+    name: "AMD volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: AMD, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_28
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_nvda_5m"
+    name: "NVDA volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: NVDA, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_35
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_msft_5m"
+    name: "MSFT volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: MSFT, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_30
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_meta_5m"
+    name: "META volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: META, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_30
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_tsla_5m"
+    name: "TSLA volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: TSLA, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_40
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_googl_5m"
+    name: "GOOGL volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: GOOGL, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_30
+    analyzers: *v2_analyzers
+
+  - run_id: "v2_spike_amzn_5m"
+    name: "AMZN volume_rally v2 symbol spikes 5m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data: { type: alpaca, symbol: AMZN, interval: 5m, feed: iex }
+    strategy: volume_rally
+    strategy_params: *spike_30
+    analyzers: *v2_analyzers

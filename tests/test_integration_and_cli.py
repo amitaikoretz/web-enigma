@@ -32,6 +32,13 @@ def test_csv_single_run_integration():
     closed_trades = report.results[0].trades
     assert closed_trades
     assert all(hasattr(trade, "reason") for trade in closed_trades)
+    summary = report.results[0].summary
+    assert summary is not None
+    assert summary.trade_diagnostics is not None
+    assert summary.risk_metrics is not None
+    assert summary.filter_diagnostics is not None
+    assert report.results[0].rejections == []
+    assert "trade_diagnostics" in report.results[0].analyzers
 
 
 def test_extract_trade_counts_uses_total_not_closed():
@@ -446,6 +453,41 @@ def test_backtest_fill_model_next_bar_changes_fill_timing():
 
     assert close_report.results[0].orders[0].datetime == "2024-01-02T00:00:00"
     assert next_bar_report.results[0].orders[0].datetime == "2024-01-03T00:00:00"
+
+
+def test_backtest_closes_positions_before_overnight(tmp_path: Path):
+    csv_path = tmp_path / "intraday_two_sessions.csv"
+    csv_path.write_text(
+        "datetime,open,high,low,close,volume,openinterest\n"
+        "2024-01-02T09:30:00,100,101,99,100.5,1000,0\n"
+        "2024-01-02T10:30:00,100.5,101.5,100,101.0,1100,0\n"
+        "2024-01-02T15:59:00,101.0,102,100.5,101.5,1200,0\n"
+        "2024-01-03T09:30:00,101.5,103,101,102.5,1100,0\n",
+        encoding="utf-8",
+    )
+    raw = {
+        "runs": [
+            {
+                "run_id": "no_overnight",
+                "start_date": "2024-01-02",
+                "end_date": "2024-01-03",
+                "data": {
+                    "type": "csv",
+                    "path": str(csv_path),
+                    "date_format": "%Y-%m-%dT%H:%M:%S",
+                },
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ]
+    }
+    config = BacktestConfig.model_validate(raw)
+    report = run_backtests(config, raw)
+    assert report.successful_runs == 1
+    trades = report.results[0].trades
+    assert trades
+    assert trades[0].reason == "session_close"
+    assert trades[0].datetime.startswith("2024-01-02")
 
 
 def test_cli_alpaca_run_uses_separate_config(monkeypatch, tmp_path: Path, capsys):
