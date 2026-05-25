@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backtest-app"
+version = "0.1.0"
+description = "Simple backtesting.py CLI app with YAML input and JSON output."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.13.2",
+  "backtesting>=0.6.2",
+  "fastapi>=0.115.0",
+  "psycopg[binary]>=3.2.1",
+  "pydantic>=2.7.0",
+  "pyarrow>=17.0.0",
+  "PyYAML>=6.0.1",
+  "rich>=13.7.1",
+  "SQLAlchemy>=2.0.36",
+  "typer>=0.12.3",
+  "uvicorn>=0.30.0",
+  "yfinance>=0.2.40",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27.0",
+  "pytest>=8.0.0",
+]
+
+[project.scripts]
+backtest = "app.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

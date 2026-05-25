@@ -1,6 +1,7 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import {
   Alert,
+  Box,
   Button,
   CircularProgress,
   IconButton,
@@ -18,8 +19,9 @@ import {
 import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 
-import { backtestReportUrl, deleteBacktest, fetchBacktests } from '../api/backtests'
+import { backtestConfigUrl, backtestReportUrl, deleteBacktest, fetchBacktests } from '../api/backtests'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
 import { formatInTimezone } from '../utils/datetime'
@@ -31,6 +33,7 @@ export function BacktestsListPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<BacktestListItem | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -56,17 +59,18 @@ export function BacktestsListPage() {
     }
   }, [])
 
-  async function handleDelete(backtestId: string) {
-    const confirmed = window.confirm('Delete this backtest and its JSON report?')
-    if (!confirmed) {
+  async function confirmDelete() {
+    if (!deleteTarget) {
       return
     }
 
+    const backtestId = deleteTarget.id
     setDeletingId(backtestId)
     setError(null)
     try {
       await deleteBacktest(backtestId)
       setItems((current) => current.filter((item) => item.id !== backtestId))
+      setDeleteTarget(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete backtest')
     } finally {
@@ -113,6 +117,7 @@ export function BacktestsListPage() {
                 <TableCell>Universe</TableCell>
                 <TableCell>Runs</TableCell>
                 <TableCell>JSON</TableCell>
+                <TableCell>YAML</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -168,6 +173,20 @@ export function BacktestsListPage() {
                         '—'
                       )}
                     </TableCell>
+                    <TableCell>
+                      {hasReport ? (
+                        <Link
+                          href={backtestConfigUrl(item.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {item.id.slice(0, 8)}.yaml
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
                     <TableCell align="right">
                       <Tooltip title="Delete backtest">
                         <span>
@@ -177,7 +196,7 @@ export function BacktestsListPage() {
                             disabled={isDeleting}
                             onClick={(event) => {
                               event.stopPropagation()
-                              void handleDelete(item.id)
+                              setDeleteTarget(item)
                             }}
                             size="small"
                           >
@@ -193,6 +212,53 @@ export function BacktestsListPage() {
           </Table>
         )}
       </Paper>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete backtest?"
+        description={
+          deleteTarget ? (
+            <Stack spacing={1.5}>
+              <Typography color="text.secondary">
+                This permanently removes the backtest job, its JSON report, and YAML config. This
+                action cannot be undone.
+              </Typography>
+              <Box
+                sx={{
+                  px: 1.5,
+                  py: 1.25,
+                  borderRadius: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  bgcolor: 'action.hover',
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {deleteTarget.selection.start_date} → {deleteTarget.selection.end_date}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {deleteTarget.selection.symbols.length} symbols ·{' '}
+                  {deleteTarget.selection.strategies.length} strategies
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  {deleteTarget.id}
+                </Typography>
+              </Box>
+            </Stack>
+          ) : null
+        }
+        confirmLabel="Delete backtest"
+        cancelLabel="Keep backtest"
+        loading={deleteTarget !== null && deletingId === deleteTarget.id}
+        onCancel={() => {
+          if (deletingId === null) {
+            setDeleteTarget(null)
+          }
+        }}
+        onConfirm={() => {
+          void confirmDelete()
+        }}
+      />
     </Stack>
   )
 }

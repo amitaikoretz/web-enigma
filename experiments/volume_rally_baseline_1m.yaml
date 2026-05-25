@@ -1,0 +1,76 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 10000
+    commission: 0.001
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "1m": 315360000
+
+runs:
+  - run_id: "baseline_aapl_1m"
+    name: "AAPL volume_rally baseline 1m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data:
+      type: alpaca
+      symbol: AAPL
+      interval: 1m
+      feed: iex
+    strategy: "volume_rally"
+    strategy_params:
+      stake: 1.0
+      volume_window: 20
+      volume_spike_mult: 2.0
+      breakout_lookback: 20
+      atr_period: 14
+      atr_expansion_mult: 0.5
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal: 9
+      adx_period: 14
+      adx_min: 25.0
+      sl_atr_mult: 1.5
+      tp_atr_mult: 3.0
+      trail_atr_mult: 1.0
+      max_hold_bars: 48
+    analyzers:
+      include_equity_curve: false
+      include_trade_log: true
+      include_order_log: true
+
+  - run_id: "baseline_amd_1m"
+    name: "AMD volume_rally baseline 1m"
+    start_date: "2026-04-25"
+    end_date: "2026-05-25"
+    data:
+      type: alpaca
+      symbol: AMD
+      interval: 1m
+      feed: iex
+    strategy: "volume_rally"
+    strategy_params:
+      stake: 1.0
+      volume_window: 20
+      volume_spike_mult: 2.0
+      breakout_lookback: 20
+      atr_period: 14
+      atr_expansion_mult: 0.5
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal: 9
+      adx_period: 14
+      adx_min: 25.0
+      sl_atr_mult: 1.5
+      tp_atr_mult: 3.0
+      trail_atr_mult: 1.0
+      max_hold_bars: 48
+    analyzers:
+      include_equity_curve: false
+      include_trade_log: true
+      include_order_log: true

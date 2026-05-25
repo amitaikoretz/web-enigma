@@ -29,6 +29,9 @@ def test_csv_single_run_integration():
     assert report.results[0].status == "success"
     assert report.results[0].summary is not None
     assert report.results[0].summary.total_trades >= 1
+    closed_trades = report.results[0].trades
+    assert closed_trades
+    assert all(hasattr(trade, "reason") for trade in closed_trades)
 
 
 def test_extract_trade_counts_uses_total_not_closed():

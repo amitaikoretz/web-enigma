@@ -12,6 +12,21 @@ import { loadAppearanceSettings, saveAppearanceSettings } from './storage'
 import { createAppTheme } from '../theme'
 import type { AppearanceSettings, PlatformSettings, ServerPlatformSettings } from '../types/settings'
 
+const EASTERN_TIMEZONE = 'America/New_York'
+
+function normalizeServerSettings(settings: ServerPlatformSettings): ServerPlatformSettings {
+  if (settings.platform_behavior.timezone === 'UTC') {
+    return {
+      ...settings,
+      platform_behavior: {
+        ...settings.platform_behavior,
+        timezone: EASTERN_TIMEZONE,
+      },
+    }
+  }
+  return settings
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const prefersDarkMode = useMediaQuery('(prefers-color-scheme: dark)')
   const [appearance, setAppearanceState] = useState<AppearanceSettings>(() => loadAppearanceSettings())
@@ -43,7 +58,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const refreshPlatformSettings = async () => {
     setError(null)
     try {
-      const next = await fetchPlatformSettings()
+      const next = normalizeServerSettings(await fetchPlatformSettings())
       setServerSettings(next)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load platform settings')
@@ -60,7 +75,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     void (async () => {
       try {
-        const next = await fetchPlatformSettings()
+        const next = normalizeServerSettings(await fetchPlatformSettings())
         if (!cancelled) {
           setServerSettings(next)
           setError(null)

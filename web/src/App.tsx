@@ -14,6 +14,7 @@ import {
   Stack,
   Toolbar,
   Typography,
+  useTheme,
 } from '@mui/material'
 import { useMemo, useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
@@ -71,6 +72,7 @@ function NavButtons({
 }
 
 function App() {
+  const theme = useTheme()
   const { platformSettings, appearance, loading } = useSettings()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const landingPage = useMemo(
@@ -87,26 +89,59 @@ function App() {
     )
   }
 
+  const isDarkMode = theme.palette.mode === 'dark'
+
   return (
     <Box
+      className={isDarkMode ? 'theme-dark' : 'theme-light'}
       sx={{
+        position: 'relative',
         minHeight: '100vh',
         bgcolor: 'background.default',
         backgroundImage:
           appearance.reduced_motion
             ? 'none'
-            : 'radial-gradient(circle at top left, rgba(108,184,255,0.14), transparent 30%), radial-gradient(circle at bottom right, rgba(14,165,183,0.12), transparent 28%)',
+            : appearance.theme_preset === 'alpine'
+              ? 'radial-gradient(circle at top left, rgba(2,132,199,0.06), transparent 35%), radial-gradient(circle at bottom right, rgba(30,58,138,0.04), transparent 45%)'
+              : appearance.theme_preset === 'solaris'
+                ? 'radial-gradient(circle at top right, rgba(245,158,11,0.05), transparent 40%)'
+                : appearance.theme_preset === 'aurora'
+                  ? 'none'
+                  : 'radial-gradient(circle at top left, rgba(108,184,255,0.14), transparent 30%), radial-gradient(circle at bottom right, rgba(14,165,183,0.12), transparent 28%)',
       }}
     >
+      {appearance.theme_preset === 'aurora' && (
+        <div className="aurora-bg">
+          <div
+            className="aurora-sphere sphere-1"
+            style={appearance.reduced_motion ? { animation: 'none' } : undefined}
+          />
+          <div
+            className="aurora-sphere sphere-2"
+            style={appearance.reduced_motion ? { animation: 'none' } : undefined}
+          />
+          <div
+            className="aurora-sphere sphere-3"
+            style={appearance.reduced_motion ? { animation: 'none' } : undefined}
+          />
+        </div>
+      )}
+
       <AppBar
         position="sticky"
         elevation={0}
         sx={(theme) => ({
+          position: 'relative',
+          zIndex: 2,
           backdropFilter: 'blur(18px)',
           bgcolor:
             theme.palette.mode === 'dark'
-              ? 'rgba(13,17,23,0.82)'
-              : 'rgba(255,255,255,0.84)',
+              ? appearance.theme_preset === 'aurora'
+                ? 'rgba(11,15,25,0.65)'
+                : 'rgba(13,17,23,0.82)'
+              : appearance.theme_preset === 'alpine'
+                ? 'rgba(241,245,249,0.8)'
+                : 'rgba(255,255,255,0.84)',
           color: theme.palette.text.primary,
           borderBottom: `1px solid ${theme.palette.divider}`,
         })}
@@ -139,7 +174,7 @@ function App() {
         anchor="right"
         open={mobileNavOpen}
         onClose={() => setMobileNavOpen(false)}
-        sx={{ display: { xs: 'block', md: 'none' } }}
+        sx={{ display: { xs: 'block', md: 'none' }, zIndex: 1201 }}
       >
         <Stack sx={{ width: 280, p: 2 }} spacing={2}>
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -154,7 +189,7 @@ function App() {
 
       <Container
         maxWidth={appearance.layout_width === 'wide' ? false : 'xl'}
-        sx={{ py: 3 }}
+        sx={{ position: 'relative', zIndex: 1, py: 3 }}
       >
         <Routes>
           <Route path="/" element={<Navigate to={landingPage} replace />} />

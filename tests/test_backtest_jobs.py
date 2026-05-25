@@ -119,6 +119,7 @@ def test_result_repository_uses_path_agnostic_ids(tmp_path) -> None:
 
     assert repository.report_path("job123").name == "job123.json"
     assert repository.metadata_path("job123").name == "job123.meta.json"
+    assert repository.config_path("job123").name == "job123.yaml"
 
 
 def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
@@ -301,6 +302,30 @@ def test_get_backtest_report_returns_404_when_missing(tmp_path):
     assert response.status_code == 404
 
 
+def test_get_backtest_config_returns_yaml_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+    _wait_for_terminal_status(client, backtest_id)
+
+    response = client.get(f"/backtests/{backtest_id}/config")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-yaml")
+    assert response.headers["content-disposition"].endswith(f'filename="{backtest_id}.yaml"')
+    assert "runs:" in response.text
+    assert "buy_and_hold" in response.text
+
+
+def test_get_backtest_config_returns_404_when_missing(tmp_path):
+    client = _build_client(tmp_path)
+
+    response = client.get("/backtests/missing-job/config")
+
+    assert response.status_code == 404
+
+
 def test_delete_backtest_removes_metadata_and_report(tmp_path, monkeypatch):
     monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
     client = _build_client(tmp_path)
@@ -311,12 +336,14 @@ def test_delete_backtest_removes_metadata_and_report(tmp_path, monkeypatch):
 
     assert repository.report_path(backtest_id).exists()
     assert repository.metadata_path(backtest_id).exists()
+    assert repository.config_path(backtest_id).exists()
 
     response = client.delete(f"/backtests/{backtest_id}")
 
     assert response.status_code == 204
     assert not repository.report_path(backtest_id).exists()
     assert not repository.metadata_path(backtest_id).exists()
+    assert not repository.config_path(backtest_id).exists()
     assert client.get(f"/backtests/{backtest_id}").status_code == 404
 
 

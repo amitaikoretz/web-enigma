@@ -313,3 +313,58 @@ def test_volume_rally_core_exit_on_time():
     decision = core.on_bar(_context(bars, position))
     assert decision.action == "close"
     assert decision.reason == "time_exit"
+
+
+def test_volume_rally_core_cooldown_blocks_reentry():
+    core = VolumeRallyCore(
+        _volume_rally_params(
+            cooldown_bars=5,
+            trail_atr_mult=0.5,
+            sl_atr_mult=10.0,
+            tp_atr_mult=10.0,
+        )
+    )
+    bars = _bars(
+        [10, 10.5, 11, 12, 14, 13.1],
+        highs=[10.4, 10.9, 11.4, 12.4, 14.4, 13.4],
+        lows=[9.6, 10.1, 10.6, 11.6, 13.6, 12.8],
+    )
+    position = PositionState(
+        is_open=True,
+        size=1.0,
+        entry_price=11.0,
+        entry_bar_index=2,
+        entry_time=bars[2].iso_timestamp,
+    )
+    exit_decision = core.on_bar(_context(bars, position))
+    assert exit_decision.action == "close"
+    assert exit_decision.reason == "trailing_exit"
+
+    breakout_bar = Bar(
+        timestamp=BASE_TS + timedelta(days=6),
+        open=13.0,
+        high=14.6,
+        low=12.8,
+        close=14.0,
+        volume=6000.0,
+    )
+    extended = bars + [breakout_bar]
+    cooldown_decision = core.on_bar(_context(extended))
+    assert cooldown_decision.action == "hold"
+    assert cooldown_decision.reason == "cooldown"
+
+
+def test_volume_rally_core_cooldown_zero_allows_immediate_reentry():
+    core = VolumeRallyCore(_volume_rally_params(cooldown_bars=0))
+    core._last_exit_bar_index = 5
+    bars = _bars([10, 11, 12, 13, 14, 15])
+    assert core._in_cooldown(_context(bars)) is False
+
+
+def test_volume_rally_core_persists_cooldown_state():
+    core = VolumeRallyCore(_volume_rally_params(cooldown_bars=3))
+    core._last_exit_bar_index = 4
+    state = core.dump_state()
+    restored = VolumeRallyCore(_volume_rally_params(cooldown_bars=3))
+    restored.load_state(state)
+    assert restored._last_exit_bar_index == 4

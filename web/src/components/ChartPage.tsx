@@ -16,7 +16,7 @@ import { useCallback, useState } from 'react'
 import { runSingleDayBacktest } from '../api/dayBacktest'
 import { fetchSymbolBars } from '../api/marketData'
 import type { SingleDayBacktestResult } from '../types/dayBacktest'
-import type { ChartQuery, MarketDataResponse } from '../types/marketData'
+import type { ChartQuery, MarketDataResponse, Resolution } from '../types/marketData'
 import type { WorkspaceMode } from '../types/workspace'
 import { CandlestickChart } from './CandlestickChart'
 import { MarketDataForm } from './MarketDataForm'
@@ -58,6 +58,7 @@ export function ChartPage() {
     strategy: '',
     strategyParams: {},
   })
+  const [chartResolution, setChartResolution] = useState<Resolution>('1m')
 
   const handleStrategyChange = useCallback((selection: StrategySelection) => {
     setStrategySelection(selection)
@@ -72,6 +73,7 @@ export function ChartPage() {
   }
 
   const handleBrowse = async (query: ChartQuery) => {
+    setChartResolution(query.resolution)
     setLoading(true)
     setError(null)
     setBacktestError(null)
@@ -93,6 +95,7 @@ export function ChartPage() {
   }
 
   const handleBacktest = async (query: ChartQuery) => {
+    setChartResolution(query.resolution)
     if (!strategySelection.strategy) {
       setBacktestError('Select a strategy before running a backtest.')
       return
@@ -163,7 +166,11 @@ export function ChartPage() {
           />
 
           {mode === 'backtest' && (
-            <StrategyParamsForm disabled={loading} onChange={handleStrategyChange} />
+            <StrategyParamsForm
+              disabled={loading}
+              resolution={chartResolution}
+              onChange={handleStrategyChange}
+            />
           )}
 
           {error && <Alert severity="error">{error}</Alert>}
@@ -236,6 +243,7 @@ export function ChartPage() {
           <CandlestickChart
             data={data}
             orders={mode === 'backtest' ? (backtestResult?.orders ?? []) : []}
+            trades={mode === 'backtest' ? (backtestResult?.trades ?? []) : []}
           />
         )}
       </Paper>

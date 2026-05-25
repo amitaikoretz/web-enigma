@@ -11,7 +11,7 @@ from typing import Any, Literal
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.requests import Request
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select
@@ -98,6 +98,11 @@ class BacktestRunResponse(BaseModel):
     total_runs: int
     successful_runs: int
     failed_runs: int
+
+
+class ServerInfoResponse(BaseModel):
+    backtest_results_dir: str
+    platform_settings_path: str
 
 
 class SingleDayBacktestRequest(BaseModel):
@@ -205,6 +210,13 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/server/info", response_model=ServerInfoResponse)
+    def get_server_info() -> ServerInfoResponse:
+        return ServerInfoResponse(
+            backtest_results_dir=str(resolved_output_dir),
+            platform_settings_path=str(settings_service.path.resolve()),
+        )
+
     @app.get("/strategies", response_model=list[StrategyMetadataResponse])
     def get_strategies() -> list[StrategyMetadataResponse]:
         return [
@@ -263,6 +275,17 @@ def create_app(
             report_path,
             media_type="application/json",
             filename=f"{backtest_id}.json",
+        )
+
+    @app.get("/backtests/{backtest_id}/config")
+    def get_backtest_config(backtest_id: str) -> Response:
+        yaml_text = backtest_jobs.repository.resolve_config_yaml(backtest_id)
+        if yaml_text is None:
+            raise HTTPException(status_code=404, detail=f"Backtest config '{backtest_id}' not found")
+        return Response(
+            content=yaml_text,
+            media_type="application/x-yaml",
+            headers={"Content-Disposition": f'inline; filename="{backtest_id}.yaml"'},
         )
 
     @app.delete("/backtests/{backtest_id}", status_code=status.HTTP_204_NO_CONTENT)

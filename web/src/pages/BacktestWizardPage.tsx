@@ -26,10 +26,13 @@ import type { BacktestFeed } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 import type { StrategyMetadata, StrategyParameterMetadata } from '../types/strategies'
 import {
-  buildDefaultParams,
   buildOverrideParams,
   normalizeParamValue,
 } from '../utils/strategyParams'
+import {
+  buildStrategyParams,
+  shouldShowCommissionDragWarning,
+} from '../utils/strategyPresets'
 
 const RESOLUTIONS: Resolution[] = ['1m', '5m', '15m', '1h', '1d']
 const FEEDS: BacktestFeed[] = ['iex', 'sip', 'otc']
@@ -129,7 +132,9 @@ export function BacktestWizardPage() {
         setStrategies(items)
         if (items[0]) {
           setSelectedStrategyNames([items[0].name])
-          setStrategyOverrides({ [items[0].name]: buildDefaultParams(items[0]) })
+          setStrategyOverrides({
+            [items[0].name]: buildStrategyParams(items[0], platformSettings.backtest_defaults.resolution),
+          })
         }
       })
       .catch((err) => {
@@ -166,11 +171,34 @@ export function BacktestWizardPage() {
     setStrategyOverrides((current) => {
       const nextOverrides: Record<string, Record<string, unknown>> = {}
       for (const strategy of nextStrategies) {
-        nextOverrides[strategy.name] = current[strategy.name] ?? buildDefaultParams(strategy)
+        nextOverrides[strategy.name] =
+          current[strategy.name] ?? buildStrategyParams(strategy, resolution)
       }
       return nextOverrides
     })
   }
+
+  const handleResolutionChange = (nextResolution: Resolution) => {
+    setResolution(nextResolution)
+    setStrategyOverrides((current) => {
+      const nextOverrides: Record<string, Record<string, unknown>> = {}
+      for (const strategy of selectedStrategies) {
+        nextOverrides[strategy.name] = buildStrategyParams(strategy, nextResolution)
+      }
+      return nextOverrides
+    })
+  }
+
+  const showCommissionDragWarning = useMemo(
+    () =>
+      shouldShowCommissionDragWarning(
+        resolution,
+        platformSettings.backtest_defaults.broker.commission,
+        selectedStrategies,
+        strategyOverrides,
+      ),
+    [resolution, platformSettings.backtest_defaults.broker.commission, selectedStrategies, strategyOverrides],
+  )
 
   const handleParamChange = (strategyName: string, name: string, value: unknown) => {
     setStrategyOverrides((current) => ({
@@ -289,7 +317,7 @@ export function BacktestWizardPage() {
                   labelId="resolution-label"
                   label="Resolution"
                   value={resolution}
-                  onChange={(event) => setResolution(event.target.value as Resolution)}
+                  onChange={(event) => handleResolutionChange(event.target.value as Resolution)}
                 >
                   {RESOLUTIONS.map((value) => (
                     <MenuItem key={value} value={value}>
@@ -314,6 +342,13 @@ export function BacktestWizardPage() {
                 </Select>
               </FormControl>
             </Stack>
+            {showCommissionDragWarning && (
+              <Alert severity="warning">
+                Intraday backtests with stake of 1 share and commission of 0.1% per side often
+                produce net losses even on small gross winners (~0.2% round-trip cost). Use stake
+                of at least 10 or lower commission for more meaningful intraday results.
+              </Alert>
+            )}
           </Stack>
         </Paper>
 
@@ -346,8 +381,12 @@ export function BacktestWizardPage() {
                 />
 
                 {selectedStrategies.map((strategy) => {
-                  const params = strategyOverrides[strategy.name] ?? buildDefaultParams(strategy)
+                  const params =
+                    strategyOverrides[strategy.name] ?? buildStrategyParams(strategy, resolution)
                   const overrideCount = Object.keys(buildOverrideParams(strategy, params)).length
+                  const showVolumeRallyStakeHint =
+                    strategy.name === 'volume_rally' &&
+                    ['1m', '5m', '15m'].includes(resolution)
                   return (
                     <Paper
                       key={strategy.name}
@@ -388,6 +427,12 @@ export function BacktestWizardPage() {
                             />
                           ))}
                         </Box>
+                        {showVolumeRallyStakeHint && (
+                          <Typography variant="caption" color="text.secondary">
+                            volume_rally presets use 5m bars and stake 10 for intraday; IEX volume is
+                            partial versus SIP.
+                          </Typography>
+                        )}
                       </Stack>
                     </Paper>
                   )

@@ -4,8 +4,8 @@ import {
   Box,
   Button,
   CircularProgress,
-  Divider,
   LinearProgress,
+  Link,
   Paper,
   Stack,
   Table,
@@ -16,13 +16,16 @@ import {
   Typography,
 } from '@mui/material'
 import dayjs from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link as RouterLink, useParams } from 'react-router-dom'
 
-import { fetchBacktestDetail, fetchBacktestStatus } from '../api/backtests'
+import { backtestReportUrl, fetchBacktestDetail, fetchBacktestStatus } from '../api/backtests'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
+import { BacktestConfigInspector } from '../components/BacktestConfigInspector'
+import { BacktestRunChart } from '../components/BacktestRunChart'
+import { CollapsibleSection } from '../components/CollapsibleSection'
 import { useSettings } from '../settings/useSettings'
-import type { BacktestDetailResponse, BacktestRunResult } from '../types/backtests'
+import type { BacktestDetailResponse, BacktestRunResult, BacktestSelectionSummary } from '../types/backtests'
 import { formatInTimezone } from '../utils/datetime'
 
 function formatPercent(value: number | null | undefined): string {
@@ -227,14 +230,41 @@ export function BacktestDetailPage() {
                 <Metric label="Successful runs" value={String(report.successful_runs)} />
                 <Metric label="Failed runs" value={String(report.failed_runs)} />
                 <Metric label="Config hash" value={report.config_sha256.slice(0, 12)} />
-                <Metric label="Output JSON" value={detail.output_path ?? 'Pending write…'} />
+                <Metric
+                  label="Output JSON"
+                  value={
+                    detail.output_path ? (
+                      <Link
+                        href={backtestReportUrl(metadata.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{ wordBreak: 'break-all' }}
+                      >
+                        {metadata.id.slice(0, 8)}.json
+                      </Link>
+                    ) : (
+                      'Pending write…'
+                    )
+                  }
+                />
               </Stack>
             </Stack>
           </Paper>
 
+          <BacktestConfigInspector
+            backtestId={metadata.id}
+            inputConfigPath={report.input_config_path}
+            configSha256={report.config_sha256}
+          />
+
           <Stack spacing={2}>
-            {report.results.map((result) => (
-              <RunResultCard key={result.run_id} result={result} />
+            {report.results.map((result, index) => (
+              <RunResultCard
+                key={result.run_id}
+                result={result}
+                selection={metadata.selection}
+                defaultExpanded={index === 0}
+              />
             ))}
           </Stack>
         </>
@@ -249,18 +279,26 @@ export function BacktestDetailPage() {
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <Box>
       <Typography variant="overline" color="text.secondary">
         {label}
       </Typography>
-      <Typography>{value}</Typography>
+      {typeof value === 'string' ? <Typography>{value}</Typography> : value}
     </Box>
   )
 }
 
-function RunResultCard({ result }: { result: BacktestRunResult }) {
+function RunResultCard({
+  result,
+  selection,
+  defaultExpanded = false,
+}: {
+  result: BacktestRunResult
+  selection: BacktestSelectionSummary
+  defaultExpanded?: boolean
+}) {
   const { platformSettings, appearance } = useSettings()
   const summary = result.summary
   const sortedTrades = [...result.trades].sort((left, right) => {
@@ -277,25 +315,30 @@ function RunResultCard({ result }: { result: BacktestRunResult }) {
   const lastTrade = sortedTrades.at(-1) ?? null
   const latestOrders = [...sortedOrders].reverse().slice(0, 5)
 
-  return (
-    <Paper sx={{ p: 3 }}>
-      <Stack spacing={2}>
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={1}
-          sx={{ justifyContent: 'space-between', alignItems: { md: 'center' } }}
-        >
-          <Box>
-            <Typography variant="h6">
-              {result.symbol ?? 'Unknown symbol'} / {result.strategy}
-            </Typography>
-            <Typography color="text.secondary">
-              {result.name ?? result.run_id}
-            </Typography>
-          </Box>
-          <BacktestStatusChip status={result.status === 'success' ? 'completed' : 'failed'} />
-        </Stack>
+  const runTitle = (
+    <Stack spacing={0.25}>
+      <Typography variant="h6">
+        {result.symbol ?? 'Unknown symbol'} / {result.strategy}
+      </Typography>
+      {summary && (
+        <Typography variant="body2" color="text.secondary">
+          Return {formatPercent(summary.return_pct)} · Sharpe {summary.sharpe_ratio?.toFixed(2) ?? '—'} ·{' '}
+          {summary.total_trades} trades
+        </Typography>
+      )}
+    </Stack>
+  )
 
+  return (
+    <CollapsibleSection
+      defaultExpanded={defaultExpanded}
+      title={runTitle}
+      subtitle={result.name ?? result.run_id}
+      actions={
+        <BacktestStatusChip status={result.status === 'success' ? 'completed' : 'failed'} />
+      }
+    >
+      <Stack spacing={2}>
         {result.error && <Alert severity="error">{result.error.message}</Alert>}
 
         {summary && (
@@ -308,9 +351,18 @@ function RunResultCard({ result }: { result: BacktestRunResult }) {
           </Stack>
         )}
 
-        <Divider />
+        {result.status === 'success' && result.symbol && (
+          <BacktestRunChart
+            symbol={result.symbol}
+            startDate={selection.start_date}
+            endDate={selection.end_date}
+            resolution={selection.resolution}
+            orders={result.orders}
+            trades={result.trades}
+          />
+        )}
 
-        <Stack spacing={2}>
+        <Stack spacing={0.5}>
           <Typography variant="subtitle1">Trade activity</Typography>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
             <Metric label="Orders" value={String(result.orders.length)} />
@@ -333,7 +385,12 @@ function RunResultCard({ result }: { result: BacktestRunResult }) {
             />
             <Metric label="Data source" value={result.data_source} />
           </Stack>
+        </Stack>
 
+        <CollapsibleSection
+          title={`Trade records (${result.trades.length})`}
+          defaultExpanded={sortedTrades.length > 0 && sortedTrades.length <= 10}
+        >
           {result.trades.length > 0 ? (
             <Table size="small">
               <TableHead>
@@ -368,46 +425,45 @@ function RunResultCard({ result }: { result: BacktestRunResult }) {
           ) : (
             <Typography color="text.secondary">No trade records were emitted for this run.</Typography>
           )}
+        </CollapsibleSection>
 
-          {latestOrders.length > 0 && (
-            <>
-              <Typography variant="subtitle1">Recent orders</Typography>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>When</TableCell>
-                    <TableCell>Side</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">Size</TableCell>
-                    <TableCell align="right">Price</TableCell>
-                    <TableCell align="right">Value</TableCell>
-                    <TableCell align="right">Commission</TableCell>
+        {latestOrders.length > 0 && (
+          <CollapsibleSection title={`Recent orders (${latestOrders.length})`} defaultExpanded={false}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>When</TableCell>
+                  <TableCell>Side</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell align="right">Size</TableCell>
+                  <TableCell align="right">Price</TableCell>
+                  <TableCell align="right">Value</TableCell>
+                  <TableCell align="right">Commission</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {latestOrders.map((order, index) => (
+                  <TableRow key={`${order.datetime ?? 'no-datetime'}-${order.status}-${index}`}>
+                    <TableCell>
+                      {formatTimestampOrDash(
+                        order.datetime,
+                        platformSettings.platform_behavior.timezone,
+                        appearance.time_display_format,
+                      )}
+                    </TableCell>
+                    <TableCell>{order.is_buy ? 'Buy' : 'Sell'}</TableCell>
+                    <TableCell>{order.status}</TableCell>
+                    <TableCell align="right">{formatNumber(order.size, 2)}</TableCell>
+                    <TableCell align="right">{formatNumber(order.price, 2)}</TableCell>
+                    <TableCell align="right">{formatNumber(order.value, 2)}</TableCell>
+                    <TableCell align="right">{formatNumber(order.commission, 2)}</TableCell>
                   </TableRow>
-                </TableHead>
-                <TableBody>
-                  {latestOrders.map((order, index) => (
-                    <TableRow key={`${order.datetime ?? 'no-datetime'}-${order.status}-${index}`}>
-                      <TableCell>
-                        {formatTimestampOrDash(
-                          order.datetime,
-                          platformSettings.platform_behavior.timezone,
-                          appearance.time_display_format,
-                        )}
-                      </TableCell>
-                      <TableCell>{order.is_buy ? 'Buy' : 'Sell'}</TableCell>
-                      <TableCell>{order.status}</TableCell>
-                      <TableCell align="right">{formatNumber(order.size, 2)}</TableCell>
-                      <TableCell align="right">{formatNumber(order.price, 2)}</TableCell>
-                      <TableCell align="right">{formatNumber(order.value, 2)}</TableCell>
-                      <TableCell align="right">{formatNumber(order.commission, 2)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </>
-          )}
-        </Stack>
+                ))}
+              </TableBody>
+            </Table>
+          </CollapsibleSection>
+        )}
       </Stack>
-    </Paper>
+    </CollapsibleSection>
   )
 }

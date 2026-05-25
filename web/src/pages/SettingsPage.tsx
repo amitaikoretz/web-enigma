@@ -20,11 +20,13 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { fetchServerInfo } from '../api/serverInfo'
 import { defaultPlatformSettings } from '../settings/defaults'
 import { useSettings } from '../settings/useSettings'
 import type { AppearanceSettings, PlatformSettings } from '../types/settings'
+import type { ServerInfo } from '../types/serverInfo'
 
 type SettingsTab = 'appearance' | 'backtests' | 'behavior'
 
@@ -42,7 +44,31 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const [draftOverride, setDraftOverride] = useState<PlatformSettings | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null)
+  const [serverInfoError, setServerInfoError] = useState<string | null>(null)
   const draft = draftOverride ?? platformSettings
+
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await fetchServerInfo()
+        if (!cancelled) {
+          setServerInfo(next)
+          setServerInfoError(null)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setServerInfo(null)
+          setServerInfoError(err instanceof Error ? err.message : 'Failed to load server info')
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleAppearanceChange = <K extends keyof AppearanceSettings>(
     key: K,
@@ -111,6 +137,17 @@ export function SettingsPage() {
               subtitle="Changes here apply immediately and stay on this device."
             />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+              <SelectField
+                label="Theme preset"
+                value={appearance.theme_preset}
+                onChange={(value) => handleAppearanceChange('theme_preset', value as AppearanceSettings['theme_preset'])}
+                options={[
+                  ['default', 'Default Standard'],
+                  ['alpine', 'Alpine Frost (Glacial Light)'],
+                  ['solaris', 'Solaris Amber (Basalt Dark)'],
+                  ['aurora', 'Aurora Mirage (Glassmorphic Glow)'],
+                ]}
+              />
               <SelectField
                 label="Theme mode"
                 value={appearance.theme_mode}
@@ -215,6 +252,18 @@ export function SettingsPage() {
             <SectionTitle
               title="Backtest Defaults"
               subtitle="These defaults prefill new jobs and provide the API fallback for optional execution fields."
+            />
+            {serverInfoError && <Alert severity="warning">{serverInfoError}</Alert>}
+            <TextField
+              label="Backtest storage directory"
+              value={serverInfo?.backtest_results_dir ?? (loading ? 'Loading…' : 'Unavailable')}
+              helperText="Reports (.json), metadata (.meta.json), and saved configs (.yaml) are loaded and written here by the API server."
+              slotProps={{
+                input: {
+                  readOnly: true,
+                },
+              }}
+              fullWidth
             />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
               <TextField

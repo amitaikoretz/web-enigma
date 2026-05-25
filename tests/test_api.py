@@ -127,6 +127,18 @@ def test_api_writes_request_logs_to_file(tmp_path):
     assert "GET /health -> 200" in log_text
 
 
+def test_get_server_info_returns_backtest_storage_paths(tmp_path):
+    client = _build_client(tmp_path)
+    expected_results_dir = (tmp_path / "api-results").resolve()
+
+    response = client.get("/server/info")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["backtest_results_dir"] == str(expected_results_dir)
+    assert body["platform_settings_path"] == str(expected_results_dir / "settings" / "platform-settings.json")
+
+
 def test_get_settings_returns_defaults_when_file_missing(tmp_path):
     client = _build_client(tmp_path)
 

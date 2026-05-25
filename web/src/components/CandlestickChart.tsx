@@ -15,30 +15,28 @@ import {
   type MouseEventParams,
   type SeriesMarker,
   type Time,
-  type UTCTimestamp,
 } from 'lightweight-charts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useSettings } from '../settings/useSettings'
-import type { OrderRecord } from '../types/dayBacktest'
+import type { OrderRecord, TradeRecord } from '../types/dayBacktest'
 import type { MarketDataResponse } from '../types/marketData'
+import { toChartTime, createChartTimeFormatter, createChartTickMarkFormatter } from '../utils/chartTime'
+import { ChartViewportWindow } from './ChartViewportWindow'
 
 interface CandlestickChartProps {
   data: MarketDataResponse | null
   orders?: OrderRecord[]
+  trades?: TradeRecord[]
+  showViewportWindow?: boolean
 }
 
 const BUY_MARKER_COLOR = '#58a6ff'
 const SELL_MARKER_COLOR = '#f0883e'
+const WIN_TRADE_COLOR = '#3fb950'
+const LOSS_TRADE_COLOR = '#f85149'
 const MIN_SELECTION_PX = 8
 const VOLUME_PANE_STRETCH = 0.28
-
-function toChartTime(timestamp: string, resolution: string): Time {
-  if (resolution === '1d') {
-    return timestamp.slice(0, 10) as Time
-  }
-  return Math.floor(Date.parse(timestamp) / 1000) as UTCTimestamp
-}
 
 function toCandlestickData(data: MarketDataResponse): CandlestickData<Time>[] {
   return data.rows.map((row) => ({
@@ -92,7 +90,41 @@ function indexOrdersByTime(data: MarketDataResponse, orders: OrderRecord[]): Map
   return byTime
 }
 
-function toOrderMarkers(data: MarketDataResponse, orders: OrderRecord[]): SeriesMarker<Time>[] {
+function formatTradePnl(pnl: number): string {
+  const sign = pnl >= 0 ? '+' : ''
+  return `${sign}${pnl.toFixed(0)}`
+}
+
+function toTradeMarkers(data: MarketDataResponse, trades: TradeRecord[]): SeriesMarker<Time>[] {
+  const barTimes = new Set(data.rows.map((row) => String(toChartTime(row.timestamp, data.resolution))))
+  const markers: SeriesMarker<Time>[] = []
+
+  for (const trade of trades) {
+    if (!trade.datetime) {
+      continue
+    }
+    const time = toChartTime(trade.datetime, data.resolution)
+    if (!barTimes.has(String(time))) {
+      continue
+    }
+    const isWin = trade.pnlcomm >= 0
+    markers.push({
+      time,
+      position: 'inBar',
+      color: isWin ? WIN_TRADE_COLOR : LOSS_TRADE_COLOR,
+      shape: 'circle',
+      text: formatTradePnl(trade.pnlcomm),
+    })
+  }
+
+  return markers
+}
+
+function toAnnotationMarkers(
+  data: MarketDataResponse,
+  orders: OrderRecord[],
+  trades: TradeRecord[],
+): SeriesMarker<Time>[] {
   const barTimes = new Set(data.rows.map((row) => String(toChartTime(row.timestamp, data.resolution))))
   const markers: SeriesMarker<Time>[] = []
 
@@ -113,6 +145,7 @@ function toOrderMarkers(data: MarketDataResponse, orders: OrderRecord[]): Series
     })
   }
 
+  markers.push(...toTradeMarkers(data, trades))
   return markers.sort((left, right) => Number(left.time) - Number(right.time))
 }
 
@@ -123,7 +156,12 @@ function formatBarTime(
   timeDisplayFormat: '12h' | '24h',
 ): string {
   if (resolution === '1d') {
-    return timestamp.slice(0, 10)
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(timestamp))
   }
   return new Intl.DateTimeFormat(undefined, {
     timeZone: timezone,
@@ -141,10 +179,37 @@ function formatOrderLine(order: OrderRecord): string {
   return `<div style="color:${sideColor};font-weight:600">${side} ${order.size} @ $${order.price.toFixed(2)}</div>`
 }
 
+function formatTradeLine(trade: TradeRecord): string {
+  const isWin = trade.pnlcomm >= 0
+  const color = isWin ? WIN_TRADE_COLOR : LOSS_TRADE_COLOR
+  return `<div style="color:${color};font-weight:600">Close ${trade.size} @ $${trade.price.toFixed(2)} · PnL ${formatTradePnl(trade.pnlcomm)}</div>`
+}
+
+function indexTradesByTime(data: MarketDataResponse, trades: TradeRecord[]): Map<string, TradeRecord[]> {
+  const barTimes = new Set(data.rows.map((row) => String(toChartTime(row.timestamp, data.resolution))))
+  const byTime = new Map<string, TradeRecord[]>()
+
+  for (const trade of trades) {
+    if (!trade.datetime) {
+      continue
+    }
+    const timeKey = String(toChartTime(trade.datetime, data.resolution))
+    if (!barTimes.has(timeKey)) {
+      continue
+    }
+    const existing = byTime.get(timeKey) ?? []
+    existing.push(trade)
+    byTime.set(timeKey, existing)
+  }
+
+  return byTime
+}
+
 function buildTooltipHtml(
   bar: { open: number; high: number; low: number; close: number; volume: number; timestamp: string },
   resolution: string,
   ordersAtBar: OrderRecord[],
+  tradesAtBar: TradeRecord[],
   timezone: string,
   timeDisplayFormat: '12h' | '24h',
 ): string {
@@ -154,16 +219,22 @@ function buildTooltipHtml(
     `<div style="margin-top:4px">Vol ${formatVolume(bar.volume)}</div>`,
   ]
 
-  if (ordersAtBar.length > 0) {
+  if (ordersAtBar.length > 0 || tradesAtBar.length > 0) {
     lines.push('<div style="margin-top:6px;border-top:1px solid #30363d;padding-top:6px">')
     lines.push(ordersAtBar.map(formatOrderLine).join(''))
+    lines.push(tradesAtBar.map(formatTradeLine).join(''))
     lines.push('</div>')
   }
 
   return lines.join('')
 }
 
-export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
+export function CandlestickChart({
+  data,
+  orders = [],
+  trades = [],
+  showViewportWindow = false,
+}: CandlestickChartProps) {
   const { appearance, platformSettings } = useSettings()
   const theme = useTheme()
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -176,15 +247,18 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null)
   const dataRef = useRef(data)
   const ordersRef = useRef(orders)
+  const tradesRef = useRef(trades)
   const zoomSelectModeRef = useRef(false)
   const selectingRef = useRef<{ startX: number; pointerId: number } | null>(null)
 
   const [zoomSelectMode, setZoomSelectMode] = useState(false)
+  const [chartInstance, setChartInstance] = useState<IChartApi | null>(null)
 
   useEffect(() => {
     dataRef.current = data
     ordersRef.current = orders
-  }, [data, orders])
+    tradesRef.current = trades
+  }, [data, orders, trades])
 
   useEffect(() => {
     zoomSelectModeRef.current = zoomSelectMode
@@ -231,6 +305,16 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
         borderColor: '#30363d',
         timeVisible: true,
         secondsVisible: false,
+        tickMarkFormatter: createChartTickMarkFormatter(
+          platformSettings.platform_behavior.timezone,
+          appearance.time_display_format,
+        ),
+      },
+      localization: {
+        timeFormatter: createChartTimeFormatter(
+          platformSettings.platform_behavior.timezone,
+          appearance.time_display_format,
+        ),
       },
       crosshair: {
         vertLine: { labelBackgroundColor: '#30363d' },
@@ -278,6 +362,7 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
     panes[1]?.setStretchFactor(VOLUME_PANE_STRETCH)
 
     chartRef.current = chart
+    setChartInstance(chart)
     seriesRef.current = series
     volumeSeriesRef.current = volumeSeries
     markersRef.current = createSeriesMarkers(series, [])
@@ -309,10 +394,12 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
       }
 
       const ordersAtBar = indexOrdersByTime(chartData, ordersRef.current).get(timeKey) ?? []
+      const tradesAtBar = indexTradesByTime(chartData, tradesRef.current).get(timeKey) ?? []
       tooltip.innerHTML = buildTooltipHtml(
         row,
         chartData.resolution,
         ordersAtBar,
+        tradesAtBar,
         platformSettings.platform_behavior.timezone,
         appearance.time_display_format,
       )
@@ -441,6 +528,7 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
       markersRef.current = null
       chart.remove()
       chartRef.current = null
+      setChartInstance(null)
       seriesRef.current = null
       volumeSeriesRef.current = null
     }
@@ -473,28 +561,44 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
 
     series.setData(toCandlestickData(data))
     volumeSeries.setData(toVolumeData(data, appearance.chart_up_color, appearance.chart_down_color))
-    markers.setMarkers(toOrderMarkers(data, orders))
+    markers.setMarkers(toAnnotationMarkers(data, orders, trades))
     chart.timeScale().fitContent()
-  }, [appearance.chart_down_color, appearance.chart_up_color, data, orders])
+  }, [appearance.chart_down_color, appearance.chart_up_color, data, orders, trades])
+
+  const dataRange =
+    data && data.rows.length > 0
+      ? {
+          from: toChartTime(data.rows[0].timestamp, data.resolution),
+          to: toChartTime(data.rows.at(-1)!.timestamp, data.resolution),
+        }
+      : null
 
   return (
     <Box
-      ref={wrapperRef}
       sx={{
-        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
         width: '100%',
         height: '100%',
         minHeight: 420,
-        cursor: zoomSelectMode ? 'crosshair' : 'default',
       }}
     >
       <Box
-        ref={chartContainerRef}
+        ref={wrapperRef}
         sx={{
-          width: '100%',
-          height: '100%',
+          position: 'relative',
+          flex: 1,
+          minHeight: 360,
+          cursor: zoomSelectMode ? 'crosshair' : 'default',
         }}
-      />
+      >
+        <Box
+          ref={chartContainerRef}
+          sx={{
+            width: '100%',
+            height: '100%',
+          }}
+        />
 
       <Box
         ref={selectionRef}
@@ -566,6 +670,17 @@ export function CandlestickChart({ data, orders = [] }: CandlestickChartProps) {
           {zoomSelectMode ? 'Drag to zoom' : 'Shift+drag to zoom'}
         </Typography>
       </Stack>
+      </Box>
+
+      {showViewportWindow && (
+        <ChartViewportWindow
+          key={data ? `${data.symbol}-${data.start_date}-${data.stop_date}-${data.rows.length}` : 'empty'}
+          chart={chartInstance}
+          dataRange={dataRange}
+          timezone={platformSettings.platform_behavior.timezone}
+          timeDisplayFormat={appearance.time_display_format}
+        />
+      )}
     </Box>
   )
 }

@@ -51,6 +51,10 @@ export function backtestReportUrl(backtestId: string): string {
   return `/api/backtests/${backtestId}/report`
 }
 
+export function backtestConfigUrl(backtestId: string): string {
+  return `/api/backtests/${backtestId}/config`
+}
+
 export async function deleteBacktest(backtestId: string): Promise<void> {
   const response = await fetch(`/api/backtests/${backtestId}`, {
     method: 'DELETE',

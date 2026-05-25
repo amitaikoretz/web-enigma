@@ -400,6 +400,30 @@ class BreakoutChannelCore(BasePortableStrategy):
 
 
 class VolumeRallyCore(BasePortableStrategy):
+    def __init__(self, params: dict[str, Any]):
+        super().__init__(params)
+        self._last_exit_bar_index: int | None = None
+
+    def load_state(self, state: dict[str, Any] | None) -> None:
+        if not state:
+            self._last_exit_bar_index = None
+            return
+        raw_index = state.get("last_exit_bar_index")
+        self._last_exit_bar_index = int(raw_index) if raw_index is not None else None
+
+    def dump_state(self) -> dict[str, Any]:
+        return {"last_exit_bar_index": self._last_exit_bar_index}
+
+    def _current_bar_index(self, context: StrategyContext) -> int:
+        return len(context.bars) - 1
+
+    def _in_cooldown(self, context: StrategyContext) -> bool:
+        cooldown_bars = int(self.params["cooldown_bars"])
+        if cooldown_bars <= 0 or self._last_exit_bar_index is None:
+            return False
+        bars_since_exit = self._current_bar_index(context) - self._last_exit_bar_index
+        return bars_since_exit < cooldown_bars
+
     def on_bar(self, context: StrategyContext) -> StrategyDecision:
         closes = _closes(context.bars)
         highs = _highs(context.bars)
@@ -444,14 +468,21 @@ class VolumeRallyCore(BasePortableStrategy):
             time_exit = _bars_held(context) >= int(self.params["max_hold_bars"])
 
             if context.bar.close <= trailing_stop:
+                self._last_exit_bar_index = self._current_bar_index(context)
                 return StrategyDecision.close("trailing_exit")
             if context.bar.close <= fixed_stop:
+                self._last_exit_bar_index = self._current_bar_index(context)
                 return StrategyDecision.close("atr_stop")
             if context.bar.close >= target_price:
+                self._last_exit_bar_index = self._current_bar_index(context)
                 return StrategyDecision.close("atr_target")
             if time_exit:
+                self._last_exit_bar_index = self._current_bar_index(context)
                 return StrategyDecision.close("time_exit")
             return StrategyDecision.hold()
+
+        if self._in_cooldown(context):
+            return StrategyDecision.hold("cooldown")
 
         lookback = int(self.params["breakout_lookback"])
         if len(context.bars) <= lookback:
@@ -611,6 +642,7 @@ class PortableBacktestingStrategy(Strategy):
                     "value": trade_event.value,
                     "pnl": float(trade_event.pnl or 0.0),
                     "pnlcomm": float(trade_event.pnlcomm or 0.0),
+                    "reason": self._last_exit_reason,
                 }
             )
             self._last_exit_reason = None

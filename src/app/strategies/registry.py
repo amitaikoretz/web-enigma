@@ -94,8 +94,9 @@ class VolumeRallyParams(BaseModel):
     adx_min: float = Field(default=25.0, ge=0.0)
     sl_atr_mult: float = Field(default=1.5, gt=0)
     tp_atr_mult: float = Field(default=3.0, gt=0)
-    trail_atr_mult: float = Field(default=1.0, gt=0)
+    trail_atr_mult: float = Field(default=1.5, gt=0)
     max_hold_bars: int = Field(default=48, ge=1)
+    cooldown_bars: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _validate_windows(self) -> "VolumeRallyParams":

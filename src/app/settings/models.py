@@ -63,7 +63,7 @@ class BacktestDefaults(BaseModel):
 
 
 class PlatformBehaviorSettings(BaseModel):
-    timezone: str = "UTC"
+    timezone: str = "America/New_York"
     auto_refresh_interval_seconds: float = Field(default=1.5, ge=0.5, le=60)
     confirm_before_launch: bool = False
     preferred_landing_page: Literal["backtests", "new_backtest", "chart"] = "backtests"

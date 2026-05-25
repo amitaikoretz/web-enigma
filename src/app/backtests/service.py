@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from app.backtests.models import (
     BacktestCreateRequest,
     BacktestCreateResponse,
@@ -27,6 +29,10 @@ from app.output.models import RunResult
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def config_to_yaml_text(config_raw: dict[str, Any]) -> str:
+    return yaml.safe_dump(config_raw, default_flow_style=False, sort_keys=False)
 
 
 def _build_selection_summary(payload: BacktestCreateRequest) -> BacktestSelectionSummary:
@@ -132,8 +138,15 @@ class BacktestResultRepository:
     def metadata_path(self, backtest_id: str) -> Path:
         return self.output_dir / f"{backtest_id}.meta.json"
 
+    def config_path(self, backtest_id: str) -> Path:
+        return self.output_dir / f"{backtest_id}.yaml"
+
     def exists(self, backtest_id: str) -> bool:
-        return self.metadata_path(backtest_id).exists() or self.report_path(backtest_id).exists()
+        return (
+            self.metadata_path(backtest_id).exists()
+            or self.report_path(backtest_id).exists()
+            or self.config_path(backtest_id).exists()
+        )
 
     def write_metadata(self, item: BacktestListItem) -> None:
         self.ensure_ready()
@@ -161,6 +174,23 @@ class BacktestResultRepository:
         temp_path = path.with_suffix(".tmp")
         write_backtest_report_json(report, temp_path)
         temp_path.replace(path)
+
+    def save_config_yaml(self, backtest_id: str, config_raw: dict[str, Any]) -> None:
+        self.ensure_ready()
+        path = self.config_path(backtest_id)
+        temp_path = path.with_suffix(".yaml.tmp")
+        temp_path.write_text(config_to_yaml_text(config_raw), encoding="utf-8")
+        temp_path.replace(path)
+
+    def resolve_config_yaml(self, backtest_id: str) -> str | None:
+        path = self.config_path(backtest_id)
+        if path.exists():
+            return path.read_text(encoding="utf-8")
+
+        report = self.load_report(backtest_id)
+        if report is None or not report.input_config:
+            return None
+        return config_to_yaml_text(report.input_config)
 
     def list_backtests(self) -> list[BacktestListItem]:
         self.ensure_ready()
@@ -222,7 +252,11 @@ class BacktestResultRepository:
         if not self.exists(backtest_id):
             return False
         with self._lock:
-            for path in (self.report_path(backtest_id), self.metadata_path(backtest_id)):
+            for path in (
+                self.report_path(backtest_id),
+                self.metadata_path(backtest_id),
+                self.config_path(backtest_id),
+            ):
                 if path.exists():
                     path.unlink()
         return True
@@ -306,6 +340,7 @@ class BacktestJobService:
                 ),
             )
             self.repository.save_report(current.id, report)
+            self.repository.save_config_yaml(current.id, config_raw)
         except Exception as exc:  # noqa: BLE001
             current.status = "failed"
             current.error_message = str(exc)

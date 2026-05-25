@@ -28,6 +28,7 @@ class TradeRecord(BaseModel):
     value: float
     pnl: float
     pnlcomm: float
+    reason: str | None = None
 
 
 class EquityPoint(BaseModel):

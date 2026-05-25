@@ -2,6 +2,7 @@ import type { PlatformSettings } from '../types/settings'
 
 export const defaultPlatformSettings: PlatformSettings = {
   appearance: {
+    theme_preset: 'default',
     theme_mode: 'dark',
     density: 'comfortable',
     chart_up_color: '#26a69a',
@@ -33,7 +34,7 @@ export const defaultPlatformSettings: PlatformSettings = {
     },
   },
   platform_behavior: {
-    timezone: 'UTC',
+    timezone: 'America/New_York',
     auto_refresh_interval_seconds: 1.5,
     confirm_before_launch: false,
     preferred_landing_page: 'backtests',

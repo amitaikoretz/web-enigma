@@ -19,8 +19,10 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 
 import { fetchStrategies } from '../api/strategies'
+import type { Resolution } from '../types/marketData'
 import type { StrategyMetadata, StrategyParameterMetadata } from '../types/strategies'
-import { buildDefaultParams, parseParamValue } from '../utils/strategyParams'
+import { buildStrategyParams } from '../utils/strategyPresets'
+import { parseParamValue } from '../utils/strategyParams'
 
 export interface StrategySelection {
   strategy: string
@@ -29,10 +31,15 @@ export interface StrategySelection {
 
 interface StrategyParamsFormProps {
   disabled?: boolean
+  resolution?: Resolution
   onChange: (selection: StrategySelection) => void
 }
 
-export function StrategyParamsForm({ disabled = false, onChange }: StrategyParamsFormProps) {
+export function StrategyParamsForm({
+  disabled = false,
+  resolution = '1d',
+  onChange,
+}: StrategyParamsFormProps) {
   const [strategies, setStrategies] = useState<StrategyMetadata[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +58,7 @@ export function StrategyParamsForm({ disabled = false, onChange }: StrategyParam
         if (items.length > 0) {
           const first = items[0]
           setSelectedName(first.name)
-          setParams(buildDefaultParams(first))
+          setParams(buildStrategyParams(first, resolution))
         }
       })
       .catch((err) => {
@@ -74,6 +81,13 @@ export function StrategyParamsForm({ disabled = false, onChange }: StrategyParam
     [strategies, selectedName],
   )
 
+  useEffect(() => {
+    if (!selectedStrategy) {
+      return
+    }
+    setParams(buildStrategyParams(selectedStrategy, resolution))
+  }, [resolution, selectedStrategy])
+
   const paramCount = selectedStrategy ? Object.keys(selectedStrategy.parameters).length : 0
 
   useEffect(() => {
@@ -86,7 +100,7 @@ export function StrategyParamsForm({ disabled = false, onChange }: StrategyParam
   const handleStrategyChange = (name: string) => {
     const strategy = strategies.find((item) => item.name === name) ?? null
     setSelectedName(name)
-    setParams(buildDefaultParams(strategy))
+    setParams(buildStrategyParams(strategy, resolution))
     setParamsExpanded(false)
   }
 

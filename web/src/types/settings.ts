@@ -2,6 +2,7 @@ import type { BacktestFeed } from './backtests'
 import type { Resolution } from './marketData'
 
 export type ThemeModePreference = 'dark' | 'light' | 'system'
+export type ThemePreset = 'default' | 'alpine' | 'solaris' | 'aurora'
 export type DensityPreference = 'comfortable' | 'compact'
 export type LayoutWidthPreference = 'standard' | 'wide'
 export type TimeDisplayFormat = '12h' | '24h'
@@ -10,6 +11,7 @@ export type DateRangePreset = '30D' | '90D' | '1Y'
 export type PreferredLandingPage = 'backtests' | 'new_backtest' | 'chart'
 
 export interface AppearanceSettings {
+  theme_preset: ThemePreset
   theme_mode: ThemeModePreference
   density: DensityPreference
   chart_up_color: string
