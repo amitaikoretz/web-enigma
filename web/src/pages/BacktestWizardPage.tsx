@@ -17,9 +17,9 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { createBacktest } from '../api/backtests'
+import { createBacktest, fetchBacktestDetail } from '../api/backtests'
 import { fetchStrategies } from '../api/strategies'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestFeed } from '../types/backtests'
@@ -29,6 +29,7 @@ import {
   buildOverrideParams,
   normalizeParamValue,
 } from '../utils/strategyParams'
+import { parseInputConfigToPrefill } from '../utils/backtestConfigPrefill'
 import {
   buildStrategyParams,
   shouldShowCommissionDragWarning,
@@ -108,10 +109,14 @@ function ParameterField({
 export function BacktestWizardPage() {
   const { platformSettings } = useSettings()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const prefillFromId = searchParams.get('from')
   const [strategies, setStrategies] = useState<StrategyMetadata[]>([])
   const [loadingStrategies, setLoadingStrategies] = useState(true)
+  const [loadingPrefill, setLoadingPrefill] = useState(Boolean(prefillFromId))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [prefillSourceId, setPrefillSourceId] = useState<string | null>(null)
   const [symbols, setSymbols] = useState<string[]>(platformSettings.backtest_defaults.symbols_seed_list)
   const [startDate, setStartDate] = useState<Dayjs | null>(
     resolveStartDatePreset(platformSettings.backtest_defaults.date_range_preset),
@@ -121,6 +126,9 @@ export function BacktestWizardPage() {
   const [feed, setFeed] = useState<BacktestFeed>(platformSettings.backtest_defaults.feed)
   const [selectedStrategyNames, setSelectedStrategyNames] = useState<string[]>([])
   const [strategyOverrides, setStrategyOverrides] = useState<Record<string, Record<string, unknown>>>({})
+  const [submitBroker, setSubmitBroker] = useState(platformSettings.backtest_defaults.broker)
+  const [submitAnalyzers, setSubmitAnalyzers] = useState(platformSettings.backtest_defaults.analyzers)
+  const [submitExecution, setSubmitExecution] = useState(platformSettings.backtest_defaults.execution)
 
   useEffect(() => {
     let cancelled = false
@@ -130,7 +138,7 @@ export function BacktestWizardPage() {
           return
         }
         setStrategies(items)
-        if (items[0]) {
+        if (!prefillFromId && items[0]) {
           setSelectedStrategyNames([items[0].name])
           setStrategyOverrides({
             [items[0].name]: buildStrategyParams(items[0], platformSettings.backtest_defaults.resolution),
@@ -151,7 +159,79 @@ export function BacktestWizardPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [prefillFromId, platformSettings.backtest_defaults.resolution])
+
+  useEffect(() => {
+    if (!prefillFromId || loadingStrategies || strategies.length === 0) {
+      return undefined
+    }
+
+    let cancelled = false
+    setLoadingPrefill(true)
+    setError(null)
+
+    void fetchBacktestDetail(prefillFromId)
+      .then((detail) => {
+        if (cancelled) {
+          return
+        }
+
+        const inputConfig = detail.report?.input_config
+        if (!inputConfig) {
+          throw new Error('Backtest configuration is not available yet.')
+        }
+
+        const prefill = parseInputConfigToPrefill(inputConfig)
+        if (!prefill) {
+          throw new Error('Could not parse backtest configuration.')
+        }
+
+        const nextOverrides: Record<string, Record<string, unknown>> = {}
+        const nextStrategyNames: string[] = []
+        for (const selection of prefill.strategies) {
+          const strategy = strategies.find((item) => item.name === selection.name)
+          if (!strategy) {
+            continue
+          }
+          nextStrategyNames.push(strategy.name)
+          nextOverrides[strategy.name] = {
+            ...buildStrategyParams(strategy, prefill.resolution),
+            ...selection.params,
+          }
+        }
+
+        if (nextStrategyNames.length === 0) {
+          throw new Error('None of the original strategies are available on this server.')
+        }
+
+        setSymbols(prefill.symbols)
+        setStartDate(dayjs(prefill.startDate))
+        setEndDate(dayjs(prefill.endDate))
+        setResolution(prefill.resolution)
+        setFeed(prefill.feed)
+        setSelectedStrategyNames(nextStrategyNames)
+        setStrategyOverrides(nextOverrides)
+        setSubmitBroker(prefill.broker ?? platformSettings.backtest_defaults.broker)
+        setSubmitAnalyzers(prefill.analyzers ?? platformSettings.backtest_defaults.analyzers)
+        setSubmitExecution(prefill.execution ?? platformSettings.backtest_defaults.execution)
+        setPrefillSourceId(prefillFromId)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load backtest configuration')
+          setPrefillSourceId(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingPrefill(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [prefillFromId, loadingStrategies, strategies, platformSettings.backtest_defaults])
 
   const selectedStrategies = useMemo(
     () =>
@@ -193,11 +273,11 @@ export function BacktestWizardPage() {
     () =>
       shouldShowCommissionDragWarning(
         resolution,
-        platformSettings.backtest_defaults.broker.commission,
+        submitBroker.commission,
         selectedStrategies,
         strategyOverrides,
       ),
-    [resolution, platformSettings.backtest_defaults.broker.commission, selectedStrategies, strategyOverrides],
+    [resolution, submitBroker.commission, selectedStrategies, strategyOverrides],
   )
 
   const handleParamChange = (strategyName: string, name: string, value: unknown) => {
@@ -243,9 +323,9 @@ export function BacktestWizardPage() {
           name: strategy.name,
           params: buildOverrideParams(strategy, strategyOverrides[strategy.name] ?? {}),
         })),
-        broker: platformSettings.backtest_defaults.broker,
-        analyzers: platformSettings.backtest_defaults.analyzers,
-        execution: platformSettings.backtest_defaults.execution,
+        broker: submitBroker,
+        analyzers: submitAnalyzers,
+        execution: submitExecution,
       })
       navigate(`/backtests/${response.backtest_id}`)
     } catch (err) {
@@ -263,7 +343,20 @@ export function BacktestWizardPage() {
         </Typography>
       </Stack>
 
+      {prefillSourceId && (
+        <Alert severity="info">
+          Prefilled from backtest `{prefillSourceId}`. Edit any settings below before launching.
+        </Alert>
+      )}
+
       {error && <Alert severity="error">{error}</Alert>}
+
+      {loadingPrefill && (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <CircularProgress size={20} />
+          <Typography color="text.secondary">Loading backtest configuration…</Typography>
+        </Stack>
+      )}
 
       <Stack component="form" spacing={3} onSubmit={handleSubmit}>
         <Paper sx={{ p: 3 }}>
@@ -479,6 +572,7 @@ export function BacktestWizardPage() {
                 disabled={
                   submitting ||
                   loadingStrategies ||
+                  loadingPrefill ||
                   !hasValidDateRange ||
                   symbols.length === 0 ||
                   selectedStrategies.length === 0

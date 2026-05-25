@@ -1,0 +1,293 @@
+import {
+  Alert,
+  Box,
+  Stack,
+  Tab,
+  Tabs,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Typography,
+} from '@mui/material'
+import dayjs from 'dayjs'
+import { useState } from 'react'
+
+import type { BacktestRunResult, BacktestSelectionSummary } from '../types/backtests'
+import { resolveRunDiagnostics } from '../utils/backtestDiagnostics'
+import { formatInTimezone } from '../utils/datetime'
+import { BacktestAnalysisSection } from './BacktestAnalysisSection'
+import {
+  DiagnosticsLayout,
+  FilterDiagnosticsPanel,
+  HeadlineMetricsGrid,
+  RiskMetricsPanel,
+  TradeDiagnosticsPanel,
+} from './BacktestDiagnosticsPanels'
+import { DiagnosticsTableShell } from './BacktestMetricGrid'
+import { BacktestRunChart } from './BacktestRunChart'
+import { TradeDistributionCharts } from './TradeDistributionCharts'
+import { useSettings } from '../settings/useSettings'
+
+function formatNumber(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined) {
+    return '—'
+  }
+  return value.toFixed(digits)
+}
+
+function formatTimestampOrDash(
+  value: string | null | undefined,
+  timezone: string,
+  timeDisplayFormat: '12h' | '24h',
+): string {
+  if (!value) {
+    return '—'
+  }
+  return formatInTimezone(value, timezone, timeDisplayFormat, true)
+}
+
+function medianTradeSize(trades: BacktestRunResult['trades']): number | null {
+  if (trades.length === 0) {
+    return null
+  }
+  const sizes = [...trades.map((trade) => Math.abs(trade.size))].sort((left, right) => left - right)
+  const middle = Math.floor(sizes.length / 2)
+  if (sizes.length % 2 === 0) {
+    return (sizes[middle - 1] + sizes[middle]) / 2
+  }
+  return sizes[middle]
+}
+
+interface BacktestRunDetailPanelProps {
+  result: BacktestRunResult
+  selection: BacktestSelectionSummary
+}
+
+export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailPanelProps) {
+  const { platformSettings, appearance } = useSettings()
+  const [tab, setTab] = useState<'overview' | 'chart' | 'diagnostics' | 'trades'>('overview')
+  const summary = result.summary
+  const resolved = resolveRunDiagnostics(result)
+  const tradeDiagnostics = resolved.tradeDiagnostics
+  const filterDiagnostics = resolved.filterDiagnostics
+  const riskMetrics = resolved.riskMetrics
+  const distributions = tradeDiagnostics?.distributions ?? null
+
+  const sortedTrades = [...result.trades].sort((left, right) => {
+    const leftValue = left.datetime ? dayjs(left.datetime).valueOf() : Number.NEGATIVE_INFINITY
+    const rightValue = right.datetime ? dayjs(right.datetime).valueOf() : Number.NEGATIVE_INFINITY
+    return leftValue - rightValue
+  })
+  const sortedOrders = [...result.orders].sort((left, right) => {
+    const leftValue = left.datetime ? dayjs(left.datetime).valueOf() : Number.NEGATIVE_INFINITY
+    const rightValue = right.datetime ? dayjs(right.datetime).valueOf() : Number.NEGATIVE_INFINITY
+    return leftValue - rightValue
+  })
+  const firstTrade = sortedTrades[0] ?? null
+  const lastTrade = sortedTrades.at(-1) ?? null
+  const latestOrders = [...sortedOrders].reverse().slice(0, 5)
+
+  return (
+    <Box sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.default' }}>
+      <Stack spacing={2} sx={{ p: 2 }}>
+        <Stack spacing={0.5}>
+          <Typography variant="h6">
+            {result.symbol ?? 'Unknown symbol'} / {result.strategy}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {result.name ?? result.run_id}
+          </Typography>
+        </Stack>
+
+        {result.error && <Alert severity="error">{result.error.message}</Alert>}
+        {resolved.isDerived && (
+          <Alert severity="info">
+            Some metrics were computed in the browser from trade records. Re-run this backtest to persist full
+            diagnostics in the report JSON.
+          </Alert>
+        )}
+
+        <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Run analysis sections">
+          <Tab value="overview" label="Overview" />
+          <Tab value="chart" label="Chart" disabled={result.status !== 'success' || !result.symbol} />
+          <Tab value="diagnostics" label="Diagnostics" />
+          <Tab value="trades" label={`Trades (${result.trades.length})`} />
+        </Tabs>
+
+        {tab === 'overview' && summary && (
+          <BacktestAnalysisSection title="Overview" description="Headline performance for this symbol and strategy.">
+            <HeadlineMetricsGrid
+              returnPct={summary.return_pct}
+              sharpeRatio={summary.sharpe_ratio}
+              maxDrawdownPct={summary.max_drawdown_pct}
+              totalTrades={summary.total_trades}
+              wonTrades={summary.won_trades}
+              lostTrades={summary.lost_trades}
+              winRatePct={tradeDiagnostics?.win_rate_pct}
+            />
+          </BacktestAnalysisSection>
+        )}
+
+        {tab === 'chart' && result.status === 'success' && result.symbol && (
+          <BacktestAnalysisSection title="Price chart" description="Market bars with order and trade markers.">
+            <BacktestRunChart
+              symbol={result.symbol}
+              startDate={selection.start_date}
+              endDate={selection.end_date}
+              resolution={selection.resolution}
+              orders={result.orders}
+              trades={result.trades}
+            />
+          </BacktestAnalysisSection>
+        )}
+
+        {tab === 'diagnostics' && (tradeDiagnostics || filterDiagnostics || riskMetrics) && (
+          <BacktestAnalysisSection
+            title="Strategy diagnostics"
+            description="Trade economics, distributions, filters, and risk context."
+          >
+            <Stack spacing={2}>
+              <DiagnosticsLayout>
+                {tradeDiagnostics && (
+                  <Box sx={{ gridColumn: { lg: '1 / -1' } }}>
+                    <TradeDiagnosticsPanel diagnostics={tradeDiagnostics} />
+                  </Box>
+                )}
+                {distributions && (
+                  <Box sx={{ gridColumn: { lg: '1 / -1' } }}>
+                    <TradeDistributionCharts
+                      distributions={distributions}
+                      medianHoldMinutes={tradeDiagnostics?.median_hold_minutes}
+                      medianSize={medianTradeSize(result.trades)}
+                    />
+                  </Box>
+                )}
+                {filterDiagnostics && <FilterDiagnosticsPanel diagnostics={filterDiagnostics} />}
+                {riskMetrics && <RiskMetricsPanel metrics={riskMetrics} />}
+              </DiagnosticsLayout>
+            </Stack>
+          </BacktestAnalysisSection>
+        )}
+
+        {tab === 'trades' && (
+          <BacktestAnalysisSection title="Trade activity" description="Execution summary and detailed trade records.">
+            <Stack spacing={2}>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                <Metric label="Orders" value={String(result.orders.length)} />
+                <Metric label="Trade records" value={String(result.trades.length)} />
+                <Metric
+                  label="First trade"
+                  value={formatTimestampOrDash(
+                    firstTrade?.datetime,
+                    platformSettings.platform_behavior.timezone,
+                    appearance.time_display_format,
+                  )}
+                />
+                <Metric
+                  label="Last trade"
+                  value={formatTimestampOrDash(
+                    lastTrade?.datetime,
+                    platformSettings.platform_behavior.timezone,
+                    appearance.time_display_format,
+                  )}
+                />
+                <Metric label="Data source" value={result.data_source} />
+              </Stack>
+
+              {result.trades.length > 0 ? (
+                <DiagnosticsTableShell title={`Trade records (${result.trades.length})`}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>When</TableCell>
+                        <TableCell align="right">Size</TableCell>
+                        <TableCell align="right">Price</TableCell>
+                        <TableCell align="right">Value</TableCell>
+                        <TableCell align="right">PnL</TableCell>
+                        <TableCell align="right">PnL after fees</TableCell>
+                        <TableCell>Exit</TableCell>
+                        <TableCell align="right">Hold (min)</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {sortedTrades.map((trade, index) => (
+                        <TableRow key={`${trade.datetime ?? 'no-datetime'}-${index}`} hover>
+                          <TableCell>
+                            {formatTimestampOrDash(
+                              trade.datetime,
+                              platformSettings.platform_behavior.timezone,
+                              appearance.time_display_format,
+                            )}
+                          </TableCell>
+                          <TableCell align="right">{formatNumber(trade.size, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(trade.price, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(trade.value, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(trade.pnl, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(trade.pnlcomm, 2)}</TableCell>
+                          <TableCell>{trade.reason ?? '—'}</TableCell>
+                          <TableCell align="right">{formatNumber(trade.hold_minutes, 1)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </DiagnosticsTableShell>
+              ) : (
+                <Typography color="text.secondary">No trade records were emitted for this run.</Typography>
+              )}
+
+              {latestOrders.length > 0 && (
+                <DiagnosticsTableShell title={`Recent orders (${latestOrders.length})`}>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>When</TableCell>
+                        <TableCell>Side</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell align="right">Size</TableCell>
+                        <TableCell align="right">Price</TableCell>
+                        <TableCell align="right">Value</TableCell>
+                        <TableCell align="right">Commission</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {latestOrders.map((order, index) => (
+                        <TableRow key={`${order.datetime ?? 'no-datetime'}-${order.status}-${index}`} hover>
+                          <TableCell>
+                            {formatTimestampOrDash(
+                              order.datetime,
+                              platformSettings.platform_behavior.timezone,
+                              appearance.time_display_format,
+                            )}
+                          </TableCell>
+                          <TableCell>{order.is_buy ? 'Buy' : 'Sell'}</TableCell>
+                          <TableCell>{order.status}</TableCell>
+                          <TableCell align="right">{formatNumber(order.size, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(order.price, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(order.value, 2)}</TableCell>
+                          <TableCell align="right">{formatNumber(order.commission, 2)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </DiagnosticsTableShell>
+              )}
+            </Stack>
+          </BacktestAnalysisSection>
+        )}
+      </Stack>
+    </Box>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <Box>
+      <Typography variant="overline" color="text.secondary">
+        {label}
+      </Typography>
+      <Typography>{value}</Typography>
+    </Box>
+  )
+}
