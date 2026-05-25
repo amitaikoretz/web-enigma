@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable
 
-import backtrader as bt
+import pandas as pd
+from backtesting import Backtest
 
 from app import __version__
 from app.config.models import BacktestConfig, BacktestRunConfig, DataCacheConfig, StrategyConfig
@@ -16,7 +17,8 @@ from app.data.loaders import (
     build_yahoo_data_feed_with_cache,
 )
 from app.output.models import BacktestReport, EquityPoint, RunError, RunResult, RunSummary
-from app.strategies.registry import get_strategy_spec
+from app.strategies.implementations import build_portable_strategy_adapter
+from app.strategies.registry import get_strategy_definition
 
 
 @dataclass(frozen=True)
@@ -28,24 +30,8 @@ class RunExecutionOptions:
 
 @dataclass(frozen=True)
 class DataFeedBuildResult:
-    feed: Any
+    feed: pd.DataFrame
     cache_status: str | None = None
-
-
-class EquityCurveAnalyzer(bt.Analyzer):
-    def __init__(self) -> None:
-        self.values: list[dict[str, Any]] = []
-
-    def next(self) -> None:
-        self.values.append(
-            {
-                "datetime": self.strategy.datetime.datetime().isoformat(),
-                "value": float(self.strategy.broker.getvalue()),
-            }
-        )
-
-    def get_analysis(self) -> list[dict[str, Any]]:
-        return self.values
 
 
 def _build_data_feed(run: BacktestRunConfig, cache_config: DataCacheConfig, cache_refresh: bool) -> DataFeedBuildResult:
@@ -76,6 +62,8 @@ def _as_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
+        if pd.isna(value):
+            return None
         return float(value)
     except (TypeError, ValueError):
         return None
@@ -102,6 +90,30 @@ def _result_run_id(run: BacktestRunConfig, strategy_name: str) -> str:
     if len(strategy_entries) == 1:
         return run.run_id
     return f"{run.run_id}:{strategy_name}"
+
+
+def _build_trade_analyzer_like(closed_trades: pd.DataFrame) -> dict[str, Any]:
+    if closed_trades.empty:
+        return {
+            "total": {"total": 0, "open": 0, "closed": 0},
+            "won": {"total": 0},
+            "lost": {"total": 0},
+        }
+
+    won = int((closed_trades["PnL"] > 0).sum())
+    lost = int((closed_trades["PnL"] <= 0).sum())
+    total = int(len(closed_trades))
+    return {
+        "total": {"total": total, "open": 0, "closed": total},
+        "won": {"total": won},
+        "lost": {"total": lost},
+    }
+
+
+def _strategy_symbol(run: BacktestRunConfig) -> str | None:
+    if run.data.type in {"yahoo", "alpaca"}:
+        return run.data.symbol
+    return None
 
 
 def run_backtests(config: BacktestConfig, config_raw: dict[str, Any]) -> BacktestReport:
@@ -194,69 +206,83 @@ def _run_single(
     cache_config: DataCacheConfig,
     cache_refresh: bool,
 ) -> tuple[RunResult, str | None]:
-    cerebro = bt.Cerebro(stdstats=False)
     data_feed_result = _build_data_feed(run, cache_config, cache_refresh)
-    cerebro.adddata(data_feed_result.feed)
 
     broker = run.broker or config.global_config.default_broker
-    cerebro.broker.setcash(broker.cash)
-    cerebro.broker.setcommission(commission=broker.commission)
-    if broker.slippage_perc > 0:
-        cerebro.broker.set_slippage_perc(perc=broker.slippage_perc)
+    strategy_def = get_strategy_definition(strategy_entry.name)
+    strategy_cls = build_portable_strategy_adapter(
+        strategy_name=strategy_entry.name,
+        strategy_factory=strategy_def.factory,
+        strategy_params=strategy_entry.params,
+        symbol=_strategy_symbol(run),
+    )
 
-    spec = get_strategy_spec(strategy_entry.name)
-    cerebro.addstrategy(spec.strategy_cls, **strategy_entry.params)
+    bt = Backtest(
+        data_feed_result.feed,
+        strategy_cls,
+        cash=float(broker.cash),
+        commission=float(broker.commission),
+        trade_on_close=run.execution.fill_model == "close",
+        finalize_trades=True,
+    )
+    stats = bt.run()
 
-    cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name="sharpe")
-    cerebro.addanalyzer(bt.analyzers.DrawDown, _name="drawdown")
-    cerebro.addanalyzer(bt.analyzers.TradeAnalyzer, _name="trades")
-    cerebro.addanalyzer(EquityCurveAnalyzer, _name="equity")
+    start_value = float(broker.cash)
+    end_value = float(stats.get("Equity Final [$]", broker.cash))
 
-    start_value = float(cerebro.broker.getvalue())
-    strategies = cerebro.run()
-    strategy = strategies[0]
-    end_value = float(cerebro.broker.getvalue())
+    drawdown = _as_float(stats.get("Max. Drawdown [%]"))
+    sharpe = _as_float(stats.get("Sharpe Ratio"))
 
-    sharpe_data = strategy.analyzers.sharpe.get_analysis()
-    drawdown_data = strategy.analyzers.drawdown.get_analysis()
-    trade_data = strategy.analyzers.trades.get_analysis()
-    equity_raw = strategy.analyzers.equity.get_analysis()
+    closed_trades = stats.get("_trades")
+    if not isinstance(closed_trades, pd.DataFrame):
+        closed_trades = pd.DataFrame()
 
+    trade_data = _build_trade_analyzer_like(closed_trades)
     total_trades, won_trades, lost_trades = _extract_trade_counts(trade_data)
+
+    equity_series = stats.get("_equity_curve")
+    equity_curve: list[EquityPoint] = []
+    if isinstance(equity_series, pd.DataFrame) and "Equity" in equity_series.columns:
+        equity_curve = [
+            EquityPoint(datetime=idx.isoformat(), value=float(val))
+            for idx, val in equity_series["Equity"].items()
+        ]
+
+    strategy_obj = stats.get("_strategy")
+    orders: list[dict[str, Any]] = []
+    trades: list[dict[str, Any]] = []
+    if strategy_obj is not None:
+        orders = getattr(strategy_obj, "order_log", []) if run.analyzers.include_order_log else []
+        trades = getattr(strategy_obj, "trade_log", []) if run.analyzers.include_trade_log else []
+
+    analyzers: dict[str, Any] = {
+        "sharpe": {"sharperatio": sharpe},
+        "drawdown": {"max": {"drawdown": drawdown}},
+        "trades": trade_data,
+        "execution": {"fill_model": run.execution.fill_model},
+    }
 
     summary = RunSummary(
         start_value=start_value,
         end_value=end_value,
         return_pct=((end_value - start_value) / start_value * 100.0) if start_value else 0.0,
-        max_drawdown_pct=_as_float(drawdown_data.get("max", {}).get("drawdown")),
-        sharpe_ratio=_as_float(sharpe_data.get("sharperatio")),
+        max_drawdown_pct=drawdown,
+        sharpe_ratio=sharpe,
         total_trades=total_trades,
         won_trades=won_trades,
         lost_trades=lost_trades,
     )
-
-    equity_curve = []
-    if run.analyzers.include_equity_curve:
-        equity_curve = [EquityPoint(**point) for point in equity_raw]
-
-    orders = strategy.order_log if run.analyzers.include_order_log else []
-    trades = strategy.trade_log if run.analyzers.include_trade_log else []
-
-    analyzers: dict[str, Any] = {
-        "sharpe": sharpe_data,
-        "drawdown": drawdown_data,
-        "trades": trade_data,
-    }
 
     return RunResult(
         run_id=_result_run_id(run, strategy_entry.name),
         name=run.name,
         status="success",
         strategy=strategy_entry.name,
+        symbol=_strategy_symbol(run),
         data_source=run.data.type,
         summary=summary,
         analyzers=analyzers,
         orders=orders,
         trades=trades,
-        equity_curve=equity_curve,
+        equity_curve=equity_curve if run.analyzers.include_equity_curve else [],
     ), data_feed_result.cache_status

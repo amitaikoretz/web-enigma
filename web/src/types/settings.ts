@@ -1,0 +1,65 @@
+import type { BacktestFeed } from './backtests'
+import type { Resolution } from './marketData'
+
+export type ThemeModePreference = 'dark' | 'light' | 'system'
+export type DensityPreference = 'comfortable' | 'compact'
+export type LayoutWidthPreference = 'standard' | 'wide'
+export type TimeDisplayFormat = '12h' | '24h'
+export type IndicatorContrast = 'balanced' | 'high'
+export type DateRangePreset = '30D' | '90D' | '1Y'
+export type PreferredLandingPage = 'backtests' | 'new_backtest' | 'chart'
+
+export interface AppearanceSettings {
+  theme_mode: ThemeModePreference
+  density: DensityPreference
+  chart_up_color: string
+  chart_down_color: string
+  chart_grid_visible: boolean
+  indicator_contrast: IndicatorContrast
+  layout_width: LayoutWidthPreference
+  reduced_motion: boolean
+  time_display_format: TimeDisplayFormat
+}
+
+export interface BrokerSettings {
+  cash: number
+  commission: number
+  slippage_perc: number
+  sizer: 'fixed'
+}
+
+export interface AnalyzerSettings {
+  include_equity_curve: boolean
+  include_trade_log: boolean
+  include_order_log: boolean
+}
+
+export interface ExecutionSettings {
+  fill_model: 'close' | 'next_bar'
+}
+
+export interface BacktestDefaults {
+  symbols_seed_list: string[]
+  date_range_preset: DateRangePreset
+  resolution: Resolution
+  feed: BacktestFeed
+  broker: BrokerSettings
+  analyzers: AnalyzerSettings
+  execution: ExecutionSettings
+}
+
+export interface PlatformBehaviorSettings {
+  timezone: string
+  auto_refresh_interval_seconds: number
+  confirm_before_launch: boolean
+  preferred_landing_page: PreferredLandingPage
+}
+
+export interface ServerPlatformSettings {
+  backtest_defaults: BacktestDefaults
+  platform_behavior: PlatformBehaviorSettings
+}
+
+export interface PlatformSettings extends ServerPlatformSettings {
+  appearance: AppearanceSettings
+}

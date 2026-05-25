@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
-import backtrader as bt
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from app.strategies.core import StrategyDefinition
 from app.strategies.implementations import (
-    BreakoutChannelStrategy,
-    BuyAndHoldStrategy,
-    BuyOcoAtrTpSlStrategy,
-    BuyOcoAtrTpTrailingStrategy,
-    RsiReversionStrategy,
-    SmaCrossStrategy,
+    BreakoutChannelCore,
+    BuyAndHoldCore,
+    BuyOcoAtrTpSlCore,
+    BuyOcoAtrTpTrailingCore,
+    RsiReversionCore,
+    SmaCrossCore,
+    VolumeRallyCore,
 )
 
 
@@ -25,7 +26,7 @@ class SmaCrossParams(BaseModel):
     max_hold_bars: int = Field(default=24, ge=1)
 
     @model_validator(mode="after")
-    def _validate_windows(self) -> SmaCrossParams:
+    def _validate_windows(self) -> "SmaCrossParams":
         if self.fast >= self.slow:
             raise ValueError("fast must be smaller than slow")
         return self
@@ -41,7 +42,7 @@ class RsiReversionParams(BaseModel):
     max_hold_bars: int = Field(default=18, ge=1)
 
     @model_validator(mode="after")
-    def _validate_bands(self) -> RsiReversionParams:
+    def _validate_bands(self) -> "RsiReversionParams":
         if self.oversold >= self.overbought:
             raise ValueError("oversold must be smaller than overbought")
         return self
@@ -79,50 +80,106 @@ class BuyOcoAtrTpTrailingParams(BaseModel):
     max_hold_bars: int = Field(default=30, ge=1)
 
 
+class VolumeRallyParams(BaseModel):
+    stake: float = Field(default=1.0, gt=0)
+    volume_window: int = Field(default=20, ge=2)
+    volume_spike_mult: float = Field(default=3.0, gt=0)
+    breakout_lookback: int = Field(default=20, ge=2)
+    atr_period: int = Field(default=14, ge=2)
+    atr_expansion_mult: float = Field(default=0.5, gt=0)
+    macd_fast: int = Field(default=12, ge=2)
+    macd_slow: int = Field(default=26, ge=3)
+    macd_signal: int = Field(default=9, ge=2)
+    adx_period: int = Field(default=14, ge=2)
+    adx_min: float = Field(default=25.0, ge=0.0)
+    sl_atr_mult: float = Field(default=1.5, gt=0)
+    tp_atr_mult: float = Field(default=3.0, gt=0)
+    trail_atr_mult: float = Field(default=1.0, gt=0)
+    max_hold_bars: int = Field(default=48, ge=1)
+
+    @model_validator(mode="after")
+    def _validate_windows(self) -> "VolumeRallyParams":
+        if self.macd_fast >= self.macd_slow:
+            raise ValueError("macd_fast must be smaller than macd_slow")
+        return self
+
+
+WarmupFn = Callable[[dict[str, Any]], int]
+
+
 @dataclass(frozen=True)
 class StrategySpec:
     name: str
     description: str
-    strategy_cls: type[bt.Strategy]
     params_model: type[BaseModel]
+    factory: Callable[[dict[str, Any]], Any]
+    warmup_bars: WarmupFn
+
+    def to_definition(self) -> StrategyDefinition:
+        return StrategyDefinition(
+            name=self.name,
+            description=self.description,
+            params_model=self.params_model,
+            factory=self.factory,
+            warmup_bars=self.warmup_bars,
+        )
 
 
 STRATEGY_REGISTRY: dict[str, StrategySpec] = {
     "sma_cross": StrategySpec(
         name="sma_cross",
         description="Intraday SMA momentum with fixed stop-loss and take-profit.",
-        strategy_cls=SmaCrossStrategy,
         params_model=SmaCrossParams,
+        factory=SmaCrossCore,
+        warmup_bars=lambda params: max(int(params["fast"]), int(params["slow"])) + 1,
     ),
     "rsi_reversion": StrategySpec(
         name="rsi_reversion",
         description="Intraday RSI mean reversion with fixed stop-loss and take-profit.",
-        strategy_cls=RsiReversionStrategy,
         params_model=RsiReversionParams,
+        factory=RsiReversionCore,
+        warmup_bars=lambda params: int(params["period"]) + 1,
     ),
     "buy_and_hold": StrategySpec(
         name="buy_and_hold",
         description="Single-entry long with basic stop-loss and take-profit protection.",
-        strategy_cls=BuyAndHoldStrategy,
         params_model=BuyAndHoldParams,
+        factory=BuyAndHoldCore,
+        warmup_bars=lambda params: 1,
     ),
     "breakout_channel": StrategySpec(
         name="breakout_channel",
         description="Intraday channel breakout with fixed stop-loss and take-profit.",
-        strategy_cls=BreakoutChannelStrategy,
         params_model=BreakoutChannelParams,
+        factory=BreakoutChannelCore,
+        warmup_bars=lambda params: int(params["lookback"]) + 1,
     ),
     "buy_oco_atr_tp_sl": StrategySpec(
         name="buy_oco_atr_tp_sl",
         description="SMA-entry intraday strategy with ATR stop-loss/take-profit exits.",
-        strategy_cls=BuyOcoAtrTpSlStrategy,
         params_model=BuyOcoAtrTpSlParams,
+        factory=BuyOcoAtrTpSlCore,
+        warmup_bars=lambda params: max(int(params["atr_period"]), int(params["entry_sma"])) + 1,
     ),
     "buy_oco_atr_tp_trailing": StrategySpec(
         name="buy_oco_atr_tp_trailing",
         description="SMA-entry intraday strategy with ATR trailing stop and ATR take-profit.",
-        strategy_cls=BuyOcoAtrTpTrailingStrategy,
         params_model=BuyOcoAtrTpTrailingParams,
+        factory=BuyOcoAtrTpTrailingCore,
+        warmup_bars=lambda params: max(int(params["atr_period"]), int(params["entry_sma"])) + 1,
+    ),
+    "volume_rally": StrategySpec(
+        name="volume_rally",
+        description="Confirmed breakout/rally detector using session VWAP, volume, MACD, ADX entries and ATR exits.",
+        params_model=VolumeRallyParams,
+        factory=VolumeRallyCore,
+        warmup_bars=lambda params: max(
+            int(params["volume_window"]),
+            int(params["breakout_lookback"]) + 1,
+            int(params["atr_period"]),
+            int(params["macd_slow"]) + int(params["macd_signal"]),
+            int(params["adx_period"]) * 2,
+        ),
     ),
 }
 
@@ -136,6 +193,14 @@ def get_strategy_spec(name: str) -> StrategySpec:
         return STRATEGY_REGISTRY[name]
     except KeyError as exc:
         raise ValueError(f"Unknown strategy '{name}'.") from exc
+
+
+def get_strategy_definition(name: str) -> StrategyDefinition:
+    return get_strategy_spec(name).to_definition()
+
+
+def resolve_warmup_bars(name: str, params: dict[str, Any]) -> int:
+    return int(get_strategy_spec(name).warmup_bars(params))
 
 
 def validate_strategy_params(name: str, params: dict[str, Any] | None) -> dict[str, Any]:

@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import backtrader as bt
 import pytest
 import yaml
 
@@ -138,20 +137,19 @@ def test_mixed_batch_partial_failure():
 
 def test_yahoo_path_mocked(monkeypatch):
     def fake_yahoo_feed(*args, **kwargs):
-        return (
-            bt.feeds.GenericCSVData(
-            dataname="examples/data/sample_daily.csv",
-            dtformat="%Y-%m-%d",
-            datetime=0,
-            open=1,
-            high=2,
-            low=3,
-            close=4,
-            volume=5,
-            openinterest=6,
-            ),
-            "hit",
+        import pandas as pd
+
+        frame = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 102.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [99.0, 100.0, 101.0],
+                "Close": [100.5, 101.5, 102.5],
+                "Volume": [1000, 1100, 1200],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
         )
+        return (frame, "hit")
 
     monkeypatch.setattr("app.engine.runner.build_yahoo_data_feed_with_cache", fake_yahoo_feed)
 
@@ -174,20 +172,19 @@ def test_yahoo_path_mocked(monkeypatch):
 
 def test_alpaca_path_mocked(monkeypatch):
     def fake_alpaca_feed(*args, **kwargs):
-        return (
-            bt.feeds.GenericCSVData(
-                dataname="examples/data/sample_daily.csv",
-                dtformat="%Y-%m-%d",
-                datetime=0,
-                open=1,
-                high=2,
-                low=3,
-                close=4,
-                volume=5,
-                openinterest=6,
-            ),
-            "hit",
+        import pandas as pd
+
+        frame = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0, 102.0],
+                "High": [101.0, 102.0, 103.0],
+                "Low": [99.0, 100.0, 101.0],
+                "Close": [100.5, 101.5, 102.5],
+                "Volume": [1000, 1100, 1200],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
         )
+        return (frame, "hit")
 
     monkeypatch.setattr("app.engine.runner.build_alpaca_data_feed_with_cache", fake_alpaca_feed)
 
@@ -310,20 +307,19 @@ def test_cli_report_html_from_json(tmp_path: Path):
 
 def test_cli_run_cache_flags_with_yahoo(capsys, monkeypatch, tmp_path: Path):
     def fake_yahoo_feed(*args, **kwargs):
-        return (
-            bt.feeds.GenericCSVData(
-                dataname="examples/data/sample_daily.csv",
-                dtformat="%Y-%m-%d",
-                datetime=0,
-                open=1,
-                high=2,
-                low=3,
-                close=4,
-                volume=5,
-                openinterest=6,
-            ),
-            "force_refresh",
+        import pandas as pd
+
+        frame = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0],
+                "High": [101.0, 102.0],
+                "Low": [99.0, 100.0],
+                "Close": [100.5, 101.5],
+                "Volume": [1000, 1100],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02"]),
         )
+        return (frame, "force_refresh")
 
     monkeypatch.setattr("app.engine.runner.build_yahoo_data_feed_with_cache", fake_yahoo_feed)
 
@@ -363,20 +359,19 @@ def test_cli_run_cache_flags_with_yahoo(capsys, monkeypatch, tmp_path: Path):
 
 def test_cli_run_cache_flags_with_alpaca(capsys, monkeypatch, tmp_path: Path):
     def fake_alpaca_feed(*args, **kwargs):
-        return (
-            bt.feeds.GenericCSVData(
-                dataname="examples/data/sample_daily.csv",
-                dtformat="%Y-%m-%d",
-                datetime=0,
-                open=1,
-                high=2,
-                low=3,
-                close=4,
-                volume=5,
-                openinterest=6,
-            ),
-            "force_refresh",
+        import pandas as pd
+
+        frame = pd.DataFrame(
+            {
+                "Open": [100.0, 101.0],
+                "High": [101.0, 102.0],
+                "Low": [99.0, 100.0],
+                "Close": [100.5, 101.5],
+                "Volume": [1000, 1100],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02"]),
         )
+        return (frame, "force_refresh")
 
     monkeypatch.setattr("app.engine.runner.build_alpaca_data_feed_with_cache", fake_alpaca_feed)
 
@@ -413,3 +408,66 @@ def test_cli_run_cache_flags_with_alpaca(capsys, monkeypatch, tmp_path: Path):
     assert "data-cache" in out
     assert "source=alpaca" in out
     assert "force_refresh" in out
+
+
+def test_backtest_fill_model_next_bar_changes_fill_timing():
+    close_raw = {
+        "runs": [
+            {
+                "run_id": "close_fill",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+                "execution": {"fill_model": "close"},
+            }
+        ]
+    }
+    next_bar_raw = {
+        "runs": [
+            {
+                "run_id": "next_bar_fill",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+                "execution": {"fill_model": "next_bar"},
+            }
+        ]
+    }
+
+    close_report = run_backtests(BacktestConfig.model_validate(close_raw), close_raw)
+    next_bar_report = run_backtests(BacktestConfig.model_validate(next_bar_raw), next_bar_raw)
+
+    assert close_report.results[0].orders[0].datetime == "2024-01-02T00:00:00"
+    assert next_bar_report.results[0].orders[0].datetime == "2024-01-03T00:00:00"
+
+
+def test_cli_alpaca_run_uses_separate_config(monkeypatch, tmp_path: Path, capsys):
+    config_payload = {
+        "global_config": {"execution": {"mode": "paper", "state_directory": str(tmp_path / '.state')}},
+        "runs": [
+            {
+                "run_id": "alpaca_cli",
+                "symbol": "AAPL",
+                "interval": "1m",
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ],
+    }
+    cfg_path = tmp_path / "alpaca.yaml"
+    cfg_path.write_text(yaml.safe_dump(config_payload), encoding="utf-8")
+
+    class FakeExecutor:
+        def process_latest_bar(self):
+            return []
+
+    monkeypatch.setattr("app.cli.build_alpaca_executor", lambda **kwargs: FakeExecutor())
+
+    code = main(["alpaca-run", "--config", str(cfg_path)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "alpaca_cli" in out

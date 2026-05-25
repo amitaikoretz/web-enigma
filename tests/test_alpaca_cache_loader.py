@@ -60,6 +60,24 @@ def test_alpaca_cache_miss_then_hit(tmp_path, monkeypatch):
     assert s2 == "hit"
 
 
+def test_alpaca_null_bars_returns_clear_error(tmp_path, monkeypatch):
+    def fake_urlopen(*args, **kwargs):
+        return _FakeResponse(json.dumps({"bars": None, "next_page_token": None}).encode("utf-8"))
+
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
+
+    config = AlpacaDataSource(type="alpaca", symbol="AAPL", interval="1m")
+    cache_cfg = DataCacheConfig(directory=str(tmp_path), enabled=False)
+
+    with pytest.raises(RuntimeError) as exc:
+        build_alpaca_data_feed_with_cache(
+            config, date(2026, 5, 24), date(2026, 5, 24), cache_cfg, force_refresh=False
+        )
+    assert "No Alpaca data found" in str(exc.value)
+
+
 def test_alpaca_requires_credentials(tmp_path, monkeypatch):
     monkeypatch.delenv("ALPACA_API_KEY", raising=False)
     monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
@@ -71,3 +89,26 @@ def test_alpaca_requires_credentials(tmp_path, monkeypatch):
             config, date(2024, 1, 1), date(2024, 1, 3), cache_cfg, force_refresh=False
         )
     assert "Alpaca credentials missing" in str(exc.value)
+
+
+def test_alpaca_request_includes_full_stop_day(tmp_path, monkeypatch):
+    captured_urls: list[str] = []
+
+    def fake_urlopen(request, *args, **kwargs):
+        captured_urls.append(request.full_url)
+        return _FakeResponse(_mock_alpaca_payload())
+
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
+
+    config = AlpacaDataSource(type="alpaca", symbol="AAPL", interval="1m")
+    cache_cfg = DataCacheConfig(directory=str(tmp_path), enabled=False)
+
+    build_alpaca_data_feed_with_cache(
+        config, date(2024, 1, 15), date(2024, 1, 15), cache_cfg, force_refresh=False
+    )
+
+    assert captured_urls
+    assert "start=2024-01-15T00%3A00%3A00Z" in captured_urls[0]
+    assert "end=2024-01-16T00%3A00%3A00Z" in captured_urls[0]

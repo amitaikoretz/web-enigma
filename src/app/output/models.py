@@ -51,6 +51,7 @@ class RunResult(BaseModel):
     name: str | None = None
     status: Literal["success", "failed"]
     strategy: str
+    symbol: str | None = None
     data_source: str
     summary: RunSummary | None = None
     analyzers: dict[str, Any] = Field(default_factory=dict)

@@ -12,30 +12,74 @@ from urllib.parse import urlencode
 from urllib.request import Request
 from urllib.request import urlopen
 
-import backtrader as bt
 import pandas as pd
 
 from app.config.models import AlpacaDataSource, CsvDataSource, DataCacheConfig, YahooDataSource
 from app.data.cache import CacheKey, ParquetDataCache
 
 
-def build_csv_data_feed(config: CsvDataSource, start_date: date, end_date: date) -> bt.feeds.GenericCSVData:
-    return bt.feeds.GenericCSVData(
-        dataname=config.path,
-        dtformat=config.date_format,
-        datetime=0,
-        open=1,
-        high=2,
-        low=3,
-        close=4,
-        volume=5,
-        openinterest=6,
-        fromdate=start_date,
-        todate=end_date,
-    )
+def _normalize_ohlcv_frame(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+
+    if isinstance(out.columns, pd.MultiIndex):
+        out.columns = out.columns.get_level_values(0)
+
+    lower = {str(c).lower(): c for c in out.columns}
+    required = {
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close",
+        "volume": "Volume",
+    }
+    missing = [k for k in required if k not in lower]
+    if missing:
+        raise RuntimeError(f"Data is missing required columns: {sorted(missing)}")
+
+    selected = out[[lower[k] for k in required]]
+    selected.columns = [required[k] for k in required]
+
+    if not isinstance(selected.index, pd.DatetimeIndex):
+        selected.index = pd.to_datetime(selected.index, errors="coerce")
+    selected = selected[~selected.index.isna()]
+    selected = selected.sort_index()
+    return selected
 
 
-def build_yahoo_data_feed(config: YahooDataSource, start_date: date, end_date: date) -> bt.feeds.PandasData:
+def build_csv_data_feed(config: CsvDataSource, start_date: date, end_date: date) -> pd.DataFrame:
+    df = pd.read_csv(config.path)
+    if config.datetime_column not in df.columns:
+        raise RuntimeError(f"CSV missing datetime column '{config.datetime_column}'")
+
+    dt = pd.to_datetime(df[config.datetime_column], format=config.date_format, errors="coerce")
+    if dt.isna().any():
+        dt = pd.to_datetime(df[config.datetime_column], errors="coerce")
+    if dt.isna().any():
+        raise RuntimeError(f"CSV has invalid datetime values in '{config.datetime_column}'")
+
+    col_map = {
+        config.open_column: "Open",
+        config.high_column: "High",
+        config.low_column: "Low",
+        config.close_column: "Close",
+        config.volume_column: "Volume",
+    }
+    missing = [src for src in col_map if src not in df.columns]
+    if missing:
+        raise RuntimeError(f"CSV missing required price columns: {sorted(missing)}")
+
+    out = df[list(col_map.keys())].rename(columns=col_map)
+    out.index = dt
+
+    start_ts = pd.Timestamp(start_date)
+    end_ts = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+    out = out.loc[(out.index >= start_ts) & (out.index <= end_ts)]
+    if out.empty:
+        raise RuntimeError("No CSV data found in requested date range")
+    return _normalize_ohlcv_frame(out)
+
+
+def build_yahoo_data_feed(config: YahooDataSource, start_date: date, end_date: date) -> pd.DataFrame:
     feed, _ = build_yahoo_data_feed_with_cache(
         config,
         start_date,
@@ -51,8 +95,8 @@ def build_yahoo_data_feed_with_cache(
     start_date: date,
     end_date: date,
     cache_config: DataCacheConfig | None,
-    force_refresh: bool,
-) -> tuple[bt.feeds.PandasData, str]:
+    force_refresh: bool = False,
+) -> tuple[pd.DataFrame, str]:
     try:
         import yfinance as yf
     except ImportError as exc:
@@ -72,7 +116,7 @@ def build_yahoo_data_feed_with_cache(
         cached = cache.get(key, timedelta(seconds=ttl_seconds))
         cache_status = cached.status
         if cached.frame is not None:
-            return bt.feeds.PandasData(dataname=cached.frame), cached.status
+            return _normalize_ohlcv_frame(cached.frame), cached.status
 
     df = _download_yahoo(yf, config, start_date, end_date)
 
@@ -81,7 +125,17 @@ def build_yahoo_data_feed_with_cache(
         cache.put(key, df)
     if force_refresh:
         cache_status = "force_refresh"
-    return bt.feeds.PandasData(dataname=df), cache_status
+    return df, cache_status
+
+
+def build_alpaca_data_feed(config: AlpacaDataSource, start_date: date, end_date: date) -> pd.DataFrame:
+    feed, _ = build_alpaca_data_feed_with_cache(
+        config,
+        start_date,
+        end_date,
+        cache_config=None,
+    )
+    return feed
 
 
 def build_alpaca_data_feed_with_cache(
@@ -89,8 +143,8 @@ def build_alpaca_data_feed_with_cache(
     start_date: date,
     end_date: date,
     cache_config: DataCacheConfig | None,
-    force_refresh: bool,
-) -> tuple[bt.feeds.PandasData, str]:
+    force_refresh: bool = False,
+) -> tuple[pd.DataFrame, str]:
     key = CacheKey(
         source="alpaca",
         symbol=config.symbol,
@@ -105,7 +159,7 @@ def build_alpaca_data_feed_with_cache(
         cached = cache.get(key, timedelta(seconds=ttl_seconds))
         cache_status = cached.status
         if cached.frame is not None:
-            return bt.feeds.PandasData(dataname=cached.frame), cached.status
+            return _normalize_ohlcv_frame(cached.frame), cached.status
 
     df = _download_alpaca(config, start_date, end_date)
 
@@ -114,7 +168,7 @@ def build_alpaca_data_feed_with_cache(
         cache.put(key, df)
     if force_refresh:
         cache_status = "force_refresh"
-    return bt.feeds.PandasData(dataname=df), cache_status
+    return df, cache_status
 
 
 def _download_yahoo(yf, config: YahooDataSource, start_date: date, end_date: date) -> pd.DataFrame:
@@ -128,19 +182,7 @@ def _download_yahoo(yf, config: YahooDataSource, start_date: date, end_date: dat
     )
     if df.empty:
         raise RuntimeError(f"No Yahoo data found for symbol {config.symbol}")
-
-    # yfinance may return MultiIndex/tuple columns; Backtrader expects flat string columns.
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df.columns = [str(c).lower() for c in df.columns]
-
-    required_cols = {"open", "high", "low", "close", "volume"}
-    missing = required_cols - set(df.columns)
-    if missing:
-        raise RuntimeError(
-            f"Yahoo data is missing required columns for {config.symbol}: {sorted(missing)}"
-        )
-    return df
+    return _normalize_ohlcv_frame(df)
 
 
 def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date) -> pd.DataFrame:
@@ -151,7 +193,13 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
 
     timeframe = _alpaca_timeframe(config.interval)
     start_ts = pd.Timestamp(start_date).tz_localize(UTC).isoformat().replace("+00:00", "Z")
-    end_ts = pd.Timestamp(end_date).tz_localize(UTC).isoformat().replace("+00:00", "Z")
+    # Alpaca treats end as exclusive; advance one day so stop_date includes the full session.
+    end_ts = (
+        (pd.Timestamp(end_date) + pd.Timedelta(days=1))
+        .tz_localize(UTC)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
     base_url = f"https://data.alpaca.markets/v2/stocks/{config.symbol}/bars"
     page_token: str | None = None
@@ -187,7 +235,7 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
         except URLError as exc:
             raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
 
-        bars.extend(payload.get("bars", []))
+        bars.extend(payload.get("bars") or [])
         page_token = payload.get("next_page_token")
         if not page_token:
             break
@@ -196,20 +244,13 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
         raise RuntimeError(f"No Alpaca data found for symbol {config.symbol}")
 
     df = pd.DataFrame(bars)
-    rename_map = {"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume", "t": "datetime"}
+    rename_map = {"o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume", "t": "datetime"}
     df = df.rename(columns=rename_map)
     if "datetime" not in df.columns:
         raise RuntimeError(f"Alpaca data is missing time field for {config.symbol}")
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
     df = df.set_index("datetime").sort_index()
-
-    required_cols = {"open", "high", "low", "close", "volume"}
-    missing = required_cols - set(df.columns)
-    if missing:
-        raise RuntimeError(
-            f"Alpaca data is missing required columns for {config.symbol}: {sorted(missing)}"
-        )
-    return df
+    return _normalize_ohlcv_frame(df)
 
 
 def _alpaca_timeframe(interval: str) -> str:

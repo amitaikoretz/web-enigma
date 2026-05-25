@@ -1,0 +1,2 @@
+[console_scripts]
+backtest = app.cli:main

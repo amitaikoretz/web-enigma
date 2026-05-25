@@ -1,0 +1,67 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 100000
+    commission: 0.0
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "1m": 315360000
+      "5m": 315360000
+      "15m": 315360000
+      "1h": 315360000
+      "1d": 315360000
+
+runs:
+  - run_id: "aapl_rsi_long_1d"
+    name: "AAPL OCO ATR TP/SL"
+    start_date: "2025-01-01"
+    end_date: "2025-05-21"
+    data:
+      type: alpaca
+      symbol: AAPL
+      interval: 1m
+    strategy: "buy_oco_atr_tp_sl"
+    strategy_params:
+      stake: 10
+      atr_period: 14
+      sl_atr_mult: 1.5
+      tp_atr_mult: 3.0
+    analyzers:
+      include_equity_curve: true
+      include_trade_log: true
+      include_order_log: true
+
+  - run_id: "msft_sma_long_1d"
+    name: "MSFT OCO ATR TP/Trailing"
+    start_date: "2025-01-01"
+    end_date: "2025-05-21"
+    data:
+      type: alpaca
+      symbol: MSFT
+      interval: 1m
+    strategy: "buy_oco_atr_tp_trailing"
+    strategy_params:
+      stake: 10
+      atr_period: 14
+      trail_atr_mult: 1.5
+      tp_atr_mult: 3.0
+
+  - run_id: "spy_breakout_long_1d"
+    name: "SPY OCO ATR TP/SL"
+    start_date: "2025-01-01"
+    end_date: "2025-05-21"
+    data:
+      type: alpaca
+      symbol: SPY
+      interval: 1m
+    strategy: "buy_oco_atr_tp_sl"
+    strategy_params:
+      stake: 10
+      atr_period: 14
+      sl_atr_mult: 2.0
+      tp_atr_mult: 4.0

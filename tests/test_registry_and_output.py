@@ -15,6 +15,7 @@ def test_registry_has_demo_strategies():
         "breakout_channel",
         "buy_oco_atr_tp_sl",
         "buy_oco_atr_tp_trailing",
+        "volume_rally",
     } <= names
 
 
@@ -23,10 +24,14 @@ def test_registry_param_validation():
     assert parsed["fast"] == 3
     oco_parsed = validate_strategy_params("buy_oco_atr_tp_sl", {"stake": 2, "atr_period": 10, "sl_atr_mult": 1.2})
     assert oco_parsed["atr_period"] == 10
+    rally_parsed = validate_strategy_params("volume_rally", {"stake": 2, "volume_window": 10, "macd_fast": 5, "macd_slow": 10})
+    assert rally_parsed["volume_window"] == 10
     with pytest.raises(ValueError):
         validate_strategy_params("sma_cross", {"fast": 0, "slow": 8})
     with pytest.raises(ValueError):
         validate_strategy_params("buy_oco_atr_tp_trailing", {"trail_atr_mult": 0})
+    with pytest.raises(ValueError):
+        validate_strategy_params("volume_rally", {"macd_fast": 12, "macd_slow": 8})
 
 
 def test_output_model_validation():

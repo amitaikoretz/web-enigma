@@ -1,0 +1,43 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 100000
+    commission: 0.0
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "1m": 315360000
+      "5m": 315360000
+      "15m": 315360000
+      "1h": 315360000
+      "1d": 315360000
+
+runs:
+  - run_id: "volume_rally_single"
+    start_date: "2025-01-01"
+    end_date: "2025-05-21"
+    data:
+      type: alpaca
+      symbol: AAPL
+      interval: 5m
+    strategy: "volume_rally"
+    strategy_params:
+      stake: 10
+      volume_window: 20
+      volume_spike_mult: 3.0
+      breakout_lookback: 20
+      atr_period: 14
+      atr_expansion_mult: 0.5
+      macd_fast: 12
+      macd_slow: 26
+      macd_signal: 9
+      adx_period: 14
+      adx_min: 25.0
+      sl_atr_mult: 1.5
+      tp_atr_mult: 3.0
+      trail_atr_mult: 1.0
+      max_hold_bars: 48

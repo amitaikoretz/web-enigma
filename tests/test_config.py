@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.config.models import BacktestConfig
+from app.config.models import BacktestConfig, LiveTradingConfig
 
 
 def _base_run():
@@ -67,3 +67,83 @@ def test_invalid_config_without_strategy_or_strategies():
     run.pop("strategy_params")
     with pytest.raises(Exception):
         BacktestConfig.model_validate({"runs": [run]})
+
+
+def test_valid_backtest_fill_model():
+    run = _base_run()
+    run["execution"] = {"fill_model": "next_bar"}
+    parsed = BacktestConfig.model_validate({"runs": [run]})
+    assert parsed.runs[0].execution.fill_model == "next_bar"
+
+
+def test_valid_alpaca_trading_config():
+    config = {
+        "runs": [
+            {
+                "run_id": "live_r1",
+                "symbol": "AAPL",
+                "interval": "1m",
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ]
+    }
+    from app.config.models import AlpacaTradingConfig
+
+    parsed = AlpacaTradingConfig.model_validate(config)
+    assert parsed.runs[0].symbol == "AAPL"
+
+
+def test_valid_live_trading_config():
+    config = {
+        "global_config": {
+            "controller": {"shard_count": 3},
+            "worker": {"shard_id": 1},
+        },
+        "contracts": [
+            {
+                "contract_id": "aa0d74d7-7a8d-4fe4-a20f-b5d30e935001",
+                "symbol": "AAPL",
+                "interval": "1m",
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ],
+    }
+    parsed = LiveTradingConfig.model_validate(config)
+    assert parsed.global_config.controller.scale_up_replicas == 3
+    assert parsed.contracts[0].symbol == "AAPL"
+
+
+def test_live_trading_config_rejects_duplicate_contract_ids():
+    config = {
+        "contracts": [
+            {
+                "contract_id": "aa0d74d7-7a8d-4fe4-a20f-b5d30e935001",
+                "symbol": "AAPL",
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            },
+            {
+                "contract_id": "aa0d74d7-7a8d-4fe4-a20f-b5d30e935001",
+                "symbol": "MSFT",
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            },
+        ]
+    }
+    with pytest.raises(Exception):
+        LiveTradingConfig.model_validate(config)
+
+
+def test_live_trading_config_rejects_invalid_redis_timing():
+    config = {
+        "global_config": {
+            "redis": {
+                "heartbeat_interval_seconds": 30,
+                "lease_ttl_seconds": 20,
+            }
+        }
+    }
+    with pytest.raises(Exception):
+        LiveTradingConfig.model_validate(config)

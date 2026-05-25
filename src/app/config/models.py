@@ -21,6 +21,10 @@ class AnalyzerConfig(BaseModel):
     include_order_log: bool = True
 
 
+class BacktestExecutionConfig(BaseModel):
+    fill_model: Literal["close", "next_bar"] = "close"
+
+
 class DataCacheConfig(BaseModel):
     enabled: bool = True
     directory: str = ".cache/backtest-data"
@@ -89,6 +93,7 @@ class BacktestRunConfig(BaseModel):
     strategies: list[StrategyConfig] | None = None
     broker: BrokerConfig | None = None
     analyzers: AnalyzerConfig = Field(default_factory=AnalyzerConfig)
+    execution: BacktestExecutionConfig = Field(default_factory=BacktestExecutionConfig)
 
     @model_validator(mode="after")
     def validate_dates(self) -> "BacktestRunConfig":
@@ -134,4 +139,143 @@ class BacktestConfig(BaseModel):
         ids = [r.run_id for r in self.runs]
         if len(ids) != len(set(ids)):
             raise ValueError("run_id values must be unique")
+        return self
+
+
+class AlpacaExecutionConfig(BaseModel):
+    mode: Literal["paper", "live"] = "paper"
+    poll_interval_seconds: int = Field(default=60, ge=1)
+    state_directory: str = ".cache/alpaca-runtime"
+
+
+class AlpacaTradingRunConfig(BaseModel):
+    run_id: str
+    name: str | None = None
+    symbol: str
+    interval: str = "1m"
+    feed: Literal["iex", "sip", "otc"] = "iex"
+    strategy: str
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "AlpacaTradingRunConfig":
+        if self.strategy not in STRATEGY_REGISTRY:
+            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
+            raise ValueError(f"Unknown strategy '{self.strategy}'. Available: {available}")
+        self.strategy_params = validate_strategy_params(self.strategy, self.strategy_params)
+        return self
+
+
+class AlpacaTradingGlobalConfig(BaseModel):
+    timezone: str = "UTC"
+    execution: AlpacaExecutionConfig = Field(default_factory=AlpacaExecutionConfig)
+
+
+class AlpacaTradingConfig(BaseModel):
+    global_config: AlpacaTradingGlobalConfig = Field(default_factory=AlpacaTradingGlobalConfig)
+    runs: list[AlpacaTradingRunConfig]
+
+    @model_validator(mode="after")
+    def ensure_runs(self) -> "AlpacaTradingConfig":
+        if not self.runs:
+            raise ValueError("At least one run is required")
+        ids = [r.run_id for r in self.runs]
+        if len(ids) != len(set(ids)):
+            raise ValueError("run_id values must be unique")
+        return self
+
+
+class RedisConfig(BaseModel):
+    url: str = "redis://localhost:6379/0"
+    key_prefix: str = "ta"
+    assignment_poll_interval_seconds: float = Field(default=2.0, gt=0)
+    lease_ttl_seconds: int = Field(default=20, ge=5)
+    heartbeat_interval_seconds: int = Field(default=5, ge=1)
+
+    @model_validator(mode="after")
+    def validate_lease_timing(self) -> "RedisConfig":
+        if self.heartbeat_interval_seconds >= self.lease_ttl_seconds:
+            raise ValueError("heartbeat_interval_seconds must be less than lease_ttl_seconds")
+        return self
+
+
+class PostgresRuntimeConfig(BaseModel):
+    database_url_env: str = "DATABASE_URL"
+    broker_name: str = "alpaca"
+    run_mode: Literal["paper_live", "paper_replay", "simulated"] = "paper_live"
+
+
+class SessionConfig(BaseModel):
+    timezone: str = "America/New_York"
+    pre_open_warmup_minutes: int = Field(default=15, ge=0)
+    drain_timeout_minutes: int = Field(default=15, ge=1)
+    flatten_positions_by_close: bool = True
+    allow_exit_orders_during_drain: bool = True
+
+
+class ReplayConfig(BaseModel):
+    enabled: bool = False
+    speed_multiplier: float = Field(default=1.0, gt=0)
+    historical_source: Literal["alpaca", "csv"] = "alpaca"
+    broker_mode: Literal["simulated", "paper"] = "simulated"
+
+
+class ControllerConfig(BaseModel):
+    contracts_api_base_url: str = "http://localhost:8000"
+    poll_interval_seconds: int = Field(default=5, ge=1)
+    shard_count: int = Field(default=2, ge=1)
+    scale_up_replicas: int | None = Field(default=None, ge=1)
+    enable_kubernetes_scaling: bool = False
+
+    @model_validator(mode="after")
+    def default_scale_up_replicas(self) -> "ControllerConfig":
+        if self.scale_up_replicas is None:
+            self.scale_up_replicas = self.shard_count
+        return self
+
+
+class WorkerConfig(BaseModel):
+    shard_id: int = Field(default=0, ge=0)
+    feed_poll_interval_seconds: float = Field(default=1.0, gt=0)
+    warmup_bars: int = Field(default=100, ge=1)
+    drain_timeout_seconds: int = Field(default=300, ge=1)
+    worker_id: str | None = None
+
+
+class LiveTradingGlobalConfig(BaseModel):
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    runtime: PostgresRuntimeConfig = Field(default_factory=PostgresRuntimeConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
+    replay: ReplayConfig = Field(default_factory=ReplayConfig)
+    controller: ControllerConfig = Field(default_factory=ControllerConfig)
+    worker: WorkerConfig = Field(default_factory=WorkerConfig)
+    execution: AlpacaExecutionConfig = Field(default_factory=AlpacaExecutionConfig)
+
+
+class LiveTradingContractConfig(BaseModel):
+    contract_id: str | None = None
+    symbol: str
+    interval: str = "1m"
+    feed: Literal["iex", "sip", "otc"] = "iex"
+    strategy: str
+    strategy_params: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_strategy(self) -> "LiveTradingContractConfig":
+        if self.strategy not in STRATEGY_REGISTRY:
+            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
+            raise ValueError(f"Unknown strategy '{self.strategy}'. Available: {available}")
+        self.strategy_params = validate_strategy_params(self.strategy, self.strategy_params)
+        return self
+
+
+class LiveTradingConfig(BaseModel):
+    global_config: LiveTradingGlobalConfig = Field(default_factory=LiveTradingGlobalConfig)
+    contracts: list[LiveTradingContractConfig] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_contracts(self) -> "LiveTradingConfig":
+        seen_ids = [contract.contract_id for contract in self.contracts if contract.contract_id is not None]
+        if len(seen_ids) != len(set(seen_ids)):
+            raise ValueError("contract_id values must be unique when provided")
         return self
