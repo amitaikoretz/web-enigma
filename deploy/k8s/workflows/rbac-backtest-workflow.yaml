@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backtest-workflow
+  labels:
+    app.kubernetes.io/name: backtest-workflow
+    app.kubernetes.io/component: backtest-workflows
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backtest-workflow
+  labels:
+    app.kubernetes.io/name: backtest-workflow
+    app.kubernetes.io/component: backtest-workflows
+rules:
+  # Argo wait/executor sidecars report task status via WorkflowTaskResult (>= v3.4).
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+  # Workflow pods load Alpaca credentials and other config via envFrom secretRef.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backtest-workflow
+  labels:
+    app.kubernetes.io/name: backtest-workflow
+    app.kubernetes.io/component: backtest-workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: backtest-workflow
+subjects:
+  - kind: ServiceAccount
+    name: backtest-workflow

@@ -60,6 +60,31 @@ def test_alpaca_cache_miss_then_hit(tmp_path, monkeypatch):
     assert s2 == "hit"
 
 
+def test_alpaca_different_feeds_use_separate_cache_entries(tmp_path, monkeypatch):
+    calls = {"n": 0}
+
+    def fake_urlopen(*args, **kwargs):
+        calls["n"] += 1
+        return _FakeResponse(_mock_alpaca_payload())
+
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
+
+    cache_cfg = DataCacheConfig(directory=str(tmp_path))
+    iex = AlpacaDataSource(type="alpaca", symbol="AAPL", interval="1d", feed="iex")
+    sip = AlpacaDataSource(type="alpaca", symbol="AAPL", interval="1d", feed="sip")
+
+    build_alpaca_data_feed_with_cache(
+        iex, date(2024, 1, 1), date(2024, 1, 3), cache_cfg, force_refresh=False
+    )
+    build_alpaca_data_feed_with_cache(
+        sip, date(2024, 1, 1), date(2024, 1, 3), cache_cfg, force_refresh=False
+    )
+
+    assert calls["n"] == 2
+
+
 def test_alpaca_null_bars_returns_clear_error(tmp_path, monkeypatch):
     def fake_urlopen(*args, **kwargs):
         return _FakeResponse(json.dumps({"bars": None, "next_page_token": None}).encode("utf-8"))

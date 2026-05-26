@@ -14,6 +14,7 @@ def get_server_info(deps: ApiDependencies = Depends(get_deps)) -> ServerInfoResp
     argo_enabled = deps.backtest_jobs.argo_submitter.is_configured
     return ServerInfoResponse(
         backtest_results_dir=str(deps.output_dir),
+        backtest_cache_dir=str(deps.cache_config.directory),
         platform_settings_path=str(deps.settings_service.path.resolve()),
         argo_workflows_enabled=argo_enabled,
         backtest_execution_backend=settings.platform_behavior.backtest_execution_backend,

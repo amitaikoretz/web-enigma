@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class ServerInfoResponse(BaseModel):
     backtest_results_dir: str
+    backtest_cache_dir: str
     platform_settings_path: str
     argo_workflows_enabled: bool
     backtest_execution_backend: str

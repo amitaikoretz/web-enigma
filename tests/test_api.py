@@ -177,6 +177,7 @@ def test_get_server_info_returns_backtest_storage_paths(tmp_path):
     assert response.status_code == 200
     body = response.json()
     assert body["backtest_results_dir"] == str(expected_results_dir)
+    assert body["backtest_cache_dir"] == str(tmp_path.resolve())
     assert body["platform_settings_path"] == str(expected_results_dir / "settings" / "platform-settings.json")
     assert body["argo_workflows_enabled"] is False
     assert body["backtest_execution_backend"] == "local"
@@ -1100,12 +1101,14 @@ class _FakeArgoSubmitter:
         output_path: str,
         split_by: str,
         backtest_id: str,
+        config_yaml: str | None = None,
     ) -> tuple[str, str]:
         self.last_submit = {
             "config_path": config_path,
             "output_path": output_path,
             "split_by": split_by,
             "backtest_id": backtest_id,
+            "config_yaml": config_yaml,
         }
         return f"backtest-{backtest_id[:8]}", "backtest"
 
@@ -1141,6 +1144,8 @@ def test_launch_argo_backtest_with_inline_config(tmp_path):
     assert body["status"] == "running"
     assert fake.last_submit is not None
     assert fake.last_submit["split_by"] == "run"
+    assert fake.last_submit["config_yaml"] is not None
+    assert "runs:" in fake.last_submit["config_yaml"]
 
     status = client.get(f"/backtests/{body['backtest_id']}/status")
     assert status.status_code == 200
@@ -1177,7 +1182,9 @@ def test_launch_argo_backtest_with_config_path(tmp_path):
 
     assert response.status_code == 202
     assert fake.last_submit is not None
-    assert fake.last_submit["config_path"] == str(config_path.resolve())
+    assert fake.last_submit["config_path"].startswith("/data/backtest-results/")
+    assert fake.last_submit["config_yaml"] is not None
+    assert "csv_ok" in fake.last_submit["config_yaml"]
 
 
 def test_launch_argo_backtest_returns_503_when_unconfigured(tmp_path):

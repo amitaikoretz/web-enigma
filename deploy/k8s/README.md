@@ -182,22 +182,31 @@ Worker shard count must stay aligned across:
 
 ## Argo backtest workflows
 
-The cluster must have [Argo Workflows](https://argo-workflows.readthedocs.io/en/latest/operator-manual/installation/) installed separately. This repo ships a `WorkflowTemplate`, shared PVCs, API RBAC, and a suspended reconciler CronJob.
+The cluster must have [Argo Workflows](https://argo-workflows.readthedocs.io/en/latest/operator-manual/installation/) installed separately. Backtest workflows run in namespace **`backtest-workflows`** under service account **`backtest-workflow`**.
+
+### Deploy workflow namespace
+
+```bash
+make bootstrap-backtest-workflows-namespace
+# or: kubectl apply -k deploy/k8s/workflows
+```
+
+See [`workflows/README.md`](workflows/README.md) for secrets, PVCs, and Argo Server RBAC notes.
 
 ### Prerequisites
 
 - Argo Workflows controller running in the cluster
-- `ReadWriteMany` storage class for `backtest-results` and `backtest-cache` PVCs (single-node kind/minikube clusters often use a local RWX provisioner)
-- Alpaca credentials in `app-secrets` when configs use Alpaca data
+- `ReadWriteMany` storage class for `backtest-results` and `backtest-cache` PVCs in `backtest-workflows`
+- `app-secrets` in `backtest-workflows` when configs use Alpaca data
 
 ### Launch options
 
 1. **API** — `POST /backtests/argo` with `config_path` (on the shared volume) or inline `config_text`
 2. **Wizard** — enable **Argo Workflows** in platform settings (`POST /backtests` delegates to Argo when enabled)
-3. **CLI / Argo** — submit the bundled template:
+3. **CLI / Argo** — submit the bundled template (optional; the API submits inline workflows):
 
 ```bash
-argo submit -n backtest --from workflowtemplate/backtest-batch \
+argo submit -n backtest-workflows --from workflowtemplate/backtest-batch \
   -p config-path=/data/backtest-results/my-experiment.yaml \
   -p output-path=/data/backtest-results/my-experiment.json \
   -p split-by=symbol \

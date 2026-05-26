@@ -24,3 +24,4 @@ patches:
   - path: patch-migrate-wait.yaml
   - path: patch-api-init.yaml
   - path: patch-web-replicas.yaml
+  - path: patch-pvc-rwo.yaml
