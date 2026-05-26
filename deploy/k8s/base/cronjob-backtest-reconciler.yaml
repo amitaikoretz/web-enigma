@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backtest-reconciler
+  labels:
+    app.kubernetes.io/name: backtest-reconciler
+    app.kubernetes.io/component: backtest
+spec:
+  schedule: "*/1 * * * *"
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backtest-reconciler
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: reconciler
+              image: backtest-app:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - backtest
+                - argo-reconciler
+                - --output-dir
+                - /data/backtest-results
+                - --once
+              envFrom:
+                - configMapRef:
+                    name: backtest-config
+                - secretRef:
+                    name: app-secrets
+              volumeMounts:
+                - name: backtest-results
+                  mountPath: /data/backtest-results
+          volumes:
+            - name: backtest-results
+              persistentVolumeClaim:
+                claimName: backtest-results

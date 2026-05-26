@@ -100,6 +100,33 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+### Backtest execution backend
+
+Platform settings control where wizard backtests run:
+
+- **Local (in-process)** — default for compose and bare-metal dev; jobs run in the API process thread pool.
+- **Argo Workflows** — available when the API runs in Kubernetes with Argo configured; wizard jobs submit the `backtest-batch` workflow. Use **Settings → Platform Behavior** to switch backends and choose the Argo shard strategy (`run`, `symbol`, `strategy`, or `symbol + strategy`).
+
+To launch Argo explicitly (regardless of the platform default):
+
+```bash
+curl -X POST http://localhost:8000/backtests/argo \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "config_path": "/data/backtest-results/experiment.yaml",
+    "split_by": "symbol_strategy"
+  }'
+```
+
+Parallel shard planning and report merge are also available via CLI:
+
+```bash
+backtest plan-shards --config experiments/volume_rally_v2_core_5m.yaml --work-dir /tmp/shards --split-by symbol
+backtest merge --manifest /tmp/shards/manifest.json --output /tmp/merged.json
+```
+
+See [`deploy/k8s/README.md`](../deploy/k8s/README.md) for cluster setup.
+
 ## Live Runtime Commands
 
 The CLI currently exposes these long-running service commands:

@@ -551,6 +551,46 @@ export function SettingsPage() {
                 label="Confirm before launching a backtest"
               />
             </Stack>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+              <SelectField
+                label="Backtest execution backend"
+                value={draft.platform_behavior.backtest_execution_backend}
+                onChange={(value) =>
+                  handleDraftChange({
+                    ...draft,
+                    platform_behavior: {
+                      ...draft.platform_behavior,
+                      backtest_execution_backend:
+                        value as PlatformSettings['platform_behavior']['backtest_execution_backend'],
+                    },
+                  })
+                }
+                options={[
+                  ['local', 'Local (in-process)'],
+                  ['argo', 'Argo Workflows'],
+                ]}
+              />
+              <SelectField
+                label="Argo split strategy"
+                value={draft.platform_behavior.argo_split_by}
+                onChange={(value) =>
+                  handleDraftChange({
+                    ...draft,
+                    platform_behavior: {
+                      ...draft.platform_behavior,
+                      argo_split_by: value as PlatformSettings['platform_behavior']['argo_split_by'],
+                    },
+                  })
+                }
+                options={[
+                  ['run', 'By run entry'],
+                  ['symbol', 'By symbol'],
+                  ['strategy', 'By strategy'],
+                  ['symbol_strategy', 'By symbol + strategy'],
+                ]}
+                disabled={draft.platform_behavior.backtest_execution_backend !== 'argo'}
+              />
+            </Box>
           </Stack>
         </Paper>
       )}
@@ -586,14 +626,16 @@ function SelectField({
   value,
   onChange,
   options,
+  disabled = false,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   options: Array<[string, string]>
+  disabled?: boolean
 }) {
   return (
-    <FormControl fullWidth>
+    <FormControl fullWidth disabled={disabled}>
       <InputLabel>{label}</InputLabel>
       <Select label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map(([optionValue, optionLabel]) => (

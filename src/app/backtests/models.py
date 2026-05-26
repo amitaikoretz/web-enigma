@@ -14,6 +14,8 @@ from app.strategies.registry import STRATEGY_REGISTRY, validate_strategy_params
 SUPPORTED_RESOLUTIONS = ("1m", "5m", "15m", "1h", "1d")
 
 BacktestJobStatus = Literal["pending", "running", "completed", "failed"]
+BacktestExecutionBackend = Literal["local", "argo"]
+ArgoSplitBy = Literal["run", "symbol", "strategy", "symbol_strategy"]
 
 
 def _sanitize_strategy_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -101,8 +103,11 @@ class BacktestListItem(BaseModel):
     completed_runs: int = 0
     successful_runs: int = 0
     failed_runs: int = 0
-    selection: BacktestSelectionSummary
+    selection: BacktestSelectionSummary | None = None
     error_message: str | None = None
+    execution_backend: BacktestExecutionBackend = "local"
+    workflow_name: str | None = None
+    workflow_namespace: str | None = None
 
 
 class BacktestCreateResponse(BaseModel):
@@ -110,6 +115,34 @@ class BacktestCreateResponse(BaseModel):
     status: BacktestJobStatus
     status_url: str
     detail_url: str
+
+
+class BacktestArgoLaunchRequest(BaseModel):
+    config_path: str | None = None
+    config_text: str | None = None
+    format: Literal["json", "yaml"] = "yaml"
+    split_by: ArgoSplitBy | None = None
+    backtest_id: str | None = None
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_input_mode(self) -> "BacktestArgoLaunchRequest":
+        has_path = bool(self.config_path and self.config_path.strip())
+        has_text = bool(self.config_text and self.config_text.strip())
+        if has_path == has_text:
+            raise ValueError("Provide exactly one of config_path or config_text")
+        return self
+
+
+class BacktestArgoLaunchResponse(BaseModel):
+    backtest_id: str
+    workflow_name: str
+    status: BacktestJobStatus
+    status_url: str
+    detail_url: str
+    workflow_namespace: str
+    config_path: str
+    output_path: str
 
 
 class BacktestStatusResponse(BacktestListItem):

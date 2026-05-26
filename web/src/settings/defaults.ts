@@ -38,5 +38,7 @@ export const defaultPlatformSettings: PlatformSettings = {
     auto_refresh_interval_seconds: 1.5,
     confirm_before_launch: false,
     preferred_landing_page: 'backtests',
+    backtest_execution_backend: 'local',
+    argo_split_by: 'symbol_strategy',
   },
 }

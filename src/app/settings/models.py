@@ -67,6 +67,8 @@ class PlatformBehaviorSettings(BaseModel):
     auto_refresh_interval_seconds: float = Field(default=1.5, ge=0.5, le=60)
     confirm_before_launch: bool = False
     preferred_landing_page: Literal["backtests", "new_backtest", "chart"] = "backtests"
+    backtest_execution_backend: Literal["local", "argo"] = "local"
+    argo_split_by: Literal["run", "symbol", "strategy", "symbol_strategy"] = "symbol_strategy"
 
 
 class PlatformSettings(BaseModel):

@@ -62,7 +62,7 @@ function medianTradeSize(trades: BacktestRunResult['trades']): number | null {
 
 interface BacktestRunDetailPanelProps {
   result: BacktestRunResult
-  selection: BacktestSelectionSummary
+  selection: BacktestSelectionSummary | null
 }
 
 export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailPanelProps) {
@@ -111,7 +111,11 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
 
         <Tabs value={tab} onChange={(_, value) => setTab(value)} aria-label="Run analysis sections">
           <Tab value="overview" label="Overview" />
-          <Tab value="chart" label="Chart" disabled={result.status !== 'success' || !result.symbol} />
+          <Tab
+            value="chart"
+            label="Chart"
+            disabled={result.status !== 'success' || !result.symbol || !selection}
+          />
           <Tab value="diagnostics" label="Diagnostics" />
           <Tab value="trades" label={`Trades (${result.trades.length})`} />
         </Tabs>
@@ -130,7 +134,7 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
           </BacktestAnalysisSection>
         )}
 
-        {tab === 'chart' && result.status === 'success' && result.symbol && (
+        {tab === 'chart' && result.status === 'success' && result.symbol && selection && (
           <BacktestAnalysisSection title="Price chart" description="Market bars with order and trade markers.">
             <BacktestRunChart
               symbol={result.symbol}

@@ -1,0 +1,126 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: backtest-batch
+  labels:
+    app.kubernetes.io/name: backtest-batch
+    app.kubernetes.io/component: backtest
+spec:
+  entrypoint: backtest-batch
+  serviceAccountName: api
+  arguments:
+    parameters:
+      - name: config-path
+      - name: output-path
+      - name: split-by
+        value: ""
+      - name: backtest-id
+        value: ""
+  volumeClaimTemplates:
+    - metadata:
+        name: workspace
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+  volumes:
+    - name: backtest-results
+      persistentVolumeClaim:
+        claimName: backtest-results
+    - name: backtest-cache
+      persistentVolumeClaim:
+        claimName: backtest-cache
+  templates:
+    - name: backtest-batch
+      steps:
+        - - name: plan
+            template: plan-shards
+        - - name: run-shards
+            template: run-shard
+            arguments:
+              parameters:
+                - name: shard-config-path
+                  value: "{{item.config_path}}"
+                - name: shard-output-path
+                  value: "{{item.output_path}}"
+            withParam: "{{steps.plan.outputs.parameters.shards}}"
+        - - name: merge
+            template: merge-reports
+
+    - name: plan-shards
+      container:
+        image: backtest-app:latest
+        imagePullPolicy: IfNotPresent
+        command: ["backtest", "plan-shards"]
+        args:
+          - --config
+          - "{{workflow.parameters.config-path}}"
+          - --work-dir
+          - /workspace
+          - --manifest
+          - /workspace/manifest.json
+          - --shards-param
+          - /workspace/shards-param.json
+          - --split-by
+          - "{{workflow.parameters.split-by}}"
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: backtest-results
+            mountPath: /data/backtest-results
+      outputs:
+        parameters:
+          - name: shards
+            valueFrom:
+              path: /workspace/shards-param.json
+
+    - name: run-shard
+      inputs:
+        parameters:
+          - name: shard-config-path
+          - name: shard-output-path
+      container:
+        image: backtest-app:latest
+        imagePullPolicy: IfNotPresent
+        command: ["backtest", "run"]
+        args:
+          - --config
+          - "{{inputs.parameters.shard-config-path}}"
+          - --output
+          - "{{inputs.parameters.shard-output-path}}"
+          - --cache-dir
+          - /data/cache
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: backtest-cache
+            mountPath: /data/cache
+
+    - name: merge-reports
+      container:
+        image: backtest-app:latest
+        imagePullPolicy: IfNotPresent
+        command: ["backtest", "merge"]
+        args:
+          - --manifest
+          - /workspace/manifest.json
+          - --output
+          - "{{workflow.parameters.output-path}}"
+          - --backtest-id
+          - "{{workflow.parameters.backtest-id}}"
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: backtest-results
+            mountPath: /data/backtest-results

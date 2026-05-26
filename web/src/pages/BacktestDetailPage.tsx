@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Link,
   Paper,
@@ -220,11 +221,21 @@ export function BacktestDetailPage() {
             </Tooltip>
             <BacktestStatusChip status={metadata.status} />
             {metadata.report_status && <ReportStatusChip status={metadata.report_status} />}
+            {metadata.execution_backend === 'argo' && (
+              <Chip size="small" label="Argo" color="info" variant="outlined" />
+            )}
           </Stack>
         </Stack>
       </Stack>
 
       {error && <Alert severity="error">{error}</Alert>}
+
+      {metadata.workflow_name && (
+        <Alert severity="info">
+          Argo workflow: {metadata.workflow_name}
+          {metadata.workflow_namespace ? ` (${metadata.workflow_namespace})` : ''}
+        </Alert>
+      )}
 
       {isActive && (
         <BacktestProgressPanel
@@ -240,12 +251,16 @@ export function BacktestDetailPage() {
       <Paper sx={{ p: 3 }}>
         <Stack spacing={2}>
           <Typography variant="h6">Submission summary</Typography>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-            <Metric label="Date range" value={`${metadata.selection.start_date} → ${metadata.selection.end_date}`} />
-            <Metric label="Resolution" value={metadata.selection.resolution} />
-            <Metric label="Symbols" value={metadata.selection.symbols.join(', ')} />
-            <Metric label="Strategies" value={metadata.selection.strategies.join(', ')} />
-          </Stack>
+          {metadata.selection ? (
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+              <Metric label="Date range" value={`${metadata.selection.start_date} → ${metadata.selection.end_date}`} />
+              <Metric label="Resolution" value={metadata.selection.resolution} />
+              <Metric label="Symbols" value={metadata.selection.symbols.join(', ')} />
+              <Metric label="Strategies" value={metadata.selection.strategies.join(', ')} />
+            </Stack>
+          ) : (
+            <Typography color="text.secondary">Selection summary unavailable.</Typography>
+          )}
         </Stack>
       </Paper>
 

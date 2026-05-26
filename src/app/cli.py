@@ -15,6 +15,8 @@ from app.api import app as fastapi_app
 from app.api_logging import DEFAULT_LOG_DIR, build_timestamped_log_file, configure_api_logging
 from app.strategies.auditor_logging import configure_strategy_logging
 from app.config.models import AlpacaTradingConfig, BacktestConfig, LiveTradingConfig
+from app.backtests.merge import merge_exit_code, merge_from_manifest
+from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_manifest, write_shards_param
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
 from app.live.executor import build_alpaca_executor
 from app.live import runtime as live_runtime
@@ -212,6 +214,75 @@ def _cmd_live_worker(config_path: str, shard_id: int, once: bool) -> int:
     return 0
 
 
+def _cmd_plan_shards(
+    config_path: str,
+    work_dir: str,
+    manifest_path: str | None,
+    shards_param_path: str | None,
+    split_by: str | None,
+) -> int:
+    config_file = Path(config_path)
+    work_path = Path(work_dir)
+    try:
+        raw = _load_yaml(config_file)
+        BacktestConfig.model_validate(raw)
+    except FileNotFoundError:
+        print(f"Config file not found: {config_path}")
+        return 2
+    except (ValueError, ValidationError) as exc:
+        print(f"Config validation failed: {exc}")
+        return 2
+
+    resolved_split = resolve_split_by(
+        raw,
+        override=split_by if split_by else None,  # type: ignore[arg-type]
+    )
+    plan = plan_shards(
+        raw,
+        split_by=resolved_split,
+        work_dir=work_path,
+        config_path=str(config_file.resolve()),
+    )
+    manifest = Path(manifest_path) if manifest_path else work_path / "manifest.json"
+    write_shard_manifest(plan, manifest)
+    shards_param = Path(shards_param_path) if shards_param_path else work_path / "shards-param.json"
+    write_shards_param(plan, shards_param)
+    console.print(f"Planned {len(plan.shards)} shards split_by={plan.split_by} manifest={manifest}")
+    return 0
+
+
+def _cmd_merge(manifest_path: str, output_path: str, backtest_id: str | None) -> int:
+    manifest = Path(manifest_path)
+    output = Path(output_path)
+    if not manifest.exists():
+        print(f"Manifest not found: {manifest}")
+        return 2
+    try:
+        report = merge_from_manifest(manifest)
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Merge failed: {exc}")
+        return 2
+    write_backtest_report_json(report, output)
+    if backtest_id:
+        from app.backtests.argo_reconciler import update_metadata_from_report
+
+        update_metadata_from_report(backtest_id, report, output_dir=output.parent)
+    console.print(
+        f"Merged {report.total_runs} runs: "
+        f"{report.successful_runs} success, {report.failed_runs} failed. "
+        f"Status={report.status}. Output={output}"
+    )
+    return merge_exit_code(report)
+
+
+def _cmd_argo_reconciler(output_dir: str, once: bool) -> int:
+    from app.backtests.argo_reconciler import reconcile_backtest_workflows
+
+    reconciled = reconcile_backtest_workflows(Path(output_dir), once=once)
+    console.print(f"Reconciled {reconciled} backtest workflow(s)")
+    return 0
+
+
 def _cmd_live_reconciler(config_path: str, once: bool) -> int:
     config_file = Path(config_path)
     try:
@@ -273,6 +344,46 @@ def report_html_command(
         raise typer.Exit(code=2)
     console.print(f"HTML report created: {output_path}")
     raise typer.Exit(code=0)
+
+
+@app.command("plan-shards", help="Split a backtest config into parallel shard YAML files")
+def plan_shards_command(
+    config: str = typer.Option(..., "--config", help="YAML config path"),
+    work_dir: str = typer.Option(..., "--work-dir", help="Directory for shard configs and manifest"),
+    manifest: str | None = typer.Option(None, "--manifest", help="Manifest JSON output path"),
+    shards_param: str | None = typer.Option(
+        None,
+        "--shards-param",
+        help="Compact JSON array output for Argo withParam",
+    ),
+    split_by: str | None = typer.Option(
+        None,
+        "--split-by",
+        help="Shard grouping: run, symbol, strategy, or symbol_strategy",
+    ),
+) -> None:
+    raise typer.Exit(code=_cmd_plan_shards(config, work_dir, manifest, shards_param, split_by))
+
+
+@app.command("merge", help="Merge shard backtest JSON reports into one report")
+def merge_command(
+    manifest: str = typer.Option(..., "--manifest", help="Shard manifest JSON path"),
+    output: str = typer.Option(..., "--output", help="Merged JSON output path"),
+    backtest_id: str | None = typer.Option(
+        None,
+        "--backtest-id",
+        help="When set, update job metadata in the output directory parent",
+    ),
+) -> None:
+    raise typer.Exit(code=_cmd_merge(manifest, output, backtest_id))
+
+
+@app.command("argo-reconciler", help="Reconcile Argo backtest workflow status with job metadata")
+def argo_reconciler_command(
+    output_dir: str = typer.Option(..., "--output-dir", help="Backtest results directory"),
+    once: bool = typer.Option(False, "--once", help="Run one reconciliation pass and exit"),
+) -> None:
+    raise typer.Exit(code=_cmd_argo_reconciler(output_dir, once))
 
 
 @app.command("serve", help="Run the FastAPI market data service")

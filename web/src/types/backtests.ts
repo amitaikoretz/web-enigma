@@ -170,6 +170,9 @@ export interface BacktestSelectionSummary {
   strategies: string[]
 }
 
+export type BacktestExecutionBackend = 'local' | 'argo'
+export type ArgoSplitBy = 'run' | 'symbol' | 'strategy' | 'symbol_strategy'
+
 export interface BacktestListItem {
   id: string
   created_at: string
@@ -180,8 +183,11 @@ export interface BacktestListItem {
   completed_runs: number
   successful_runs: number
   failed_runs: number
-  selection: BacktestSelectionSummary
+  selection: BacktestSelectionSummary | null
   error_message: string | null
+  execution_backend?: BacktestExecutionBackend
+  workflow_name?: string | null
+  workflow_namespace?: string | null
 }
 
 export interface BacktestCreateResponse {
@@ -189,6 +195,26 @@ export interface BacktestCreateResponse {
   status: BacktestJobStatus
   status_url: string
   detail_url: string
+}
+
+export interface BacktestArgoLaunchRequest {
+  config_path?: string
+  config_text?: string
+  format?: 'json' | 'yaml'
+  split_by?: ArgoSplitBy
+  backtest_id?: string
+  name?: string
+}
+
+export interface BacktestArgoLaunchResponse {
+  backtest_id: string
+  workflow_name: string
+  status: BacktestJobStatus
+  status_url: string
+  detail_url: string
+  workflow_namespace: string
+  config_path: string
+  output_path: string
 }
 
 export interface BacktestDetailResponse {
