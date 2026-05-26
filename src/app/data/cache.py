@@ -23,6 +23,7 @@ class CacheKey:
     start_date: str
     end_date: str
     normalization_version: str = NORMALIZATION_VERSION
+    feed: str | None = None
 
     def stable_id(self) -> str:
         payload = {
@@ -33,6 +34,8 @@ class CacheKey:
             "end_date": self.end_date,
             "normalization_version": self.normalization_version,
         }
+        if self.feed is not None:
+            payload["feed"] = self.feed.lower()
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hashlib.sha256(raw).hexdigest()[:20]
 

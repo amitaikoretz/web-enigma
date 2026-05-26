@@ -8,5 +8,5 @@ metadata:
 data:
   BACKTEST_RESULTS_DIR: "/data/backtest-results"
   BACKTEST_CACHE_DIR: "/data/cache"
-  ARGO_NAMESPACE: "backtest"
-  BACKTEST_WORKFLOW_TEMPLATE: "backtest-batch"
+  ARGO_NAMESPACE: "backtest-workflows"
+  ARGO_WORKFLOW_SERVICE_ACCOUNT: "backtest-workflow"

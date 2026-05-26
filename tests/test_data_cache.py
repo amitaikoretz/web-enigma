@@ -41,6 +41,26 @@ def test_cache_path_generation(tmp_path):
     assert "1h" in str(path)
 
 
+def test_cache_key_feed_disambiguation():
+    iex = CacheKey(
+        source="alpaca",
+        symbol="AAPL",
+        interval="1d",
+        start_date="2024-01-01",
+        end_date="2024-01-31",
+        feed="iex",
+    )
+    sip = CacheKey(
+        source="alpaca",
+        symbol="AAPL",
+        interval="1d",
+        start_date="2024-01-01",
+        end_date="2024-01-31",
+        feed="sip",
+    )
+    assert iex.stable_id() != sip.stable_id()
+
+
 def test_cache_ttl_hit_and_stale(tmp_path):
     cache = ParquetDataCache(tmp_path)
     key = CacheKey(

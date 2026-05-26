@@ -111,6 +111,7 @@ export function BacktestWizardPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const prefillFromId = searchParams.get('from')
+  const downloadPrefillSymbols = searchParams.get('symbols')
   const [strategies, setStrategies] = useState<StrategyMetadata[]>([])
   const [loadingStrategies, setLoadingStrategies] = useState(true)
   const [loadingPrefill, setLoadingPrefill] = useState(Boolean(prefillFromId))
@@ -129,6 +130,42 @@ export function BacktestWizardPage() {
   const [submitBroker, setSubmitBroker] = useState(platformSettings.backtest_defaults.broker)
   const [submitAnalyzers, setSubmitAnalyzers] = useState(platformSettings.backtest_defaults.analyzers)
   const [submitExecution, setSubmitExecution] = useState(platformSettings.backtest_defaults.execution)
+
+  useEffect(() => {
+    if (prefillFromId || !downloadPrefillSymbols) {
+      return undefined
+    }
+
+    const parsedSymbols = downloadPrefillSymbols
+      .split(',')
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean)
+      .filter((item, index, values) => values.indexOf(item) === index)
+    if (parsedSymbols.length === 0) {
+      return undefined
+    }
+
+    const nextStartDate = searchParams.get('start_date')
+    const nextEndDate = searchParams.get('end_date')
+    const nextResolution = searchParams.get('resolution')
+    const nextFeed = searchParams.get('feed')
+
+    setSymbols(parsedSymbols)
+    if (nextStartDate) {
+      setStartDate(dayjs(nextStartDate))
+    }
+    if (nextEndDate) {
+      setEndDate(dayjs(nextEndDate))
+    }
+    if (nextResolution && RESOLUTIONS.includes(nextResolution as Resolution)) {
+      setResolution(nextResolution as Resolution)
+    }
+    if (nextFeed && FEEDS.includes(nextFeed as BacktestFeed)) {
+      setFeed(nextFeed as BacktestFeed)
+    }
+
+    return undefined
+  }, [downloadPrefillSymbols, prefillFromId, searchParams])
 
   useEffect(() => {
     let cancelled = false
@@ -346,6 +383,12 @@ export function BacktestWizardPage() {
       {prefillSourceId && (
         <Alert severity="info">
           Prefilled from backtest `{prefillSourceId}`. Edit any settings below before launching.
+        </Alert>
+      )}
+
+      {!prefillSourceId && downloadPrefillSymbols && (
+        <Alert severity="info">
+          Prefilled from a market data download job. Choose strategies below before launching.
         </Alert>
       )}
 

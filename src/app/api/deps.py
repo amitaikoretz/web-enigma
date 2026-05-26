@@ -7,6 +7,7 @@ from starlette.requests import Request
 
 from app.backtests import BacktestJobService
 from app.config.models import DataCacheConfig
+from app.data.downloads import DataDownloadJobRepository, DataDownloadJobService
 from app.settings import PlatformSettingsService
 
 
@@ -15,6 +16,7 @@ class ApiDependencies:
     cache_config: DataCacheConfig
     output_dir: Path
     backtest_jobs: BacktestJobService
+    data_download_jobs: DataDownloadJobService
     settings_service: PlatformSettingsService
 
 

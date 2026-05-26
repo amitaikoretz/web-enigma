@@ -1,6 +1,7 @@
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import CloseIcon from '@mui/icons-material/Close'
+import CloudDownloadIcon from '@mui/icons-material/CloudDownload'
 import InsightsIcon from '@mui/icons-material/Insights'
 import MenuIcon from '@mui/icons-material/Menu'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
@@ -27,11 +28,15 @@ import { BacktestDetailPage } from './pages/BacktestDetailPage'
 import { BacktestsListPage } from './pages/BacktestsListPage'
 import { BacktestWizardPage } from './pages/BacktestWizardPage'
 import { ContractsPage } from './pages/ContractsPage'
+import { DataDownloadDetailPage } from './pages/DataDownloadDetailPage'
+import { DataDownloadsListPage } from './pages/DataDownloadsListPage'
+import { DataDownloadWizardPage } from './pages/DataDownloadWizardPage'
 import { RuntimePage } from './pages/RuntimePage'
 import { SettingsPage } from './pages/SettingsPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
+  { label: 'Data', to: '/data/downloads', icon: <CloudDownloadIcon /> },
   { label: 'Contracts', to: '/contracts', icon: <AssignmentIcon /> },
   { label: 'Runtime', to: '/runtime', icon: <MonitorHeartIcon /> },
   { label: 'Chart', to: '/chart', icon: <BarChartIcon /> },
@@ -203,6 +208,9 @@ function App() {
           <Route path="/backtests" element={<BacktestsListPage />} />
           <Route path="/backtests/new" element={<BacktestWizardPage />} />
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
+          <Route path="/data/downloads" element={<DataDownloadsListPage />} />
+          <Route path="/data/downloads/new" element={<DataDownloadWizardPage />} />
+          <Route path="/data/downloads/:jobId" element={<DataDownloadDetailPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
           <Route path="/runtime" element={<RuntimePage />} />
           <Route path="/settings" element={<SettingsPage />} />

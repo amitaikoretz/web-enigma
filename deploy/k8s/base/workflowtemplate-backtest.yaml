@@ -16,6 +16,8 @@ spec:
         value: ""
       - name: backtest-id
         value: ""
+      - name: config-b64
+        value: ""
   volumeClaimTemplates:
     - metadata:
         name: workspace
@@ -53,18 +55,23 @@ spec:
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
-        command: ["backtest", "plan-shards"]
+        command: ["sh", "-c"]
         args:
-          - --config
-          - "{{workflow.parameters.config-path}}"
-          - --work-dir
-          - /workspace
-          - --manifest
-          - /workspace/manifest.json
-          - --shards-param
-          - /workspace/shards-param.json
-          - --split-by
-          - "{{workflow.parameters.split-by}}"
+          - |
+            set -e
+            if [ -n "{{workflow.parameters.config-b64}}" ]; then
+              mkdir -p /workspace
+              echo "{{workflow.parameters.config-b64}}" | base64 -d > /workspace/config.yaml
+              CONFIG=/workspace/config.yaml
+            else
+              CONFIG="{{workflow.parameters.config-path}}"
+            fi
+            exec backtest plan-shards \
+              --config "$CONFIG" \
+              --work-dir /workspace \
+              --manifest /workspace/manifest.json \
+              --shards-param /tmp/shards-param.json \
+              --split-by "{{workflow.parameters.split-by}}"
         envFrom:
           - secretRef:
               name: app-secrets
@@ -77,7 +84,7 @@ spec:
         parameters:
           - name: shards
             valueFrom:
-              path: /workspace/shards-param.json
+              path: /tmp/shards-param.json
 
     - name: run-shard
       inputs:

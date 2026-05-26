@@ -151,6 +151,7 @@ def build_alpaca_data_feed_with_cache(
         interval=config.interval,
         start_date=start_date.isoformat(),
         end_date=end_date.isoformat(),
+        feed=config.feed,
     )
     cache_status = "miss"
     if cache_config and cache_config.enabled and not force_refresh:

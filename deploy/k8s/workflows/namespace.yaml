@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backtest-workflows
+  labels:
+    app.kubernetes.io/part-of: backtest
+    app.kubernetes.io/component: backtest-workflows

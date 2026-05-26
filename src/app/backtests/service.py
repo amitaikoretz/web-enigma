@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -494,6 +495,10 @@ class BacktestJobService:
             config_raw=config_raw,
         )
 
+    def _workflow_volume_paths(self, backtest_id: str) -> tuple[str, str]:
+        mount = os.environ.get("BACKTEST_RESULTS_DIR", "/data/backtest-results").rstrip("/")
+        return f"{mount}/{backtest_id}.yaml", f"{mount}/{backtest_id}.json"
+
     def _launch_argo_workflow(
         self,
         *,
@@ -506,12 +511,20 @@ class BacktestJobService:
         if not self.argo_submitter.is_configured:
             raise ArgoNotConfiguredError("Argo Workflows is not configured in this environment")
 
-        output_path = str(self.repository.report_path(backtest_id).resolve())
+        workflow_config_path, workflow_output_path = self._workflow_volume_paths(backtest_id)
+        local_config_path = self.repository.config_path(backtest_id)
+        source_config_path = local_config_path if local_config_path.exists() else Path(config_path)
+        if not source_config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {source_config_path}")
+
+        config_yaml = source_config_path.read_text(encoding="utf-8")
+
         workflow_name, workflow_namespace = self.argo_submitter.submit(
-            config_path=config_path,
-            output_path=output_path,
+            config_path=workflow_config_path,
+            output_path=workflow_output_path,
             split_by=split_by,
             backtest_id=backtest_id,
+            config_yaml=config_yaml,
         )
 
         current = metadata.model_copy(deep=True)
@@ -530,8 +543,8 @@ class BacktestJobService:
             status_url=f"/backtests/{backtest_id}/status",
             detail_url=f"/backtests/{backtest_id}",
             workflow_namespace=workflow_namespace,
-            config_path=config_path,
-            output_path=output_path,
+            config_path=workflow_config_path,
+            output_path=workflow_output_path,
         )
 
     def list_backtests(self) -> list[BacktestListItem]:

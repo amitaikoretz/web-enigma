@@ -31,6 +31,7 @@ Notes:
 
 - `DATABASE_URL` is required for database-backed API endpoints and live runtime services.
 - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` are required for Alpaca-backed market data and Alpaca trading commands.
+- `BACKTEST_CACHE_DIR` optionally overrides the default parquet cache directory (`.cache/backtest-data`). In Kubernetes this is typically `/data/cache`.
 
 ## Database Setup
 
@@ -82,6 +83,41 @@ curl -X POST http://localhost:8000/backtests/run \
   }'
 ```
 
+Submit a batch Alpaca download job (async). Parquet files are written under `output_folder` using the standard cache layout (`alpaca/{SYMBOL}/{resolution}/...`). The job returns immediately with a job ID; poll status until `completed`:
+
+```bash
+curl -X POST http://localhost:8000/market-data/downloads \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "output_folder": ".cache/backtest-data",
+    "records": [
+      {
+        "symbol": "AAPL",
+        "start_date": "2024-01-01",
+        "stop_date": "2024-01-31",
+        "resolution": "1d",
+        "feed": "iex"
+      }
+    ]
+  }'
+```
+
+Poll progress (replace `{job_id}` with the value from the create response):
+
+```bash
+curl http://localhost:8000/market-data/downloads/{job_id}/status
+```
+
+Fetch the full manifest with per-record parquet paths and errors:
+
+```bash
+curl http://localhost:8000/market-data/downloads/{job_id}
+```
+
+`output_folder` must be under the API cache root (`BACKTEST_CACHE_DIR` or `.cache/backtest-data` by default).
+
+In the web UI, open **Data** in the top navigation to create download jobs, track progress, and jump to the backtest wizard with the same symbol universe.
+
 ## API and Web UI
 
 Start the API:
@@ -105,7 +141,19 @@ Open `http://localhost:5173`.
 Platform settings control where wizard backtests run:
 
 - **Local (in-process)** — default for compose and bare-metal dev; jobs run in the API process thread pool.
-- **Argo Workflows** — available when the API runs in Kubernetes with Argo configured; wizard jobs submit the `backtest-batch` workflow. Use **Settings → Platform Behavior** to switch backends and choose the Argo shard strategy (`run`, `symbol`, `strategy`, or `symbol + strategy`).
+- **Argo Workflows** — when Argo is configured (in-cluster Kubernetes API or `ARGO_SERVER_URL` for a remote Argo server); wizard jobs submit an inline backtest workflow (plan → run shards → merge). Use **Settings → Platform Behavior** to switch backends and choose the Argo shard strategy (`run`, `symbol`, `strategy`, or `symbol + strategy`).
+
+For local API development against a remote Argo server:
+
+```bash
+export BACKTEST_ARGO_ENABLED=true
+export ARGO_SERVER_URL=http://localhost:2746          # use https:// only when Argo has TLS enabled
+export ARGO_SERVER_INSECURE_SKIP_VERIFY=true          # HTTPS with self-signed certs only
+export ARGO_TOKEN="$(argo auth token)"         # when auth is enabled
+export ARGO_NAMESPACE=backtest-workflows
+export ARGO_WORKFLOW_SERVICE_ACCOUNT=backtest-workflow
+backtest serve --port 8000
+```
 
 To launch Argo explicitly (regardless of the platform default):
 
