@@ -15,6 +15,7 @@ spec:
       labels:
         app.kubernetes.io/name: api
     spec:
+      serviceAccountName: api
       initContainers:
         - name: migrate
           image: backtest-app:latest
@@ -34,6 +35,8 @@ spec:
           envFrom:
             - secretRef:
                 name: app-secrets
+            - configMapRef:
+                name: backtest-config
           env:
             - name: REDIS_URL
               value: redis://redis:6379/0
@@ -45,6 +48,13 @@ spec:
               value: ta
             - name: LIVE_SHARD_COUNT
               value: "2"
+            - name: BACKTEST_ARGO_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: backtest-results
+              mountPath: /data/backtest-results
+            - name: backtest-cache
+              mountPath: /data/cache
           readinessProbe:
             httpGet:
               path: /health
@@ -59,3 +69,10 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 20
             timeoutSeconds: 5
+      volumes:
+        - name: backtest-results
+          persistentVolumeClaim:
+            claimName: backtest-results
+        - name: backtest-cache
+          persistentVolumeClaim:
+            claimName: backtest-cache

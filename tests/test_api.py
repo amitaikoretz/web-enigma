@@ -178,6 +178,8 @@ def test_get_server_info_returns_backtest_storage_paths(tmp_path):
     body = response.json()
     assert body["backtest_results_dir"] == str(expected_results_dir)
     assert body["platform_settings_path"] == str(expected_results_dir / "settings" / "platform-settings.json")
+    assert body["argo_workflows_enabled"] is False
+    assert body["backtest_execution_backend"] == "local"
 
 
 def test_get_settings_returns_defaults_when_file_missing(tmp_path):
@@ -1080,3 +1082,157 @@ def test_get_live_runtime_filters_events_by_worker_id(tmp_path):
     body = response.json()
     assert len(body["events"]) == 1
     assert body["events"][0]["worker_id"] == "controller"
+
+
+class _FakeArgoSubmitter:
+    def __init__(self, configured: bool = True) -> None:
+        self.configured = configured
+        self.last_submit: dict[str, str] | None = None
+
+    @property
+    def is_configured(self) -> bool:
+        return self.configured
+
+    def submit(
+        self,
+        *,
+        config_path: str,
+        output_path: str,
+        split_by: str,
+        backtest_id: str,
+    ) -> tuple[str, str]:
+        self.last_submit = {
+            "config_path": config_path,
+            "output_path": output_path,
+            "split_by": split_by,
+            "backtest_id": backtest_id,
+        }
+        return f"backtest-{backtest_id[:8]}", "backtest"
+
+
+def test_launch_argo_backtest_with_inline_config(tmp_path):
+    client = _build_client(tmp_path)
+    fake = _FakeArgoSubmitter()
+    client.app.state.deps.backtest_jobs.argo_submitter = fake
+
+    config_text = yaml.safe_dump(
+        {
+            "runs": [
+                {
+                    "run_id": "csv_ok",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-01-19",
+                    "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                    "strategy": "buy_and_hold",
+                    "strategy_params": {"stake": 1},
+                }
+            ]
+        }
+    )
+    response = client.post(
+        "/backtests/argo",
+        json={"config_text": config_text, "format": "yaml", "split_by": "run"},
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["workflow_name"].startswith("backtest-")
+    assert body["workflow_namespace"] == "backtest"
+    assert body["status"] == "running"
+    assert fake.last_submit is not None
+    assert fake.last_submit["split_by"] == "run"
+
+    status = client.get(f"/backtests/{body['backtest_id']}/status")
+    assert status.status_code == 200
+    assert status.json()["execution_backend"] == "argo"
+    assert status.json()["workflow_name"] == body["workflow_name"]
+
+
+def test_launch_argo_backtest_with_config_path(tmp_path):
+    client = _build_client(tmp_path)
+    fake = _FakeArgoSubmitter()
+    client.app.state.deps.backtest_jobs.argo_submitter = fake
+    results_dir = tmp_path / "api-results"
+    config_path = results_dir / "experiment.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "runs": [
+                    {
+                        "run_id": "csv_ok",
+                        "start_date": "2024-01-01",
+                        "end_date": "2024-01-19",
+                        "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                        "strategy": "buy_and_hold",
+                        "strategy_params": {"stake": 1},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post("/backtests/argo", json={"config_path": str(config_path)})
+
+    assert response.status_code == 202
+    assert fake.last_submit is not None
+    assert fake.last_submit["config_path"] == str(config_path.resolve())
+
+
+def test_launch_argo_backtest_returns_503_when_unconfigured(tmp_path):
+    client = _build_client(tmp_path)
+    client.app.state.deps.backtest_jobs.argo_submitter = _FakeArgoSubmitter(configured=False)
+
+    response = client.post(
+        "/backtests/argo",
+        json={
+            "config_text": "runs: []\n",
+            "format": "yaml",
+        },
+    )
+
+    assert response.status_code == 503
+
+
+def test_launch_argo_backtest_missing_config_path_returns_404(tmp_path):
+    client = _build_client(tmp_path)
+    client.app.state.deps.backtest_jobs.argo_submitter = _FakeArgoSubmitter()
+
+    response = client.post("/backtests/argo", json={"config_path": "/missing/config.yaml"})
+
+    assert response.status_code == 404
+
+
+def test_relaunch_argo_backtest_for_existing_config(tmp_path):
+    client = _build_client(tmp_path)
+    fake = _FakeArgoSubmitter()
+    client.app.state.deps.backtest_jobs.argo_submitter = fake
+    backtest_id = "abc123"
+    config_path = tmp_path / "api-results" / f"{backtest_id}.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "runs": [
+                    {
+                        "run_id": "csv_ok",
+                        "start_date": "2024-01-01",
+                        "end_date": "2024-01-19",
+                        "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                        "strategy": "buy_and_hold",
+                        "strategy_params": {"stake": 1},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post(f"/backtests/{backtest_id}/argo")
+
+    assert response.status_code == 202
+    assert response.json()["backtest_id"] == backtest_id
+    assert fake.last_submit is not None
+    assert fake.last_submit["backtest_id"] == backtest_id
+

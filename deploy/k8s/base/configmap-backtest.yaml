@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backtest-config
+  labels:
+    app.kubernetes.io/name: backtest-config
+    app.kubernetes.io/component: backtest
+data:
+  BACKTEST_RESULTS_DIR: "/data/backtest-results"
+  BACKTEST_CACHE_DIR: "/data/cache"
+  ARGO_NAMESPACE: "backtest"
+  BACKTEST_WORKFLOW_TEMPLATE: "backtest-batch"

@@ -50,11 +50,16 @@ export interface BacktestDefaults {
   execution: ExecutionSettings
 }
 
+export type BacktestExecutionBackend = 'local' | 'argo'
+export type ArgoSplitBy = 'run' | 'symbol' | 'strategy' | 'symbol_strategy'
+
 export interface PlatformBehaviorSettings {
   timezone: string
   auto_refresh_interval_seconds: number
   confirm_before_launch: boolean
   preferred_landing_page: PreferredLandingPage
+  backtest_execution_backend: BacktestExecutionBackend
+  argo_split_by: ArgoSplitBy
 }
 
 export interface ServerPlatformSettings {

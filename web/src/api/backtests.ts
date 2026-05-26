@@ -1,5 +1,7 @@
 import { readApiError } from './errors'
 import type {
+  BacktestArgoLaunchRequest,
+  BacktestArgoLaunchResponse,
   BacktestCreateRequest,
   BacktestCreateResponse,
   BacktestDetailResponse,
@@ -21,6 +23,22 @@ export async function createBacktest(
   }
 
   return response.json() as Promise<BacktestCreateResponse>
+}
+
+export async function launchArgoBacktest(
+  payload: BacktestArgoLaunchRequest,
+): Promise<BacktestArgoLaunchResponse> {
+  const response = await fetch('/api/backtests/argo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to launch Argo backtest'))
+  }
+
+  return response.json() as Promise<BacktestArgoLaunchResponse>
 }
 
 export async function fetchBacktests(): Promise<BacktestListItem[]> {

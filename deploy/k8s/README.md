@@ -22,8 +22,9 @@ deploy/k8s/
 | `Deployment/controller` | `controller` | Live contracts controller |
 | `StatefulSet/worker` | `worker-0`, `worker-1` | Shard id from pod name (`worker-0` → `--shard-id 0`) |
 | `CronJob/reconciler` | `reconciler` | Suspended by default; enable when ready |
-| `Deployment/web` | `web` | nginx static UI; 0 replicas in base, 1 in local overlay |
-| `Deployment/postgres`, `Deployment/redis` | `postgres`, `redis` | Local overlay only |
+| `CronJob/backtest-reconciler` | — | Syncs Argo workflow status into backtest job metadata |
+| `WorkflowTemplate/backtest-batch` | — | Parallel backtest fan-out (plan → run → merge) |
+| `PVC/backtest-results`, `PVC/backtest-cache` | — | Shared results and parquet cache for API + workflow pods |
 
 ## Prerequisites
 
@@ -178,6 +179,40 @@ Worker shard count must stay aligned across:
 - `configmap-live.yaml` → `global_config.controller.shard_count`
 - `deployment-api.yaml` → `LIVE_SHARD_COUNT`
 - `statefulset-workers.yaml` → `spec.replicas`
+
+## Argo backtest workflows
+
+The cluster must have [Argo Workflows](https://argo-workflows.readthedocs.io/en/latest/operator-manual/installation/) installed separately. This repo ships a `WorkflowTemplate`, shared PVCs, API RBAC, and a suspended reconciler CronJob.
+
+### Prerequisites
+
+- Argo Workflows controller running in the cluster
+- `ReadWriteMany` storage class for `backtest-results` and `backtest-cache` PVCs (single-node kind/minikube clusters often use a local RWX provisioner)
+- Alpaca credentials in `app-secrets` when configs use Alpaca data
+
+### Launch options
+
+1. **API** — `POST /backtests/argo` with `config_path` (on the shared volume) or inline `config_text`
+2. **Wizard** — enable **Argo Workflows** in platform settings (`POST /backtests` delegates to Argo when enabled)
+3. **CLI / Argo** — submit the bundled template:
+
+```bash
+argo submit -n backtest --from workflowtemplate/backtest-batch \
+  -p config-path=/data/backtest-results/my-experiment.yaml \
+  -p output-path=/data/backtest-results/my-experiment.json \
+  -p split-by=symbol \
+  -p backtest-id=my-experiment
+```
+
+Shard planning and merge use `backtest plan-shards` and `backtest merge` inside the workflow.
+
+### Enable status reconciliation
+
+```bash
+kubectl -n backtest patch cronjob backtest-reconciler -p '{"spec":{"suspend":false}}'
+```
+
+The reconciler runs `backtest argo-reconciler --once` to sync Argo workflow phase into `{id}.meta.json` files the UI polls.
 
 ## Teardown
 

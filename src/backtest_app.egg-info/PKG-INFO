@@ -12,6 +12,7 @@ Requires-Dist: pydantic>=2.7.0
 Requires-Dist: pyarrow>=17.0.0
 Requires-Dist: PyYAML>=6.0.1
 Requires-Dist: redis>=5.0.0
+Requires-Dist: kubernetes>=31.0.0
 Requires-Dist: rich>=13.7.1
 Requires-Dist: SQLAlchemy>=2.0.36
 Requires-Dist: typer>=0.12.3

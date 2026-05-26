@@ -128,8 +128,13 @@ class GlobalConfig(BaseModel):
     data_cache: DataCacheConfig = Field(default_factory=DataCacheConfig)
 
 
+class WorkflowConfig(BaseModel):
+    split_by: Literal["run", "symbol", "strategy", "symbol_strategy"] | None = None
+
+
 class BacktestConfig(BaseModel):
     global_config: GlobalConfig = Field(default_factory=GlobalConfig)
+    workflow: WorkflowConfig | None = None
     runs: list[BacktestRunConfig]
 
     @model_validator(mode="after")

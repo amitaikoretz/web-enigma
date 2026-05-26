@@ -192,10 +192,14 @@ export function BacktestsListPage() {
                       {item.report_status ? <ReportStatusChip status={item.report_status} /> : '—'}
                     </TableCell>
                     <TableCell>
-                      {item.selection.start_date} → {item.selection.end_date}
+                      {item.selection
+                        ? `${item.selection.start_date} → ${item.selection.end_date}`
+                        : '—'}
                     </TableCell>
                     <TableCell>
-                      {item.selection.symbols.length} symbols / {item.selection.strategies.length} strategies
+                      {item.selection
+                        ? `${item.selection.symbols.length} symbols / ${item.selection.strategies.length} strategies`
+                        : '—'}
                     </TableCell>
                     <TableCell sx={{ minWidth: 160 }}>
                       {isActive ? (
@@ -296,11 +300,14 @@ export function BacktestsListPage() {
                 }}
               >
                 <Typography variant="body2" color="text.secondary">
-                  {deleteTarget.selection.start_date} → {deleteTarget.selection.end_date}
+                  {deleteTarget.selection
+                    ? `${deleteTarget.selection.start_date} → ${deleteTarget.selection.end_date}`
+                    : 'Selection summary unavailable'}
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {deleteTarget.selection.symbols.length} symbols ·{' '}
-                  {deleteTarget.selection.strategies.length} strategies
+                  {deleteTarget.selection
+                    ? `${deleteTarget.selection.symbols.length} symbols · ${deleteTarget.selection.strategies.length} strategies`
+                    : '—'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
                   {deleteTarget.id}

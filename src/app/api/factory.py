@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import time
 from pathlib import Path
@@ -12,6 +13,7 @@ from app.api.deps import ApiDependencies
 from app.api.routes import register_routes
 from app.api_logging import configure_api_logging
 from app.backtests import BacktestJobService, BacktestResultRepository
+from app.backtests.argo import ArgoWorkflowSubmitter
 from app.config.models import DataCacheConfig
 from app.settings import PlatformSettingsService
 
@@ -30,12 +32,23 @@ def create_app(
         allow_headers=["*"],
     )
     resolved_cache_config = cache_config or DataCacheConfig()
-    resolved_output_dir = (output_dir or (Path(tempfile.gettempdir()) / "backtest-api-results")).resolve()
+    env_results_dir = os.environ.get("BACKTEST_RESULTS_DIR")
+    resolved_output_dir = (
+        output_dir
+        or (Path(env_results_dir) if env_results_dir else None)
+        or (Path(tempfile.gettempdir()) / "backtest-api-results")
+    ).resolve()
+    settings_service = PlatformSettingsService(resolved_output_dir / "settings" / "platform-settings.json")
     app.state.deps = ApiDependencies(
         cache_config=resolved_cache_config,
         output_dir=resolved_output_dir,
-        backtest_jobs=BacktestJobService(BacktestResultRepository(resolved_output_dir), resolved_cache_config),
-        settings_service=PlatformSettingsService(resolved_output_dir / "settings" / "platform-settings.json"),
+        backtest_jobs=BacktestJobService(
+            BacktestResultRepository(resolved_output_dir),
+            resolved_cache_config,
+            settings_service=settings_service,
+            argo_submitter=ArgoWorkflowSubmitter(),
+        ),
+        settings_service=settings_service,
     )
 
     @app.middleware("http")

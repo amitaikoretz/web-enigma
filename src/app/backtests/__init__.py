@@ -1,4 +1,6 @@
 from app.backtests.models import (
+    BacktestArgoLaunchRequest,
+    BacktestArgoLaunchResponse,
     BacktestCreateRequest,
     BacktestCreateResponse,
     BacktestDetailResponse,
@@ -14,6 +16,8 @@ from app.backtests.service import (
 )
 
 __all__ = [
+    "BacktestArgoLaunchRequest",
+    "BacktestArgoLaunchResponse",
     "BacktestCreateRequest",
     "BacktestCreateResponse",
     "BacktestDetailResponse",
