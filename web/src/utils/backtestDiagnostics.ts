@@ -184,6 +184,7 @@ export interface ResolvedRunDiagnostics {
   riskMetrics: RiskMetrics | null
   candidateDiagnostics: CandidateDiagnostics | null
   includeCandidateLog: boolean
+  candidateRecordsMissing: boolean
   isDerived: boolean
 }
 
@@ -215,12 +216,29 @@ function deriveCandidateDiagnostics(result: BacktestRunResult): CandidateDiagnos
   }
 }
 
+function resolveIncludeCandidateLog(
+  result: BacktestRunResult,
+  candidateDiagnostics: CandidateDiagnostics | null,
+): boolean {
+  if (result.analyzers.include_candidate_log === true) {
+    return true
+  }
+  if ((result.candidates?.length ?? 0) > 0) {
+    return true
+  }
+  return (candidateDiagnostics?.total_candidates ?? 0) > 0
+}
+
 export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDiagnostics {
   const summary = result.summary
-  const includeCandidateLog = result.analyzers.include_candidate_log === true
   const candidateDiagnostics =
     parseCandidateDiagnostics(result.analyzers.candidate_diagnostics) ??
     deriveCandidateDiagnostics(result)
+  const includeCandidateLog = resolveIncludeCandidateLog(result, candidateDiagnostics)
+  const candidateRecordsMissing =
+    includeCandidateLog &&
+    (candidateDiagnostics?.total_candidates ?? 0) > 0 &&
+    (result.candidates?.length ?? 0) === 0
   if (!summary) {
     return {
       tradeDiagnostics: null,
@@ -228,6 +246,7 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
       riskMetrics: null,
       candidateDiagnostics,
       includeCandidateLog,
+      candidateRecordsMissing,
       isDerived: false,
     }
   }
@@ -251,6 +270,7 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
       riskMetrics,
       candidateDiagnostics,
       includeCandidateLog,
+      candidateRecordsMissing,
       isDerived: false,
     }
   }
@@ -262,6 +282,7 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
       riskMetrics,
       candidateDiagnostics,
       includeCandidateLog,
+      candidateRecordsMissing,
       isDerived: false,
     }
   }
@@ -272,6 +293,32 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
     riskMetrics,
     candidateDiagnostics,
     includeCandidateLog,
+    candidateRecordsMissing,
     isDerived: true,
   }
+}
+
+export function summarizeCandidateActivity(results: BacktestRunResult[]): {
+  enabledRuns: number
+  totalCandidates: number
+  tradedCandidates: number
+  rejectedCandidates: number
+} {
+  let enabledRuns = 0
+  let totalCandidates = 0
+  let tradedCandidates = 0
+  let rejectedCandidates = 0
+
+  for (const result of results) {
+    const resolved = resolveRunDiagnostics(result)
+    if (!resolved.includeCandidateLog) {
+      continue
+    }
+    enabledRuns += 1
+    totalCandidates += resolved.candidateDiagnostics?.total_candidates ?? result.candidates?.length ?? 0
+    tradedCandidates += resolved.candidateDiagnostics?.traded_candidates ?? 0
+    rejectedCandidates += resolved.candidateDiagnostics?.rejected_candidates ?? 0
+  }
+
+  return { enabledRuns, totalCandidates, tradedCandidates, rejectedCandidates }
 }

@@ -3,6 +3,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: backtest-results
 spec:
+  storageClassName: backtest-hostpath
+  volumeName: backtest-results-host
   accessModes:
     - ReadWriteOnce
 ---
@@ -11,5 +13,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: backtest-cache
 spec:
+  storageClassName: backtest-hostpath
+  volumeName: backtest-cache-host
   accessModes:
     - ReadWriteOnce

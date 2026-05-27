@@ -7,6 +7,7 @@ import {
 } from '@mui/material'
 
 import { backtestConfigUrl, backtestReportUrl } from '../api/backtests'
+import { BacktestArtifactChips, sidecarArtifacts } from '../components/BacktestArtifactChips'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
 import type { BacktestListItem } from '../types/backtests'
 import type { TimeDisplayFormat } from '../types/settings'
@@ -17,6 +18,7 @@ export const BACKTEST_RESULTS_COLUMN_IDS = [
   'created',
   'status',
   'report',
+  'artifacts',
   'date_range',
   'universe',
   'runs',
@@ -31,6 +33,7 @@ export const BACKTEST_RESULTS_COLUMN_LABELS: Record<BacktestResultsColumnId, str
   created: 'Created',
   status: 'Status',
   report: 'Report',
+  artifacts: 'Auxiliary data',
   date_range: 'Date range',
   universe: 'Universe',
   runs: 'Runs',
@@ -83,6 +86,18 @@ export const BACKTEST_RESULTS_COLUMNS: BacktestResultsColumnDefinition[] = [
     label: 'Report',
     render: (item) =>
       item.report_status ? <ReportStatusChip status={item.report_status} /> : '—',
+  },
+  {
+    id: 'artifacts',
+    label: 'Auxiliary data',
+    minWidth: 220,
+    render: (item) => (
+      <BacktestArtifactChips
+        artifacts={sidecarArtifacts(item.stored_artifacts ?? [])}
+        emptyLabel={item.status === 'completed' ? 'No sidecar files' : 'Pending'}
+        maxChips={4}
+      />
+    ),
   },
   {
     id: 'date_range',

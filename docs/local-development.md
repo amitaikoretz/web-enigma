@@ -30,7 +30,10 @@ export ALPACA_SECRET_KEY='your-secret'
 Notes:
 
 - `DATABASE_URL` is required for database-backed API endpoints, async backtest job APIs (`POST /backtests`, status polling, Argo launch), and live runtime services.
-- `BACKTEST_RESULTS_DIR` optionally overrides where backtest artifacts (JSON, YAML, Parquet) are written. Job metadata and status live in PostgreSQL (`backtest_jobs` table).
+- `BACKTEST_RESULTS_DIR` optionally overrides where the API reads and writes backtest artifacts (JSON, YAML, Parquet). Job metadata and artifact path pointers live in PostgreSQL (`backtest_jobs` table); the API loads reports using those DB paths.
+- With **`make k3s-deploy`**, results and cache use hostPath PVCs at **`data/backtest-results`** and **`data/backtest-cache`** in the repo (override with `HOST_BACKTEST_RESULTS` / `HOST_BACKTEST_CACHE`). You can browse merged JSON and parquet on your Mac while cluster pods use the same files at `/data/backtest-results`.
+- Argo workflow pods write merged reports under `BACKTEST_WORKFLOW_RESULTS_MOUNT` (default `/data/backtest-results`). The merge step calls `update_metadata_from_report` directly (shared library code, no HTTP) to update Postgres with artifact paths. The API and workflow pods must read/write the **same** files at that path — with `make k3s-deploy`, the API runs in `backtest` and workflows in `backtest-workflows`, both bound to the same host directories via hostPath PVs. For hybrid dev (host API + cluster Argo), point `BACKTEST_RESULTS_DIR` at the same host directory (the default when using `make api-serve` after `make k3s-deploy`).
+- Set `ARGO_REQUIRE_SHARED_RESULTS=1` to reject Argo launches when the API results directory does not match the workflow mount (instead of only logging a warning).
 - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` are required for Alpaca-backed market data and Alpaca trading commands.
 - `BACKTEST_CACHE_DIR` optionally overrides the default parquet cache directory (`.cache/backtest-data`). In Kubernetes this is typically `/data/cache`.
 
@@ -159,6 +162,7 @@ export ARGO_SERVER_INSECURE_SKIP_VERIFY=true          # HTTPS with self-signed c
 export ARGO_TOKEN="$(argo auth token)"         # when auth is enabled
 export ARGO_NAMESPACE=backtest-workflows
 export ARGO_WORKFLOW_SERVICE_ACCOUNT=backtest-workflow
+export BACKTEST_RESULTS_DIR="${BACKTEST_RESULTS_DIR:-$(pwd)/data/backtest-results}"
 backtest serve --port 8000
 ```
 

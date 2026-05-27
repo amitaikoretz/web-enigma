@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -86,6 +87,12 @@ def _apply_list_item(row: BacktestJob, item: BacktestListItem) -> None:
     row.workflow_namespace = item.workflow_namespace
     row.started_at = item.started_at
     row.finished_at = item.finished_at
+
+
+def report_json_is_readable(paths: BacktestArtifactPaths | None) -> bool:
+    if paths is None or not paths.report_json_path:
+        return False
+    return Path(paths.report_json_path).is_file()
 
 
 class SqlAlchemyBacktestJobRepository:

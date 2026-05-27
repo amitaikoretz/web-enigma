@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backtest-results
+spec:
+  storageClassName: backtest-hostpath
+  volumeName: backtest-results-workflows-host
+  accessModes:
+    - ReadWriteOnce
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: backtest-cache
+spec:
+  storageClassName: backtest-hostpath
+  volumeName: backtest-cache-workflows-host
+  accessModes:
+    - ReadWriteOnce

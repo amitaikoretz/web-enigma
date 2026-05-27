@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.backtests.argo import ArgoWorkflowSubmitter, load_argo_workflow_config
 from app.backtests.models import BacktestListItem
-from app.backtests.persistence import SqlAlchemyBacktestJobRepository
+from app.backtests.persistence import (
+    BacktestArtifactPaths,
+    SqlAlchemyBacktestJobRepository,
+    report_json_is_readable,
+)
 from app.backtests.service import (
     BacktestArtifactStore,
     _mark_running,
@@ -24,6 +28,8 @@ def update_metadata_from_report(
     *,
     output_dir: Path,
     session_factory: sessionmaker[Session] | None = None,
+    write_artifacts: bool = True,
+    artifact_paths: BacktestArtifactPaths | None = None,
 ) -> None:
     resolved_factory = session_factory or get_session_factory()
     artifact_store = BacktestArtifactStore(output_dir)
@@ -35,7 +41,33 @@ def update_metadata_from_report(
         artifact_store=artifact_store,
         job_repository=job_repository,
         metadata=metadata,
+        write_artifacts=write_artifacts,
+        artifact_paths=artifact_paths,
     )
+
+
+def _report_exists(
+    item: BacktestListItem,
+    artifact_store: BacktestArtifactStore,
+    job_repository: SqlAlchemyBacktestJobRepository,
+) -> bool:
+    paths = job_repository.get_paths(item.id)
+    if report_json_is_readable(paths):
+        return True
+    return artifact_store.report_path(item.id).is_file()
+
+
+def _load_report_for_item(
+    item: BacktestListItem,
+    artifact_store: BacktestArtifactStore,
+    job_repository: SqlAlchemyBacktestJobRepository,
+) -> BacktestReport | None:
+    paths = job_repository.get_paths(item.id)
+    if paths and paths.report_json_path:
+        report = artifact_store.load_report(item.id, report_json_path=paths.report_json_path)
+        if report is not None:
+            return report
+    return artifact_store.load_report(item.id)
 
 
 def _map_workflow_phase(phase: str | None, *, report_exists: bool) -> str | None:
@@ -59,12 +91,12 @@ def _reconcile_item(
 ) -> tuple[BacktestListItem, bool]:
     if item.execution_backend != "argo" or not item.workflow_name:
         return item, False
+
     if item.status in {"completed", "failed"} and item.report_status is not None:
         return item, False
 
     phase = submitter.get_workflow_phase(item.workflow_name)
-    report_path = artifact_store.report_path(item.id)
-    report_exists = report_path.exists()
+    report_exists = _report_exists(item, artifact_store, job_repository)
     mapped_status = _map_workflow_phase(phase, report_exists=report_exists)
     if mapped_status is None:
         return item, False
@@ -73,14 +105,17 @@ def _reconcile_item(
     changed = False
 
     if mapped_status == "completed" and report_exists:
-        report = artifact_store.load_report(item.id)
-        if report is not None:
+        paths = job_repository.get_paths(item.id)
+        report = _load_report_for_item(item, artifact_store, job_repository)
+        if report is not None and item.report_status is None:
             current = finalize_job_from_report(
                 backtest_id=item.id,
                 report=report,
                 artifact_store=artifact_store,
                 job_repository=job_repository,
                 metadata=current,
+                write_artifacts=False,
+                artifact_paths=paths,
             )
             changed = True
     elif mapped_status == "failed":
@@ -108,7 +143,11 @@ def reconcile_backtest(
         return None
     if metadata.execution_backend != "argo" or not metadata.workflow_name:
         return metadata
-    if metadata.status in {"completed", "failed"} and metadata.report_status is not None:
+
+    if (
+        metadata.status in {"completed", "failed"}
+        and metadata.report_status is not None
+    ):
         return metadata
 
     resolved_submitter = submitter or ArgoWorkflowSubmitter(load_argo_workflow_config())

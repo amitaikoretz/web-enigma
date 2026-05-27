@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import Callable, Literal, TypeVar
 
 import pandas as pd
 
+from app.backtests.models import BacktestArtifactEntry, BacktestArtifactSummaryItem
 from app.backtests.persistence import BacktestArtifactPaths
+from app.backtests.sharding import load_shard_manifest
 from app.output.files import write_backtest_report_json
 from app.output.models import (
     BacktestReport,
@@ -20,27 +23,103 @@ from app.output.models import (
 
 RecordT = TypeVar("RecordT")
 
+ArtifactFormat = Literal["json", "yaml", "parquet", "other"]
+ArtifactRole = Literal["primary", "sidecar", "manifest", "shard"]
 
-def persist_backtest_report(report: BacktestReport, output_path: Path) -> BacktestArtifactPaths:
-    write_backtest_report_json(report, output_path)
-    paths = default_artifact_paths(output_path.parent, output_path.stem)
-    return write_report_artifacts(
-        report,
-        paths=BacktestArtifactPaths(
-            config_path=paths.config_path,
-            report_json_path=str(output_path.resolve()),
-            report_parquet_path=paths.report_parquet_path,
-            candidates_parquet_path=paths.candidates_parquet_path,
-            equity_parquet_path=paths.equity_parquet_path,
-            orders_parquet_path=paths.orders_parquet_path,
-            trades_parquet_path=paths.trades_parquet_path,
-            rejections_parquet_path=paths.rejections_parquet_path,
-            manifest_path=paths.manifest_path,
-        ),
+
+@dataclass(frozen=True)
+class _ArtifactSpec:
+    kind: str
+    label: str
+    format: ArtifactFormat
+    role: ArtifactRole
+    path_attr: str
+
+
+_KNOWN_ARTIFACTS: tuple[_ArtifactSpec, ...] = (
+    _ArtifactSpec("config", "Submitted config", "yaml", "primary", "config_path"),
+    _ArtifactSpec("report_json", "Report summary", "json", "primary", "report_json_path"),
+    _ArtifactSpec("report_parquet", "Run summaries", "parquet", "sidecar", "report_parquet_path"),
+    _ArtifactSpec("candidates_json", "Entry candidates (JSON)", "json", "sidecar", "candidates_json_path"),
+    _ArtifactSpec("candidates_parquet", "Entry candidates", "parquet", "sidecar", "candidates_parquet_path"),
+    _ArtifactSpec("equity_parquet", "Equity curves", "parquet", "sidecar", "equity_parquet_path"),
+    _ArtifactSpec("orders_parquet", "Orders", "parquet", "sidecar", "orders_parquet_path"),
+    _ArtifactSpec("trades_parquet", "Trades", "parquet", "sidecar", "trades_parquet_path"),
+    _ArtifactSpec("rejections_parquet", "Signal rejections", "parquet", "sidecar", "rejections_parquet_path"),
+    _ArtifactSpec("manifest_json", "Shard manifest", "json", "manifest", "manifest_path"),
+)
+
+
+def _artifact_format_for_path(path: Path) -> ArtifactFormat:
+    suffix = path.suffix.lower()
+    if suffix == ".json":
+        return "json"
+    if suffix in {".yaml", ".yml"}:
+        return "yaml"
+    if suffix == ".parquet":
+        return "parquet"
+    return "other"
+
+
+def _artifact_label_for_path(path: Path) -> str:
+    name = path.name
+    if name.endswith(".candidates.parquet"):
+        return "Entry candidates (shard)"
+    if name.endswith(".equity.parquet"):
+        return "Equity curves (shard)"
+    if name.endswith(".orders.parquet"):
+        return "Orders (shard)"
+    if name.endswith(".trades.parquet"):
+        return "Trades (shard)"
+    if name.endswith(".rejections.parquet"):
+        return "Signal rejections (shard)"
+    if path.suffix == ".json" and "shards" in path.parts:
+        return "Shard report"
+    return name
+
+
+def _artifact_role_for_path(path: Path) -> ArtifactRole:
+    if path.name == "manifest.json":
+        return "manifest"
+    if "shards" in path.parts:
+        return "shard"
+    if path.suffix.lower() in {".yaml", ".yml"} or path.name.endswith(".json") and not path.name.endswith(".parquet"):
+        if any(token in path.name for token in (".orders.", ".trades.", ".candidates.", ".equity.", ".rejections.")):
+            return "sidecar"
+        return "primary"
+    return "sidecar"
+
+
+def _merge_artifact_paths(
+    backtest_id: str,
+    output_dir: Path,
+    paths: BacktestArtifactPaths | None,
+) -> BacktestArtifactPaths:
+    merged = default_artifact_paths(output_dir, backtest_id)
+    if paths is None:
+        return merged
+
+    report_json_path = paths.report_json_path or merged.report_json_path
+    if report_json_path:
+        report_path = Path(report_json_path)
+        if report_path.is_file():
+            merged = default_artifact_paths(resolve_results_root(report_path, backtest_id), backtest_id)
+
+    return BacktestArtifactPaths(
+        config_path=paths.config_path or merged.config_path,
+        report_json_path=paths.report_json_path or merged.report_json_path,
+        report_parquet_path=paths.report_parquet_path or merged.report_parquet_path,
+        candidates_json_path=paths.candidates_json_path or merged.candidates_json_path,
+        candidates_parquet_path=paths.candidates_parquet_path or merged.candidates_parquet_path,
+        equity_parquet_path=paths.equity_parquet_path or merged.equity_parquet_path,
+        orders_parquet_path=paths.orders_parquet_path or merged.orders_parquet_path,
+        trades_parquet_path=paths.trades_parquet_path or merged.trades_parquet_path,
+        rejections_parquet_path=paths.rejections_parquet_path or merged.rejections_parquet_path,
+        manifest_path=paths.manifest_path or merged.manifest_path,
     )
 
 
-def default_artifact_paths(output_dir: Path, backtest_id: str) -> BacktestArtifactPaths:
+def _legacy_flat_paths(output_dir: Path, backtest_id: str) -> BacktestArtifactPaths:
     base = output_dir.resolve()
     return BacktestArtifactPaths(
         config_path=str(base / f"{backtest_id}.yaml"),
@@ -54,6 +133,252 @@ def default_artifact_paths(output_dir: Path, backtest_id: str) -> BacktestArtifa
         rejections_parquet_path=str(base / f"{backtest_id}.rejections.parquet"),
         manifest_path=str(base / backtest_id / "manifest.json"),
     )
+
+
+def _entry_from_path(
+    *,
+    kind: str,
+    label: str,
+    format: ArtifactFormat,
+    role: ArtifactRole,
+    path: Path,
+) -> BacktestArtifactEntry:
+    stat = path.stat()
+    return BacktestArtifactEntry(
+        kind=kind,
+        label=label,
+        format=format,
+        role=role,
+        path=str(path.resolve()),
+        size_bytes=stat.st_size,
+    )
+
+
+def inventory_backtest_artifacts(
+    backtest_id: str,
+    output_dir: Path,
+    *,
+    paths: BacktestArtifactPaths | None = None,
+) -> list[BacktestArtifactEntry]:
+    resolved_paths = _merge_artifact_paths(backtest_id, output_dir, paths)
+    legacy_paths = _legacy_flat_paths(output_dir, backtest_id)
+    work_dir = backtest_artifact_dir(output_dir, backtest_id)
+
+    seen_paths: set[str] = set()
+    entries: list[BacktestArtifactEntry] = []
+
+    def add_entry(
+        *,
+        kind: str,
+        label: str,
+        format: ArtifactFormat,
+        role: ArtifactRole,
+        path_value: str | None,
+    ) -> None:
+        if not path_value:
+            return
+        path = Path(path_value)
+        resolved = str(path.resolve())
+        if resolved in seen_paths or not path.is_file():
+            return
+        seen_paths.add(resolved)
+        entries.append(_entry_from_path(kind=kind, label=label, format=format, role=role, path=path))
+
+    for spec in _KNOWN_ARTIFACTS:
+        for paths_obj in (resolved_paths, legacy_paths):
+            path_value = getattr(paths_obj, spec.path_attr)
+            add_entry(
+                kind=spec.kind,
+                label=spec.label,
+                format=spec.format,
+                role=spec.role,
+                path_value=path_value,
+            )
+
+    if work_dir.is_dir():
+        for path in sorted(work_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            resolved = str(path.resolve())
+            if resolved in seen_paths:
+                continue
+            seen_paths.add(resolved)
+            entries.append(
+                _entry_from_path(
+                    kind=f"file:{path.name}",
+                    label=_artifact_label_for_path(path),
+                    format=_artifact_format_for_path(path),
+                    role=_artifact_role_for_path(path),
+                    path=path,
+                )
+            )
+
+    role_order = {"primary": 0, "manifest": 1, "sidecar": 2, "shard": 3}
+    entries.sort(key=lambda entry: (role_order.get(entry.role, 99), entry.label, entry.path))
+    return entries
+
+
+def summarize_backtest_artifacts(
+    backtest_id: str,
+    output_dir: Path,
+    *,
+    paths: BacktestArtifactPaths | None = None,
+) -> list[BacktestArtifactSummaryItem]:
+    return [
+        BacktestArtifactSummaryItem(
+            kind=entry.kind,
+            label=entry.label,
+            format=entry.format,
+            role=entry.role,
+        )
+        for entry in inventory_backtest_artifacts(backtest_id, output_dir, paths=paths)
+    ]
+
+
+def backtest_artifact_dir(output_dir: Path, backtest_id: str) -> Path:
+    return output_dir.resolve() / backtest_id
+
+
+def resolve_results_root(output_path: Path, backtest_id: str | None = None) -> Path:
+    """Return the top-level results directory for a report output path."""
+    bid = backtest_id or output_path.stem
+    parent = output_path.parent
+    if parent.name == bid:
+        return parent.parent
+    return parent
+
+
+def persist_backtest_report(
+    report: BacktestReport,
+    output_path: Path,
+    *,
+    manifest_path: str | Path | None = None,
+) -> BacktestArtifactPaths:
+    write_backtest_report_json(report, output_path)
+    backtest_id = output_path.stem
+    paths = default_artifact_paths(resolve_results_root(output_path, backtest_id), backtest_id)
+    resolved_manifest_path = (
+        str(Path(manifest_path).resolve())
+        if manifest_path is not None
+        else paths.manifest_path
+    )
+    return write_report_artifacts(
+        report,
+        paths=BacktestArtifactPaths(
+            config_path=paths.config_path,
+            report_json_path=str(output_path.resolve()),
+            report_parquet_path=paths.report_parquet_path,
+            candidates_parquet_path=paths.candidates_parquet_path,
+            equity_parquet_path=paths.equity_parquet_path,
+            orders_parquet_path=paths.orders_parquet_path,
+            trades_parquet_path=paths.trades_parquet_path,
+            rejections_parquet_path=paths.rejections_parquet_path,
+            manifest_path=resolved_manifest_path,
+        ),
+    )
+
+
+def default_artifact_paths(output_dir: Path, backtest_id: str) -> BacktestArtifactPaths:
+    base = backtest_artifact_dir(output_dir, backtest_id)
+    return BacktestArtifactPaths(
+        config_path=str(base / f"{backtest_id}.yaml"),
+        report_json_path=str(base / f"{backtest_id}.json"),
+        report_parquet_path=str(base / f"{backtest_id}.parquet"),
+        candidates_json_path=str(base / f"{backtest_id}.candidates.json"),
+        candidates_parquet_path=str(base / f"{backtest_id}.candidates.parquet"),
+        equity_parquet_path=str(base / f"{backtest_id}.equity.parquet"),
+        orders_parquet_path=str(base / f"{backtest_id}.orders.parquet"),
+        trades_parquet_path=str(base / f"{backtest_id}.trades.parquet"),
+        rejections_parquet_path=str(base / f"{backtest_id}.rejections.parquet"),
+        manifest_path=str(base / "manifest.json"),
+    )
+
+
+def _shard_sidecar_path(shard_output_path: Path, kind: str) -> Path:
+    return shard_output_path.with_name(f"{shard_output_path.stem}.{kind}.parquet")
+
+
+def _merge_grouped_records(
+    left: dict[str, list[RecordT]],
+    right: dict[str, list[RecordT]],
+) -> dict[str, list[RecordT]]:
+    merged = {run_id: list(records) for run_id, records in left.items()}
+    for run_id, records in right.items():
+        merged.setdefault(run_id, []).extend(records)
+    return merged
+
+
+def _resolve_shard_sidecar_path(manifest_path: Path, shard_id: str, shard_output_path: Path, kind: str) -> Path:
+    candidates = (
+        _shard_sidecar_path(shard_output_path, kind),
+        manifest_path.parent / "shards" / f"{shard_id}.{kind}.parquet",
+        manifest_path.parent / "shards" / f"{shard_output_path.stem}.{kind}.parquet",
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def _load_grouped_from_shard_manifest(
+    manifest_path: Path,
+    *,
+    loader: Callable[[Path], dict[str, list[RecordT]]],
+    kind: str,
+) -> dict[str, list[RecordT]]:
+    plan = load_shard_manifest(manifest_path)
+    grouped: dict[str, list[RecordT]] = {}
+    for shard in plan.shards:
+        sidecar_path = _resolve_shard_sidecar_path(
+            manifest_path,
+            shard.shard_id,
+            Path(shard.output_path),
+            kind,
+        )
+        if not sidecar_path.exists():
+            continue
+        grouped = _merge_grouped_records(grouped, loader(sidecar_path))
+    return grouped
+
+
+def _load_grouped_with_shard_fallback(
+    paths: BacktestArtifactPaths,
+    *,
+    parquet_path: str | None,
+    loader: Callable[[Path], dict[str, list[RecordT]]],
+    kind: str,
+) -> dict[str, list[RecordT]]:
+    grouped: dict[str, list[RecordT]] = {}
+    if parquet_path:
+        path = Path(parquet_path)
+        if path.exists():
+            grouped = loader(path)
+    if grouped or not paths.manifest_path:
+        return grouped
+
+    manifest_path = Path(paths.manifest_path)
+    if not manifest_path.exists():
+        return grouped
+    return _load_grouped_from_shard_manifest(manifest_path, loader=loader, kind=kind)
+
+
+def _concat_shard_parquet_rows(manifest_path: Path, kind: str) -> list[dict]:
+    plan = load_shard_manifest(manifest_path)
+    rows: list[dict] = []
+    for shard in plan.shards:
+        sidecar_path = _resolve_shard_sidecar_path(
+            manifest_path,
+            shard.shard_id,
+            Path(shard.output_path),
+            kind,
+        )
+        if not sidecar_path.exists():
+            continue
+        frame = pd.read_parquet(sidecar_path)
+        if frame.empty:
+            continue
+        rows.extend(frame.to_dict(orient="records"))
+    return rows
 
 
 def _flatten_run_records(
@@ -152,6 +477,23 @@ def _load_grouped_from_parquet(
     return grouped
 
 
+def _flatten_or_shard_sidecars(
+    report: BacktestReport,
+    *,
+    paths: BacktestArtifactPaths,
+    flatten: Callable[[], list[dict]],
+    kind: str,
+) -> list[dict]:
+    rows = flatten()
+    if rows or not paths.manifest_path:
+        return rows
+
+    manifest_path = Path(paths.manifest_path)
+    if not manifest_path.exists():
+        return rows
+    return _concat_shard_parquet_rows(manifest_path, kind)
+
+
 def write_report_artifacts(
     report: BacktestReport,
     *,
@@ -161,20 +503,48 @@ def write_report_artifacts(
         _write_parquet(_report_summary_rows(report), Path(paths.report_parquet_path))
 
     candidates_parquet_path = _maybe_write_parquet(
-        _flatten_candidates(report),
+        _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_candidates(report),
+            kind="candidates",
+        ),
         paths.candidates_parquet_path,
     )
-    equity_parquet_path = _maybe_write_parquet(_flatten_equity(report), paths.equity_parquet_path)
+    equity_parquet_path = _maybe_write_parquet(
+        _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_equity(report),
+            kind="equity",
+        ),
+        paths.equity_parquet_path,
+    )
     orders_parquet_path = _maybe_write_parquet(
-        _flatten_run_records(report, attr="orders"),
+        _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_run_records(report, attr="orders"),
+            kind="orders",
+        ),
         paths.orders_parquet_path,
     )
     trades_parquet_path = _maybe_write_parquet(
-        _flatten_run_records(report, attr="trades"),
+        _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_run_records(report, attr="trades"),
+            kind="trades",
+        ),
         paths.trades_parquet_path,
     )
     rejections_parquet_path = _maybe_write_parquet(
-        _flatten_run_records(report, attr="rejections"),
+        _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_run_records(report, attr="rejections"),
+            kind="rejections",
+        ),
         paths.rejections_parquet_path,
     )
 
@@ -240,14 +610,18 @@ def load_rejections_from_parquet(path: Path) -> dict[str, list[RejectionRecord]]
 
 
 def _load_candidates_by_run(paths: BacktestArtifactPaths) -> dict[str, list[CandidateRecord]]:
-    if paths.candidates_parquet_path:
-        candidate_path = Path(paths.candidates_parquet_path)
-        if candidate_path.exists():
-            return load_candidates_from_parquet(candidate_path)
+    candidates_by_run = _load_grouped_with_shard_fallback(
+        paths,
+        parquet_path=paths.candidates_parquet_path,
+        loader=load_candidates_from_parquet,
+        kind="candidates",
+    )
+    if candidates_by_run:
+        return candidates_by_run
     if paths.candidates_json_path:
         json_path = Path(paths.candidates_json_path)
         if json_path.exists():
-            candidates_by_run: dict[str, list[CandidateRecord]] = {}
+            candidates_by_run = {}
             raw = json.loads(json_path.read_text(encoding="utf-8"))
             if isinstance(raw, list):
                 for entry in raw:
@@ -269,30 +643,30 @@ def hydrate_report_from_artifacts(
     paths: BacktestArtifactPaths,
 ) -> BacktestReport:
     candidates_by_run = _load_candidates_by_run(paths)
-
-    equity_by_run: dict[str, list[EquityPoint]] = {}
-    if paths.equity_parquet_path:
-        equity_path = Path(paths.equity_parquet_path)
-        if equity_path.exists():
-            equity_by_run = load_equity_from_parquet(equity_path)
-
-    orders_by_run: dict[str, list[OrderRecord]] = {}
-    if paths.orders_parquet_path:
-        orders_path = Path(paths.orders_parquet_path)
-        if orders_path.exists():
-            orders_by_run = load_orders_from_parquet(orders_path)
-
-    trades_by_run: dict[str, list[TradeRecord]] = {}
-    if paths.trades_parquet_path:
-        trades_path = Path(paths.trades_parquet_path)
-        if trades_path.exists():
-            trades_by_run = load_trades_from_parquet(trades_path)
-
-    rejections_by_run: dict[str, list[RejectionRecord]] = {}
-    if paths.rejections_parquet_path:
-        rejections_path = Path(paths.rejections_parquet_path)
-        if rejections_path.exists():
-            rejections_by_run = load_rejections_from_parquet(rejections_path)
+    equity_by_run = _load_grouped_with_shard_fallback(
+        paths,
+        parquet_path=paths.equity_parquet_path,
+        loader=load_equity_from_parquet,
+        kind="equity",
+    )
+    orders_by_run = _load_grouped_with_shard_fallback(
+        paths,
+        parquet_path=paths.orders_parquet_path,
+        loader=load_orders_from_parquet,
+        kind="orders",
+    )
+    trades_by_run = _load_grouped_with_shard_fallback(
+        paths,
+        parquet_path=paths.trades_parquet_path,
+        loader=load_trades_from_parquet,
+        kind="trades",
+    )
+    rejections_by_run = _load_grouped_with_shard_fallback(
+        paths,
+        parquet_path=paths.rejections_parquet_path,
+        loader=load_rejections_from_parquet,
+        kind="rejections",
+    )
 
     if not any(
         (

@@ -82,33 +82,51 @@ The local overlay starts Postgres, Redis, API, controller, two worker shards, an
 
 1. **Rancher Desktop:** run `make k8s-local-images` before apply (see above).
 
-2. Set Alpaca credentials from your local environment (not in kustomize manifests):
+2. Set Alpaca credentials in your shell or repo-root `.env` (see `.env.example`). They are **not** stored in kustomize manifests.
 
 ```bash
 export ALPACA_API_KEY='your-key'
 export ALPACA_SECRET_KEY='your-secret'
-# or populate repo-root .env (see .env.example)
-
-make sync-app-secrets
 ```
 
-Run after deploy whenever credentials change or after a fresh cluster setup:
+3. Deploy — `make k3s-deploy` applies the overlay and pushes `ALPACA_*` into `app-secrets` for the API and workflow pods (same secret both use):
 
 ```bash
-make k3s-deploy sync-app-secrets
+make k3s-deploy
 ```
 
-3. Render and inspect:
+**Mac-visible results directory:** the local overlay binds `backtest-results` and `backtest-cache` PVCs to **hostPath** volumes on directories you can open in Finder:
+
+| Variable | Default |
+|----------|---------|
+| `HOST_BACKTEST_RESULTS` | `<repo>/data/backtest-results` |
+| `HOST_BACKTEST_CACHE` | `<repo>/data/backtest-cache` |
+
+Cluster pods mount these at `/data/backtest-results` and `/data/cache`. `make api-serve` uses the same host paths for `BACKTEST_RESULTS_DIR` / `BACKTEST_CACHE_DIR`, so host-run and in-cluster backtests share artifacts when Postgres is shared.
+
+Override paths when deploying:
+
+```bash
+make k3s-deploy HOST_BACKTEST_RESULTS="$HOME/backtest/results" HOST_BACKTEST_CACHE="$HOME/backtest/cache"
+```
+
+Rancher Desktop mounts your macOS home directory into the k3s VM, so paths under `~/…` or this repo (under `/Users/…`) work inside pods. If you use a directory outside the home folder, add it under **Preferences → Virtual Machine → Volumes** in Rancher Desktop.
+
+**Migrating from old `local-path` PVCs:** existing claims cannot rebind in place. Copy any reports you need, then:
+
+```bash
+make k3s-recreate-host-volumes
+```
+
+After changing credentials, run `make sync-app-secrets` or redeploy with `make k3s-deploy`.
+
+4. Render and inspect (optional):
 
 ```bash
 kubectl kustomize deploy/k8s/overlays/local
 ```
 
-4. Deploy (if you skipped `make k3s-deploy`):
-
-```bash
-kubectl apply -k deploy/k8s/overlays/local
-```
+If you applied manifests without `make k3s-deploy`, run `make sync-app-secrets` so the API pod receives Alpaca keys.
 
 5. Wait for core services:
 
@@ -249,7 +267,7 @@ After deploy:
 ## Configuration
 
 - Live runtime YAML: `ConfigMap/live-config` (mounted at `/app/config/live.yaml`)
-- Credentials and `DATABASE_URL`: `Secret/app-secrets` — local dev: `make sync-app-secrets` (reads `ALPACA_*` from your shell or `.env`)
+- Credentials and `DATABASE_URL`: `Secret/app-secrets` — local dev: `make k3s-deploy` syncs `ALPACA_*` from your shell or repo-root `.env` into the API and workflow namespaces
 - Template for manual secret creation: [`base/secret.example.yaml`](base/secret.example.yaml)
 
 Worker shard count must stay aligned across:
@@ -260,9 +278,17 @@ Worker shard count must stay aligned across:
 
 ## Argo backtest workflows
 
-The cluster must have [Argo Workflows](https://argo-workflows.readthedocs.io/en/latest/operator-manual/installation/) installed separately. Backtest workflows run in namespace **`backtest-workflows`** under service account **`backtest-workflow`**.
+The cluster must have [Argo Workflows](https://argo-workflows.readthedocs.io/en/latest/operator-manual/installation/) installed separately.
+
+**Local overlay (`make k3s-deploy`):** workflows run in namespace **`backtest-workflows`**. The API stays in **`backtest`**. Both namespaces mount the **same host directories** via separate hostPath PVs (`make k3s-apply-host-volumes`), so merge output is visible to the API and on your Mac under `data/backtest-results`.
+
+**Staging / multi-namespace:** same split as local — workflows in **`backtest-workflows`** under service account **`backtest-workflow`**. Staging typically uses **ReadWriteMany** storage instead of hostPath. See [`workflows/README.md`](workflows/README.md).
 
 ### Deploy workflow namespace
+
+Local (`make k3s-deploy`): applies `deploy/k8s/overlays/local-workflows` (RBAC, ExternalName postgres, hostPath PVCs bound to the same dirs as the API).
+
+Staging / manual workflow namespace:
 
 ```bash
 make bootstrap-backtest-workflows-namespace
@@ -274,8 +300,10 @@ See [`workflows/README.md`](workflows/README.md) for secrets, PVCs, and Argo Ser
 ### Prerequisites
 
 - Argo Workflows controller running in the cluster
-- `ReadWriteMany` storage class for `backtest-results` and `backtest-cache` PVCs in `backtest-workflows`
-- `app-secrets` in `backtest-workflows` when configs use Alpaca data
+- **Local:** `make k3s-deploy` sets `ARGO_NAMESPACE=backtest-workflows` and binds workflow PVCs to the same host paths as the API
+- **Staging (`backtest-workflows`):** `ReadWriteMany` storage for `backtest-results` and `backtest-cache`, or shared object storage for artifacts (future)
+- `app-secrets` in the workflow namespace when configs use Alpaca data
+- ExternalName Service `postgres` in `backtest-workflows` (from the workflows kustomize bundle) so merge steps can reach Postgres in `backtest`; see [`workflows/README.md`](workflows/README.md#database-access)
 
 ### Launch options
 
@@ -285,13 +313,13 @@ See [`workflows/README.md`](workflows/README.md) for secrets, PVCs, and Argo Ser
 
 ```bash
 argo submit -n backtest-workflows --from workflowtemplate/backtest-batch \
-  -p config-path=/data/backtest-results/my-experiment.yaml \
-  -p output-path=/data/backtest-results/my-experiment.json \
+  -p config-path=/data/backtest-results/my-experiment/my-experiment.yaml \
+  -p output-path=/data/backtest-results/my-experiment/my-experiment.json \
   -p split-by=symbol \
   -p backtest-id=my-experiment
 ```
 
-Shard planning and merge use `backtest plan-shards` and `backtest merge` inside the workflow.
+Shard planning and merge use `backtest plan-shards` and `backtest merge` inside the workflow. Workflow pods write merged reports under `/data/backtest-results` (override with `BACKTEST_WORKFLOW_RESULTS_MOUNT`). Merge calls `update_metadata_from_report` to persist artifact path pointers in Postgres (no HTTP). Set `BACKTEST_RESULTS_DIR=/data/backtest-results` on the API so it reads the same paths from the shared PVC.
 
 ### Enable status reconciliation
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import uuid
@@ -13,9 +14,13 @@ import yaml
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.backtests.argo import ArgoWorkflowSubmitter
+from app.backtests.argo_workflow import workflow_artifact_paths, workflow_results_mount
 from app.backtests.artifacts import (
+    backtest_artifact_dir,
     default_artifact_paths,
     hydrate_report_from_artifacts,
+    inventory_backtest_artifacts,
+    summarize_backtest_artifacts,
     write_report_artifacts,
 )
 from app.backtests.models import (
@@ -30,7 +35,11 @@ from app.backtests.models import (
     BacktestSelectionSummary,
     BacktestStatusResponse,
 )
-from app.backtests.persistence import BacktestArtifactPaths, SqlAlchemyBacktestJobRepository
+from app.backtests.persistence import (
+    BacktestArtifactPaths,
+    SqlAlchemyBacktestJobRepository,
+    report_json_is_readable,
+)
 from app.backtests.sharding import resolve_split_by
 from app.config.models import (
     AnalyzerConfig,
@@ -52,6 +61,13 @@ class ArgoNotConfiguredError(RuntimeError):
 
 class BacktestAlreadyExistsError(RuntimeError):
     pass
+
+
+class ArgoResultsNotSharedError(RuntimeError):
+    pass
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -282,6 +298,8 @@ def finalize_job_from_report(
     artifact_store: BacktestArtifactStore,
     job_repository: SqlAlchemyBacktestJobRepository,
     metadata: BacktestListItem | None = None,
+    write_artifacts: bool = True,
+    artifact_paths: BacktestArtifactPaths | None = None,
 ) -> BacktestListItem:
     current = metadata.model_copy(deep=True) if metadata is not None else BacktestListItem(
         id=backtest_id,
@@ -302,14 +320,32 @@ def finalize_job_from_report(
     if current.finished_at is None:
         current.finished_at = current.updated_at
 
-    artifact_store.save_report(backtest_id, report)
-    paths = default_artifact_paths(artifact_store.output_dir, backtest_id)
-    written = write_report_artifacts(report, paths=paths)
+    if write_artifacts:
+        artifact_store.save_report(backtest_id, report)
+        paths = default_artifact_paths(artifact_store.output_dir, backtest_id)
+        written = write_report_artifacts(report, paths=paths)
+    else:
+        written = artifact_paths or BacktestArtifactPaths()
+
     if job_repository.get(backtest_id) is None:
         job_repository.create(current, paths=written)
     else:
         job_repository.update(current)
-        job_repository.update_paths(backtest_id, written)
+        if any(
+            (
+                written.config_path,
+                written.report_json_path,
+                written.report_parquet_path,
+                written.candidates_json_path,
+                written.candidates_parquet_path,
+                written.equity_parquet_path,
+                written.orders_parquet_path,
+                written.trades_parquet_path,
+                written.rejections_parquet_path,
+                written.manifest_path,
+            )
+        ):
+            job_repository.update_paths(backtest_id, written)
     return current
 
 
@@ -322,10 +358,10 @@ class BacktestArtifactStore:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def report_path(self, backtest_id: str) -> Path:
-        return self.output_dir / f"{backtest_id}.json"
+        return backtest_artifact_dir(self.output_dir, backtest_id) / f"{backtest_id}.json"
 
     def config_path(self, backtest_id: str) -> Path:
-        return self.output_dir / f"{backtest_id}.yaml"
+        return backtest_artifact_dir(self.output_dir, backtest_id) / f"{backtest_id}.yaml"
 
     def artifact_paths(self, backtest_id: str) -> BacktestArtifactPaths:
         return default_artifact_paths(self.output_dir, backtest_id)
@@ -337,15 +373,15 @@ class BacktestArtifactStore:
         return BacktestReport.model_validate_json(path.read_text(encoding="utf-8"))
 
     def save_report(self, backtest_id: str, report: BacktestReport) -> None:
-        self.ensure_ready()
         path = self.report_path(backtest_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_suffix(".tmp")
         write_backtest_report_json(report, temp_path)
         temp_path.replace(path)
 
     def save_config_yaml(self, backtest_id: str, config_raw: dict[str, Any]) -> None:
-        self.ensure_ready()
         path = self.config_path(backtest_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = path.with_suffix(".yaml.tmp")
         temp_path.write_text(config_to_yaml_text(config_raw), encoding="utf-8")
         temp_path.replace(path)
@@ -376,20 +412,31 @@ class BacktestArtifactStore:
             str(self.report_path(backtest_id)),
             str(self.config_path(backtest_id)),
         ]
-        shard_dir = self.output_dir / backtest_id
+        legacy_flat = [
+            self.output_dir / f"{backtest_id}.yaml",
+            self.output_dir / f"{backtest_id}.json",
+            self.output_dir / f"{backtest_id}.parquet",
+            self.output_dir / f"{backtest_id}.candidates.json",
+            self.output_dir / f"{backtest_id}.candidates.parquet",
+            self.output_dir / f"{backtest_id}.equity.parquet",
+            self.output_dir / f"{backtest_id}.orders.parquet",
+            self.output_dir / f"{backtest_id}.trades.parquet",
+            self.output_dir / f"{backtest_id}.rejections.parquet",
+        ]
+        work_dir = backtest_artifact_dir(self.output_dir, backtest_id)
         deleted = False
         with self._lock:
-            for candidate in candidates:
+            for candidate in [*candidates, *[str(path) for path in legacy_flat]]:
                 if not candidate:
                     continue
                 path = Path(candidate)
                 if path.is_file() and path.exists():
                     path.unlink()
                     deleted = True
-            if shard_dir.is_dir():
+            if work_dir.is_dir():
                 import shutil
 
-                shutil.rmtree(shard_dir, ignore_errors=True)
+                shutil.rmtree(work_dir, ignore_errors=True)
                 deleted = True
         return deleted
 
@@ -573,8 +620,21 @@ class BacktestJobService:
         )
 
     def _workflow_volume_paths(self, backtest_id: str) -> tuple[str, str]:
-        mount = os.environ.get("BACKTEST_RESULTS_DIR", "/data/backtest-results").rstrip("/")
-        return f"{mount}/{backtest_id}.yaml", f"{mount}/{backtest_id}.json"
+        return workflow_artifact_paths(backtest_id)
+
+    def _ensure_argo_results_visible(self) -> None:
+        api_dir = self.repository.output_dir.resolve()
+        workflow_dir = Path(workflow_results_mount()).resolve()
+        if api_dir == workflow_dir:
+            return
+        message = (
+            f"Argo workflows write results under {workflow_dir}, but this API reads from {api_dir}. "
+            "Mount the same shared volume at the same path on the host (e.g. BACKTEST_RESULTS_DIR="
+            f"{workflow_dir}) or run the API in-cluster."
+        )
+        if os.environ.get("ARGO_REQUIRE_SHARED_RESULTS", "").lower() in {"1", "true", "yes"}:
+            raise ArgoResultsNotSharedError(message)
+        logger.warning(message)
 
     def _launch_argo_workflow(
         self,
@@ -588,6 +648,7 @@ class BacktestJobService:
         if not self.argo_submitter.is_configured:
             raise ArgoNotConfiguredError("Argo Workflows is not configured in this environment")
 
+        self._ensure_argo_results_visible()
         workflow_config_path, workflow_output_path = self._workflow_volume_paths(backtest_id)
         local_config_path = self.repository.config_path(backtest_id)
         source_config_path = local_config_path if local_config_path.exists() else Path(config_path)
@@ -641,7 +702,22 @@ class BacktestJobService:
             if completed_runs != refreshed.completed_runs:
                 refreshed = refreshed.model_copy(deep=True)
                 refreshed.completed_runs = completed_runs
-        return refreshed
+        return self._attach_stored_artifacts(refreshed)
+
+    def _attach_stored_artifacts(self, item: BacktestListItem) -> BacktestListItem:
+        if item.status != "completed":
+            if item.stored_artifacts:
+                return item.model_copy(update={"stored_artifacts": []})
+            return item
+        paths = self.job_repository.get_paths(item.id)
+        stored_artifacts = summarize_backtest_artifacts(
+            item.id,
+            self.repository.output_dir,
+            paths=paths,
+        )
+        if stored_artifacts == item.stored_artifacts:
+            return item
+        return item.model_copy(update={"stored_artifacts": stored_artifacts})
 
     def list_backtests_page(self, *, page: int, page_size: int) -> BacktestListPageResponse:
         total = self.job_repository.count()
@@ -683,21 +759,44 @@ class BacktestJobService:
                 metadata = updated
 
         completed_runs = compute_completed_runs(metadata, self.repository)
+        metadata = self._attach_stored_artifacts(metadata)
         return build_status_response(metadata, completed_runs)
+
+    def resolve_report_file_path(self, backtest_id: str) -> Path | None:
+        paths = self.job_repository.get_paths(backtest_id)
+        if paths and paths.report_json_path:
+            report_path = Path(paths.report_json_path)
+            if report_path.is_file():
+                return report_path
+        fallback = self.repository.report_path(backtest_id)
+        return fallback if fallback.is_file() else None
+
+    def resolve_config_yaml_text(self, backtest_id: str) -> str | None:
+        paths = self.job_repository.get_paths(backtest_id)
+        config_path = paths.config_path if paths else None
+        return self.repository.resolve_config_yaml(backtest_id, config_path=config_path)
 
     def get_detail(self, backtest_id: str) -> BacktestDetailResponse | None:
         metadata = self.job_repository.get(backtest_id)
         if metadata is None:
             return None
-        paths = self.job_repository.get_paths(backtest_id) or self.repository.artifact_paths(backtest_id)
-        report = self.repository.load_report(backtest_id, report_json_path=paths.report_json_path)
-        if report is not None:
+        paths = self.job_repository.get_paths(backtest_id)
+        report_json_path = paths.report_json_path if paths else None
+        report = self.repository.load_report(backtest_id, report_json_path=report_json_path)
+        if report is not None and paths is not None:
             report = hydrate_report_from_artifacts(report, paths=paths)
-        report_path = Path(paths.report_json_path) if paths.report_json_path else self.repository.report_path(backtest_id)
+        report_path = self.resolve_report_file_path(backtest_id)
+        artifacts = inventory_backtest_artifacts(
+            backtest_id,
+            self.repository.output_dir,
+            paths=paths,
+        )
+        metadata = self._attach_stored_artifacts(metadata)
         return BacktestDetailResponse(
             metadata=metadata,
-            output_path=str(report_path) if report_path.exists() else None,
+            output_path=str(report_path) if report_path is not None else None,
             report=report,
+            artifacts=artifacts,
         )
 
     def delete(self, backtest_id: str) -> bool:
@@ -732,22 +831,15 @@ class BacktestJobService:
                     cache_dir=self.cache_config.directory,
                 ),
             )
-            self.repository.save_report(current.id, report)
             self.repository.save_config_yaml(current.id, config_raw)
-            paths = default_artifact_paths(self.repository.output_dir, current.id)
-            written = write_report_artifacts(report, paths=paths)
-            self.job_repository.update_paths(current.id, written)
+            finalize_job_from_report(
+                backtest_id=current.id,
+                report=report,
+                artifact_store=self.repository,
+                job_repository=self.job_repository,
+                metadata=current,
+            )
         except Exception as exc:  # noqa: BLE001
             current = _mark_terminal(current, status="failed")
             current.error_message = str(exc)
             self.job_repository.update(current)
-            return
-
-        current.status = "completed"
-        current.report_status = report.status
-        current.completed_runs = report.total_runs
-        current.successful_runs = report.successful_runs
-        current.failed_runs = report.failed_runs
-        current.error_message = None
-        current = _mark_terminal(current, status="completed")
-        self.job_repository.update(current)

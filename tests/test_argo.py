@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.backtests.argo import ArgoWorkflowConfig, ArgoWorkflowSubmitter, load_argo_workflow_config
-from app.backtests.argo_workflow import build_backtest_workflow_spec
+from app.backtests.argo_workflow import WORKFLOW_TTL_SECONDS, build_backtest_workflow_spec, workflow_results_mount
 
 
 def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
@@ -19,6 +19,7 @@ def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
 
     assert spec["entrypoint"] == "backtest-batch"
     assert spec["serviceAccountName"] == "backtest-workflow"
+    assert spec["ttlStrategy"] == {"secondsAfterCompletion": WORKFLOW_TTL_SECONDS}
     assert "workflowTemplateRef" not in spec
     template_names = {template["name"] for template in spec["templates"]}
     assert template_names == {
@@ -50,6 +51,16 @@ def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
     plan_params = {item["name"]: item["value"] for item in plan_step["arguments"]["parameters"]}
     assert plan_params["config-path"] == "{{workflow.parameters.config-path}}"
 
+    print_payload_template = next(
+        item for item in spec["templates"] if item["name"] == "print-payload"
+    )
+    launch_curl_output = print_payload_template["outputs"]["parameters"][0]
+    assert launch_curl_output == {
+        "name": "launch-curl",
+        "valueFrom": {"path": "/tmp/launch-curl.txt"},
+    }
+    assert "/tmp/launch-curl.txt" in print_payload_template["container"]["args"]
+
 
 def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
     spec = build_backtest_workflow_spec(
@@ -72,7 +83,7 @@ def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
         "work-dir": "/tmp/work-dir.txt",
     }
     plan_script = plan_template["container"]["args"][0]
-    assert '/data/backtest-results/{{inputs.parameters.backtest-id}}' in plan_script
+    assert f'{workflow_results_mount()}/{{{{inputs.parameters.backtest-id}}}}' in plan_script
     assert "/tmp/manifest-path.txt" in plan_script
     run_shard = next(item for item in spec["templates"] if item["name"] == "run-shard")
     run_inputs = {item["name"] for item in run_shard["inputs"]["parameters"]}

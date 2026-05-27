@@ -5,7 +5,11 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from app.backtests.artifacts import default_artifact_paths, hydrate_report_from_artifacts
+from app.backtests.artifacts import (
+    default_artifact_paths,
+    hydrate_report_from_artifacts,
+    resolve_results_root,
+)
 from app.output.models import BacktestReport, CandidateRecord, RunResult
 from app.risk.models import EnrichedCandidate
 
@@ -129,7 +133,7 @@ def load_candidates_from_report(
     default_benchmark: str = "SPY",
 ) -> list[EnrichedCandidate]:
     report = BacktestReport.model_validate_json(report_path.read_text(encoding="utf-8"))
-    paths = default_artifact_paths(report_path.parent, report_path.stem)
+    paths = default_artifact_paths(resolve_results_root(report_path), report_path.stem)
     report = hydrate_report_from_artifacts(report, paths=paths)
     enriched: list[EnrichedCandidate] = []
     for result in report.results:

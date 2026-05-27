@@ -222,6 +222,29 @@ def test_cli_list_strategies(capsys):
     assert "sma_cross" in out
 
 
+def test_cli_run_exits_nonzero_on_run_failure(tmp_path: Path):
+    config_payload = {
+        "runs": [
+            {
+                "run_id": "cli_fail",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/missing.csv"},
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ]
+    }
+    cfg_path = tmp_path / "config.yaml"
+    out_path = tmp_path / "result.json"
+    cfg_path.write_text(yaml.safe_dump(config_payload), encoding="utf-8")
+
+    code = main(["run", "--config", str(cfg_path), "--output", str(out_path)])
+
+    assert code == 20
+    assert out_path.exists()
+
+
 def test_cli_run_writes_output(tmp_path: Path):
     config_payload = {
         "runs": [

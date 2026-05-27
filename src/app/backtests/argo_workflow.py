@@ -4,6 +4,20 @@ import base64
 import os
 from typing import Any
 
+WORKFLOW_TTL_SECONDS = 7 * 24 * 60 * 60
+DEFAULT_WORKFLOW_RESULTS_MOUNT = "/data/backtest-results"
+
+
+def workflow_results_mount() -> str:
+    """Path where workflow pods mount the backtest-results PVC."""
+    return os.environ.get("BACKTEST_WORKFLOW_RESULTS_MOUNT", DEFAULT_WORKFLOW_RESULTS_MOUNT).rstrip("/")
+
+
+def workflow_artifact_paths(backtest_id: str) -> tuple[str, str]:
+    base = workflow_results_mount()
+    work_dir = f"{base}/{backtest_id}"
+    return f"{work_dir}/{backtest_id}.yaml", f"{work_dir}/{backtest_id}.json"
+
 
 def _workflow_image() -> str:
     return os.environ.get("BACKTEST_WORKFLOW_IMAGE", "backtest-app:latest")
@@ -32,7 +46,7 @@ def _api_base_url() -> str:
 def _volume_mounts(*, include_cache: bool = False) -> list[dict[str, str]]:
     mounts = [
         {"name": "workspace", "mountPath": "/workspace"},
-        {"name": "backtest-results", "mountPath": "/data/backtest-results"},
+        {"name": "backtest-results", "mountPath": workflow_results_mount()},
     ]
     if include_cache:
         mounts.append({"name": "backtest-cache", "mountPath": "/data/cache"})
@@ -77,9 +91,19 @@ def _print_payload_template() -> dict[str, Any]:
                 "{{inputs.parameters.split-by}}",
                 "--backtest-id",
                 "{{inputs.parameters.backtest-id}}",
+                "--launch-curl",
+                "/tmp/launch-curl.txt",
             ],
             "envFrom": _container_env(),
             "volumeMounts": _volume_mounts(),
+        },
+        "outputs": {
+            "parameters": [
+                {
+                    "name": "launch-curl",
+                    "valueFrom": {"path": "/tmp/launch-curl.txt"},
+                }
+            ]
         },
     }
 
@@ -87,11 +111,12 @@ def _print_payload_template() -> dict[str, Any]:
 def _plan_shards_template() -> dict[str, Any]:
     # Stage config from an inline parameter when set; otherwise read config-path on the PVC.
     # Output parameters go to /tmp so Argo's wait sidecar can collect them reliably.
+    results_mount = workflow_results_mount()
     plan_script = "\n".join(
         [
             "set -e",
             'if [ -n "{{inputs.parameters.backtest-id}}" ]; then',
-            '  WORK="/data/backtest-results/{{inputs.parameters.backtest-id}}"',
+            f'  WORK="{results_mount}/{{{{inputs.parameters.backtest-id}}}}"',
             "else",
             '  WORK="/workspace"',
             "fi",
@@ -325,6 +350,7 @@ def build_backtest_workflow_spec(
     return {
         "entrypoint": "backtest-batch",
         "serviceAccountName": _workflow_service_account(),
+        "ttlStrategy": {"secondsAfterCompletion": WORKFLOW_TTL_SECONDS},
         "arguments": {
             "parameters": parameters,
         },

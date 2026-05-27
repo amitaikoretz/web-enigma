@@ -215,6 +215,14 @@ export interface BacktestListItem {
   workflow_namespace?: string | null
   started_at?: string | null
   finished_at?: string | null
+  stored_artifacts?: BacktestArtifactSummaryItem[]
+}
+
+export interface BacktestArtifactSummaryItem {
+  kind: string
+  label: string
+  format: BacktestArtifactFormat
+  role: BacktestArtifactRole
 }
 
 export interface BacktestListPageResponse {
@@ -255,6 +263,19 @@ export interface BacktestDetailResponse {
   metadata: BacktestListItem
   output_path: string | null
   report: BacktestReport | null
+  artifacts?: BacktestArtifactEntry[]
+}
+
+export type BacktestArtifactFormat = 'json' | 'yaml' | 'parquet' | 'other'
+export type BacktestArtifactRole = 'primary' | 'sidecar' | 'manifest' | 'shard'
+
+export interface BacktestArtifactEntry {
+  kind: string
+  label: string
+  format: BacktestArtifactFormat
+  role: BacktestArtifactRole
+  path: string
+  size_bytes: number | null
 }
 
 export interface BacktestStatusResponse extends BacktestListItem {

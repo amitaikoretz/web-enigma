@@ -61,6 +61,6 @@ kubectl -n "${K8S_NAMESPACE}" rollout status deployment/web --timeout=180s
 kubectl -n "${K8S_NAMESPACE}" rollout status statefulset/worker --timeout=240s
 
 echo ""
-echo "Alpaca credentials synced to secret/${SECRET_NAME}."
+echo "Alpaca credentials synced to secret/${SECRET_NAME} (API, controller, workers, and workflow pods)."
 echo "New Argo workflow pods in ${WORKFLOW_NAMESPACE} will pick up the updated secret automatically."
 echo "Re-submit any already-running workflows if they were started before this sync."

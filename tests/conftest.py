@@ -45,4 +45,7 @@ def build_backtest_client(tmp_path: Path) -> TestClient:
         session_factory=test_session_factory,
     )
     app.dependency_overrides[get_db_session] = override_db_session
+    settings = app.state.deps.settings_service.load()
+    settings.platform_behavior.backtest_execution_backend = "local"
+    app.state.deps.settings_service.save(settings)
     return TestClient(app)

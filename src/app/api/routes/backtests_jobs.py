@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
 
@@ -12,6 +14,7 @@ from app.backtests import (
     BacktestListPageResponse,
     BacktestStatusResponse,
 )
+from app.backtests.service import ArgoNotConfiguredError, ArgoResultsNotSharedError
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -29,7 +32,12 @@ def create_backtest(
             "execution": payload.execution or settings.backtest_defaults.execution,
         }
     )
-    return deps.backtest_jobs.submit(payload)
+    try:
+        return deps.backtest_jobs.submit(payload)
+    except ArgoNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArgoResultsNotSharedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("", response_model=BacktestListPageResponse)
@@ -68,8 +76,8 @@ def get_backtest_report(
     backtest_id: str,
     deps: ApiDependencies = Depends(get_deps),
 ) -> FileResponse:
-    report_path = deps.backtest_jobs.repository.report_path(backtest_id)
-    if not report_path.exists():
+    report_path = deps.backtest_jobs.resolve_report_file_path(backtest_id)
+    if report_path is None:
         raise HTTPException(status_code=404, detail=f"Backtest report '{backtest_id}' not found")
     return FileResponse(
         report_path,
@@ -83,7 +91,7 @@ def get_backtest_config(
     backtest_id: str,
     deps: ApiDependencies = Depends(get_deps),
 ) -> Response:
-    yaml_text = deps.backtest_jobs.repository.resolve_config_yaml(backtest_id)
+    yaml_text = deps.backtest_jobs.resolve_config_yaml_text(backtest_id)
     if yaml_text is None:
         raise HTTPException(status_code=404, detail=f"Backtest config '{backtest_id}' not found")
     return Response(

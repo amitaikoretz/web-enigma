@@ -10,7 +10,8 @@ from app.config.models import AnalyzerConfig, BacktestConfig, BrokerConfig
 
 
 def build_backtest_output_path(output_dir: Path) -> Path:
-    return output_dir / f"{uuid.uuid4()}.json"
+    backtest_id = str(uuid.uuid4())
+    return output_dir / backtest_id / f"{backtest_id}.json"
 
 
 def parse_inline_backtest_config(payload: BacktestRunRequest) -> dict[str, Any]:

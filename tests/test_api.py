@@ -24,6 +24,8 @@ from app.live.control_flags import RedisControlFlagStore
 from app.live.leases import RedisLeaseStore
 from app.live.models import LeaseAcquireRequest, RuntimeContractState
 from app.output.models import BacktestReport
+from app.backtests.models import BacktestListItem
+from app.backtests.persistence import BacktestArtifactPaths
 
 
 def _mock_alpaca_payload() -> bytes:
@@ -281,7 +283,9 @@ def test_run_backtest_accepts_inline_yaml_and_writes_report(tmp_path):
     assert body["status"] == "success"
     assert body["total_runs"] == 1
     assert Path(body["output_path"]).is_absolute()
-    assert Path(body["output_path"]).parent == (tmp_path / "api-results")
+    output_path = Path(body["output_path"])
+    assert output_path.parent.parent == (tmp_path / "api-results")
+    assert output_path.parent.name == output_path.stem
 
     raw_report, report = _read_report(body["output_path"])
     assert report.status == "success"
@@ -292,10 +296,10 @@ def test_run_backtest_accepts_inline_yaml_and_writes_report(tmp_path):
     assert "orders" not in result
     assert "trades" not in result
     assert "rejections" not in result
-    stem = Path(body["output_path"]).stem
-    output_dir = Path(body["output_path"]).parent
-    assert (output_dir / f"{stem}.orders.parquet").exists()
-    assert (output_dir / f"{stem}.trades.parquet").exists()
+    stem = output_path.stem
+    artifact_dir = output_path.parent
+    assert (artifact_dir / f"{stem}.orders.parquet").exists()
+    assert (artifact_dir / f"{stem}.trades.parquet").exists()
 
 
 def test_run_backtest_accepts_inline_json(tmp_path):
@@ -1166,7 +1170,7 @@ class _FakeArgoSubmitter:
             "backtest_id": backtest_id,
             "config_yaml": config_yaml,
         }
-        return f"backtest-{backtest_id[:8]}", "backtest"
+        return f"backtest-{backtest_id[:8]}", "backtest-workflows"
 
     def get_workflow_phase(self, workflow_name: str) -> str | None:
         del workflow_name
@@ -1200,7 +1204,7 @@ def test_launch_argo_backtest_with_inline_config(tmp_path):
     assert response.status_code == 202
     body = response.json()
     assert body["workflow_name"].startswith("backtest-")
-    assert body["workflow_namespace"] == "backtest"
+    assert body["workflow_namespace"] == "backtest-workflows"
     assert body["status"] == "running"
     assert fake.last_submit is not None
     assert fake.last_submit["split_by"] == "run"
@@ -1248,6 +1252,130 @@ def test_launch_argo_backtest_with_config_path(tmp_path):
     assert fake.last_submit["config_path"].startswith("/data/backtest-results/")
     assert fake.last_submit["config_yaml"] is not None
     assert "csv_ok" in fake.last_submit["config_yaml"]
+
+
+def test_workflow_artifact_paths_ignore_api_results_dir(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKTEST_RESULTS_DIR", str(tmp_path / "local-results"))
+    from app.backtests.argo_workflow import workflow_artifact_paths
+
+    config_path, output_path = workflow_artifact_paths("job123")
+    assert config_path == "/data/backtest-results/job123/job123.yaml"
+    assert output_path == "/data/backtest-results/job123/job123.json"
+
+
+def test_workflow_artifact_paths_honor_workflow_mount_override(monkeypatch):
+    monkeypatch.setenv("BACKTEST_WORKFLOW_RESULTS_MOUNT", "/mnt/shared/results")
+    from app.backtests.argo_workflow import workflow_artifact_paths
+
+    config_path, output_path = workflow_artifact_paths("job123")
+    assert config_path == "/mnt/shared/results/job123/job123.yaml"
+    assert output_path == "/mnt/shared/results/job123/job123.json"
+
+
+def test_launch_argo_backtest_uses_workflow_mount_when_api_results_dir_differs(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKTEST_RESULTS_DIR", str(tmp_path / "local-results"))
+    client = _build_client(tmp_path)
+    fake = _FakeArgoSubmitter()
+    client.app.state.deps.backtest_jobs.argo_submitter = fake
+
+    config_text = yaml.safe_dump(
+        {
+            "runs": [
+                {
+                    "run_id": "csv_ok",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-01-19",
+                    "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                    "strategy": "buy_and_hold",
+                    "strategy_params": {"stake": 1},
+                }
+            ]
+        }
+    )
+    response = client.post(
+        "/backtests/argo",
+        json={"config_text": config_text, "format": "yaml"},
+    )
+
+    assert response.status_code == 202
+    assert fake.last_submit is not None
+    backtest_id = fake.last_submit["backtest_id"]
+    assert fake.last_submit["output_path"] == f"/data/backtest-results/{backtest_id}/{backtest_id}.json"
+
+
+def test_launch_argo_backtest_rejects_unshared_results_when_required(tmp_path, monkeypatch):
+    monkeypatch.setenv("BACKTEST_RESULTS_DIR", str(tmp_path / "local-results"))
+    monkeypatch.setenv("ARGO_REQUIRE_SHARED_RESULTS", "1")
+    client = _build_client(tmp_path)
+    client.app.state.deps.backtest_jobs.argo_submitter = _FakeArgoSubmitter()
+
+    config_text = yaml.safe_dump(
+        {
+            "runs": [
+                {
+                    "run_id": "csv_ok",
+                    "start_date": "2024-01-01",
+                    "end_date": "2024-01-19",
+                    "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                    "strategy": "buy_and_hold",
+                    "strategy_params": {"stake": 1},
+                }
+            ]
+        }
+    )
+    response = client.post(
+        "/backtests/argo",
+        json={"config_text": config_text, "format": "yaml"},
+    )
+
+    assert response.status_code == 503
+    assert "Argo workflows write results under" in response.json()["detail"]
+
+
+def test_get_detail_loads_report_from_db_paths(tmp_path):
+    client = _build_client(tmp_path)
+    jobs = client.app.state.deps.backtest_jobs
+    backtest_id = "db-path-test-id"
+    external_dir = tmp_path / "shared-results"
+    external_dir.mkdir()
+    report_path = external_dir / f"{backtest_id}.json"
+    report = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="0.1.0",
+        config_sha256="abc123",
+        input_config={"backtest_id": backtest_id},
+        total_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        status="success",
+        results=[],
+    )
+    report_path.write_text(report.model_dump_json(), encoding="utf-8")
+
+    from app.backtests.persistence import BacktestArtifactPaths
+
+    jobs.job_repository.create(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="completed",
+            report_status="success",
+            total_runs=1,
+            completed_runs=1,
+            successful_runs=1,
+            failed_runs=0,
+            execution_backend="argo",
+            workflow_name="backtest-db-path-test",
+            workflow_namespace="backtest-workflows",
+        ),
+        paths=BacktestArtifactPaths(report_json_path=str(report_path.resolve())),
+    )
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+    assert detail["report"] is not None
+    assert detail["report"]["total_runs"] == 1
+    assert detail["output_path"] == str(report_path.resolve())
 
 
 def test_launch_argo_backtest_returns_503_when_unconfigured(tmp_path):
