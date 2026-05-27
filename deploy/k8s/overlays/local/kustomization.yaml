@@ -23,5 +23,6 @@ generatorOptions:
 patches:
   - path: patch-migrate-wait.yaml
   - path: patch-api-init.yaml
+  - path: patch-api-recreate.yaml
   - path: patch-web-replicas.yaml
   - path: patch-pvc-hostpath.yaml
