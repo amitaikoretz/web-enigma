@@ -3,9 +3,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from app.backtests.argo import ArgoWorkflowSubmitter, load_argo_workflow_config
 from app.backtests.models import BacktestListItem
-from app.backtests.service import BacktestResultRepository, _selection_from_report, _utc_now
+from app.backtests.persistence import SqlAlchemyBacktestJobRepository
+from app.backtests.service import (
+    BacktestArtifactStore,
+    _mark_running,
+    _mark_terminal,
+    finalize_job_from_report,
+)
+from app.db.session import get_session_factory
 from app.output.models import BacktestReport
 
 
@@ -14,30 +23,19 @@ def update_metadata_from_report(
     report: BacktestReport,
     *,
     output_dir: Path,
+    session_factory: sessionmaker[Session] | None = None,
 ) -> None:
-    repository = BacktestResultRepository(output_dir)
-    metadata = repository.load_metadata(backtest_id)
-    if metadata is None:
-        metadata = BacktestListItem(
-            id=backtest_id,
-            created_at=_utc_now(),
-            updated_at=_utc_now(),
-            status="completed",
-            execution_backend="argo",
-            total_runs=report.total_runs,
-            selection=_selection_from_report(report),
-        )
-    else:
-        metadata = metadata.model_copy(deep=True)
-
-    metadata.status = "completed" if report.status != "failure" else "failed"
-    metadata.report_status = report.status
-    metadata.completed_runs = report.total_runs
-    metadata.successful_runs = report.successful_runs
-    metadata.failed_runs = report.failed_runs
-    metadata.error_message = None if report.failed_runs == 0 else f"{report.failed_runs} run(s) failed"
-    metadata.updated_at = _utc_now()
-    repository.write_metadata(metadata)
+    resolved_factory = session_factory or get_session_factory()
+    artifact_store = BacktestArtifactStore(output_dir)
+    job_repository = SqlAlchemyBacktestJobRepository(resolved_factory)
+    metadata = job_repository.get(backtest_id)
+    finalize_job_from_report(
+        backtest_id=backtest_id,
+        report=report,
+        artifact_store=artifact_store,
+        job_repository=job_repository,
+        metadata=metadata,
+    )
 
 
 def _map_workflow_phase(phase: str | None, *, report_exists: bool) -> str | None:
@@ -55,7 +53,8 @@ def _map_workflow_phase(phase: str | None, *, report_exists: bool) -> str | None
 
 def _reconcile_item(
     item: BacktestListItem,
-    repository: BacktestResultRepository,
+    artifact_store: BacktestArtifactStore,
+    job_repository: SqlAlchemyBacktestJobRepository,
     submitter: ArgoWorkflowSubmitter,
 ) -> tuple[BacktestListItem, bool]:
     if item.execution_backend != "argo" or not item.workflow_name:
@@ -64,7 +63,7 @@ def _reconcile_item(
         return item, False
 
     phase = submitter.get_workflow_phase(item.workflow_name)
-    report_path = repository.report_path(item.id)
+    report_path = artifact_store.report_path(item.id)
     report_exists = report_path.exists()
     mapped_status = _map_workflow_phase(phase, report_exists=report_exists)
     if mapped_status is None:
@@ -74,35 +73,37 @@ def _reconcile_item(
     changed = False
 
     if mapped_status == "completed" and report_exists:
-        report = repository.load_report(item.id)
+        report = artifact_store.load_report(item.id)
         if report is not None:
-            current.status = "completed"
-            current.report_status = report.status
-            current.completed_runs = report.total_runs
-            current.successful_runs = report.successful_runs
-            current.failed_runs = report.failed_runs
-            current.error_message = None if report.failed_runs == 0 else f"{report.failed_runs} run(s) failed"
+            current = finalize_job_from_report(
+                backtest_id=item.id,
+                report=report,
+                artifact_store=artifact_store,
+                job_repository=job_repository,
+                metadata=current,
+            )
             changed = True
     elif mapped_status == "failed":
-        current.status = "failed"
+        current = _mark_terminal(current, status="failed")
         current.error_message = f"Argo workflow phase={phase}"
         changed = True
     elif mapped_status == "running" and current.status != "running":
-        current.status = "running"
+        current = _mark_running(current)
         changed = True
 
-    if changed:
+    if changed and mapped_status != "completed":
         current.updated_at = datetime.now(UTC)
-        repository.write_metadata(current)
+        job_repository.update(current)
     return current, changed
 
 
 def reconcile_backtest(
     backtest_id: str,
-    repository: BacktestResultRepository,
+    artifact_store: BacktestArtifactStore,
+    job_repository: SqlAlchemyBacktestJobRepository,
     submitter: ArgoWorkflowSubmitter | None = None,
 ) -> BacktestListItem | None:
-    metadata = repository.load_metadata(backtest_id)
+    metadata = job_repository.get(backtest_id)
     if metadata is None:
         return None
     if metadata.execution_backend != "argo" or not metadata.workflow_name:
@@ -114,21 +115,29 @@ def reconcile_backtest(
     if not resolved_submitter.is_configured:
         return metadata
 
-    updated, _changed = _reconcile_item(metadata, repository, resolved_submitter)
+    updated, _changed = _reconcile_item(metadata, artifact_store, job_repository, resolved_submitter)
     return updated
 
 
-def reconcile_backtest_workflows(output_dir: Path, *, once: bool = True) -> int:
+def reconcile_backtest_workflows(
+    output_dir: Path,
+    *,
+    once: bool = True,
+    session_factory: sessionmaker[Session] | None = None,
+) -> int:
     del once
-    repository = BacktestResultRepository(output_dir)
-    repository.ensure_ready()
+    resolved_factory = session_factory or get_session_factory()
+    artifact_store = BacktestArtifactStore(output_dir)
+    job_repository = SqlAlchemyBacktestJobRepository(resolved_factory)
     submitter = ArgoWorkflowSubmitter(load_argo_workflow_config())
     if not submitter.is_configured:
         return 0
 
     reconciled = 0
-    for item in repository.list_backtests():
-        _updated, changed = _reconcile_item(item, repository, submitter)
+    for item in job_repository.list_recent():
+        if item.execution_backend != "argo":
+            continue
+        _updated, changed = _reconcile_item(item, artifact_store, job_repository, submitter)
         if changed:
             reconciled += 1
 

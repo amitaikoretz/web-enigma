@@ -10,12 +10,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 
 from app.api.deps import ApiDependencies
+from app.api.errors import register_exception_handlers
 from app.api.routes import register_routes
 from app.api_logging import configure_api_logging
-from app.backtests import BacktestJobService, BacktestResultRepository
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.backtests import BacktestArtifactStore, BacktestJobService
 from app.backtests.argo import ArgoWorkflowSubmitter
+from app.backtests.persistence import SqlAlchemyBacktestJobRepository
 from app.config.models import DataCacheConfig
 from app.data.downloads import DataDownloadJobRepository, DataDownloadJobService
+from app.db.session import get_session_factory
 from app.settings import PlatformSettingsService
 
 
@@ -23,6 +28,7 @@ def create_app(
     cache_config: DataCacheConfig | None = None,
     output_dir: Path | None = None,
     log_file: Path | None = None,
+    session_factory: sessionmaker[Session] | None = None,
 ) -> FastAPI:
     logger = configure_api_logging(log_file)
     app = FastAPI(title="Backtest Market Data API", version="0.1.0")
@@ -43,11 +49,13 @@ def create_app(
     ).resolve()
     settings_service = PlatformSettingsService(resolved_output_dir / "settings" / "platform-settings.json")
     data_download_repository = DataDownloadJobRepository(resolved_output_dir)
+    resolved_session_factory = session_factory or get_session_factory()
     app.state.deps = ApiDependencies(
         cache_config=resolved_cache_config,
         output_dir=resolved_output_dir,
         backtest_jobs=BacktestJobService(
-            BacktestResultRepository(resolved_output_dir),
+            BacktestArtifactStore(resolved_output_dir),
+            SqlAlchemyBacktestJobRepository(resolved_session_factory),
             resolved_cache_config,
             settings_service=settings_service,
             argo_submitter=ArgoWorkflowSubmitter(),
@@ -56,14 +64,12 @@ def create_app(
         settings_service=settings_service,
     )
 
+    register_exception_handlers(app, logger)
+
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         started = time.perf_counter()
-        try:
-            response = await call_next(request)
-        except Exception:
-            logger.exception("%s %s failed", request.method, request.url.path)
-            raise
+        response = await call_next(request)
         duration_ms = (time.perf_counter() - started) * 1000
         logger.info(
             "%s %s -> %s (%.1fms)",

@@ -82,7 +82,21 @@ The local overlay starts Postgres, Redis, API, controller, two worker shards, an
 
 1. **Rancher Desktop:** run `make k8s-local-images` before apply (see above).
 
-2. Set Alpaca credentials in `overlays/local/kustomization.yaml` (`secretGenerator` literals) or create the secret manually after apply.
+2. Set Alpaca credentials from your local environment (not in kustomize manifests):
+
+```bash
+export ALPACA_API_KEY='your-key'
+export ALPACA_SECRET_KEY='your-secret'
+# or populate repo-root .env (see .env.example)
+
+make sync-app-secrets
+```
+
+Run after deploy whenever credentials change or after a fresh cluster setup:
+
+```bash
+make k3s-deploy sync-app-secrets
+```
 
 3. Render and inspect:
 
@@ -235,7 +249,7 @@ After deploy:
 ## Configuration
 
 - Live runtime YAML: `ConfigMap/live-config` (mounted at `/app/config/live.yaml`)
-- Credentials and `DATABASE_URL`: `Secret/app-secrets`
+- Credentials and `DATABASE_URL`: `Secret/app-secrets` — local dev: `make sync-app-secrets` (reads `ALPACA_*` from your shell or `.env`)
 - Template for manual secret creation: [`base/secret.example.yaml`](base/secret.example.yaml)
 
 Worker shard count must stay aligned across:
@@ -285,7 +299,7 @@ Shard planning and merge use `backtest plan-shards` and `backtest merge` inside 
 kubectl -n backtest patch cronjob backtest-reconciler -p '{"spec":{"suspend":false}}'
 ```
 
-The reconciler runs `backtest argo-reconciler --once` to sync Argo workflow phase into `{id}.meta.json` files the UI polls.
+The reconciler runs `backtest argo-reconciler --once` to sync Argo workflow phase into the `backtest_jobs` table the UI polls.
 
 ### Status and progress API
 

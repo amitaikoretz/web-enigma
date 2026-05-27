@@ -10,6 +10,36 @@ K8S_DEP_IMAGES ?= postgres:16-alpine redis:7-alpine busybox:1.36
 K8S_BUILD ?= nerdctl
 K8S_LOCAL_OVERLAY ?= deploy/k8s/overlays/local
 K8S_NAMESPACE ?= backtest
+
+include scripts/k8s.env
+export K8S_CONTEXT
+KUBECTL := kubectl --context $(K8S_CONTEXT)
+
+# Host-run API (make api-serve) — expects k3s/docker stack + Argo Workflows already running.
+API_HOST ?= 127.0.0.1
+API_PORT ?= 8000
+ARGO_NAMESPACE ?= backtest-workflows
+ARGO_WORKFLOW_SERVICE_ACCOUNT ?= backtest-workflow
+# Local ports (host side of make api-port-forwards).
+POSTGRES_LOCAL_PORT ?= 54321
+REDIS_LOCAL_PORT ?= 63791
+ARGO_SERVER_PORT ?= 27461
+# Cluster service ports (remote side of kubectl port-forward).
+POSTGRES_SERVICE_PORT ?= 5432
+REDIS_SERVICE_PORT ?= 6379
+ARGO_SERVER_SERVICE_PORT ?= 2746
+# Leave empty to submit workflows via kubeconfig (default for Rancher Desktop k3s).
+# Set to http://localhost:$(ARGO_SERVER_PORT) when using make api-port-forwards.
+ARGO_SERVER_URL ?=
+API_PORT_FORWARDS_SESSION ?= bt-port-forwards
+# Leave empty to auto-detect (namespace: argo or argo-workflows; service: argo-server or argo-workflows-server).
+ARGO_K8S_NAMESPACE ?=
+ARGO_SERVER_SERVICE_NAME ?=
+
+API_DATABASE_URL ?= postgresql+psycopg://postgres:postgres@localhost:$(POSTGRES_LOCAL_PORT)/backtest
+API_REDIS_URL ?= redis://localhost:$(REDIS_LOCAL_PORT)/0
+API_RESULTS_DIR ?= /tmp/backtest-api-results
+
 ifeq ($(K8S_BUILD),nerdctl)
   K8S_CLI := nerdctl --namespace k8s.io
 else
@@ -18,7 +48,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help k8s-local-images build-k8s-app build-k8s-web pull-k8s-deps k3s-deploy k8s-restart-workloads k8s-workflows-deploy k8s-workflows-deploy-local test-argo-inline bootstrap-backtest-workflows-namespace
+.PHONY: help api-serve api-port-forwards api-port-forwards-stop k8s-local-images build-k8s-app build-k8s-web pull-k8s-deps k3s-deploy k8s-restart-workloads k8s-workflows-deploy k8s-workflows-deploy-local test-argo-inline bootstrap-backtest-workflows-namespace sync-app-secrets
 
 help: ## List available targets (default)
 	@printf '\n'
@@ -28,9 +58,13 @@ help: ## List available targets (default)
 		| awk 'BEGIN {FS = ":.*## "}; {printf "  %-32s  %s\n", $$1, $$2}' \
 		| sort
 	@printf '\n'
-	@printf '  Variables: K8S_BUILD=%s  K8S_NAMESPACE=%s  K8S_LOCAL_OVERLAY=%s\n' \
-		'$(K8S_BUILD)' '$(K8S_NAMESPACE)' '$(K8S_LOCAL_OVERLAY)'
-	@printf '             APP_IMAGE=%s  WEB_IMAGE=%s\n\n' '$(APP_IMAGE)' '$(WEB_IMAGE)'
+	@printf '  Variables: K8S_BUILD=%s  K8S_CONTEXT=%s  K8S_NAMESPACE=%s  K8S_LOCAL_OVERLAY=%s\n' \
+		'$(K8S_BUILD)' '$(K8S_CONTEXT)' '$(K8S_NAMESPACE)' '$(K8S_LOCAL_OVERLAY)'
+	@printf '             APP_IMAGE=%s  WEB_IMAGE=%s\n' '$(APP_IMAGE)' '$(WEB_IMAGE)'
+	@printf '             api-serve: API_HOST=%s  API_PORT=%s  ARGO_SERVER_URL=%s\n' \
+		'$(API_HOST)' '$(API_PORT)' '$(or $(ARGO_SERVER_URL),<kubeconfig>)'
+	@printf '             api-port-forwards: SESSION=%s  POSTGRES_LOCAL_PORT=%s  REDIS_LOCAL_PORT=%s  ARGO_SERVER_PORT=%s\n\n' \
+		'$(API_PORT_FORWARDS_SESSION)' '$(POSTGRES_LOCAL_PORT)' '$(REDIS_LOCAL_PORT)' '$(ARGO_SERVER_PORT)'
 
 k8s-local-images: build-k8s-app build-k8s-web pull-k8s-deps ## Build app/web images and pull third-party k8s images
 	@echo ""
@@ -50,26 +84,84 @@ pull-k8s-deps: ## Pull postgres, redis, and busybox images for local k8s
 	done
 
 k8s-restart-workloads: ## Rollout restart api, controller, web, and worker in K8S_NAMESPACE
-	kubectl -n $(K8S_NAMESPACE) rollout restart deployment/api deployment/controller deployment/web statefulset/worker
-	kubectl -n $(K8S_NAMESPACE) rollout status deployment/api --timeout=180s
-	kubectl -n $(K8S_NAMESPACE) rollout status deployment/controller --timeout=180s
-	kubectl -n $(K8S_NAMESPACE) rollout status deployment/web --timeout=180s
-	kubectl -n $(K8S_NAMESPACE) rollout status statefulset/worker --timeout=240s
+	$(KUBECTL) -n $(K8S_NAMESPACE) rollout restart deployment/api deployment/controller deployment/web statefulset/worker
+	$(KUBECTL) -n $(K8S_NAMESPACE) rollout status deployment/api --timeout=180s
+	$(KUBECTL) -n $(K8S_NAMESPACE) rollout status deployment/controller --timeout=180s
+	$(KUBECTL) -n $(K8S_NAMESPACE) rollout status deployment/web --timeout=180s
+	$(KUBECTL) -n $(K8S_NAMESPACE) rollout status statefulset/worker --timeout=240s
 
 k3s-deploy: ## Apply local kustomize overlay and restart workloads
-	kubectl apply -k $(K8S_LOCAL_OVERLAY)
+	$(KUBECTL) apply -k $(K8S_LOCAL_OVERLAY)
 	$(MAKE) k8s-restart-workloads
 
 k8s-workflows-deploy: ## Apply Argo workflow manifests under deploy/k8s/workflows
-	kubectl apply -k deploy/k8s/workflows
+	$(KUBECTL) apply -k deploy/k8s/workflows
 
 k8s-workflows-deploy-local: ## Apply workflow manifests with RWO PVCs for Rancher Desktop / local-path
-	kubectl apply -k deploy/k8s/overlays/local-workflows
+	$(KUBECTL) apply -k deploy/k8s/overlays/local-workflows
 	$(MAKE) k8s-restart-workloads
 
 bootstrap-backtest-workflows-namespace: ## Bootstrap backtest-workflows namespace (scripts/bootstrap_backtest_workflows_namespace.sh)
 	chmod +x scripts/bootstrap_backtest_workflows_namespace.sh
-	./scripts/bootstrap_backtest_workflows_namespace.sh
+	K8S_CONTEXT="$(K8S_CONTEXT)" ./scripts/bootstrap_backtest_workflows_namespace.sh
+
+sync-app-secrets: ## Push ALPACA_* from local env into cluster secrets (backtest + backtest-workflows)
+	chmod +x scripts/sync_app_secrets_from_env.sh
+	K8S_CONTEXT="$(K8S_CONTEXT)" ./scripts/sync_app_secrets_from_env.sh
 
 test-argo-inline: ## Run the inline Argo workflow smoke test (scripts/test_argo_inline.sh)
 	./scripts/test_argo_inline.sh | jq
+
+api-port-forwards: ## Start postgres/redis/argo port-forwards in a tmux session (api-serve prerequisite)
+	chmod +x scripts/api_port_forwards_tmux.sh
+	K8S_CONTEXT="$(K8S_CONTEXT)" \
+	K8S_NAMESPACE="$(K8S_NAMESPACE)" \
+	API_PORT_FORWARDS_SESSION="$(API_PORT_FORWARDS_SESSION)" \
+	POSTGRES_LOCAL_PORT="$(POSTGRES_LOCAL_PORT)" \
+	REDIS_LOCAL_PORT="$(REDIS_LOCAL_PORT)" \
+	ARGO_SERVER_PORT="$(ARGO_SERVER_PORT)" \
+	POSTGRES_SERVICE_PORT="$(POSTGRES_SERVICE_PORT)" \
+	REDIS_SERVICE_PORT="$(REDIS_SERVICE_PORT)" \
+	ARGO_SERVER_SERVICE_PORT="$(ARGO_SERVER_SERVICE_PORT)" \
+	ARGO_K8S_NAMESPACE="$(ARGO_K8S_NAMESPACE)" \
+	ARGO_SERVER_SERVICE_NAME="$(ARGO_SERVER_SERVICE_NAME)" \
+	./scripts/api_port_forwards_tmux.sh
+
+api-port-forwards-stop: ## Stop the tmux session started by api-port-forwards
+	@if tmux has-session -t "$(API_PORT_FORWARDS_SESSION)" 2>/dev/null; then \
+		tmux kill-session -t "$(API_PORT_FORWARDS_SESSION)"; \
+		printf 'Stopped tmux session %s\n' "$(API_PORT_FORWARDS_SESSION)"; \
+	else \
+		printf 'No tmux session named %s\n' "$(API_PORT_FORWARDS_SESSION)"; \
+	fi
+
+api-serve: ## Run the Python API on the host (Argo Workflows in local k3s/docker)
+	@set -e; \
+	set -a; \
+	[ -f .env ] && . ./.env; \
+	set +a; \
+	export PYTHONPATH="$${PYTHONPATH:-$(CURDIR)/src}"; \
+	export DATABASE_URL="$${DATABASE_URL:-$(API_DATABASE_URL)}"; \
+	case "$$DATABASE_URL" in *@postgres:*) export DATABASE_URL="$(API_DATABASE_URL)";; esac; \
+	export REDIS_URL="$${REDIS_URL:-$(API_REDIS_URL)}"; \
+	case "$$REDIS_URL" in redis://redis:*) export REDIS_URL="$(API_REDIS_URL)";; esac; \
+	export BACKTEST_ARGO_ENABLED="$${BACKTEST_ARGO_ENABLED:-true}"; \
+	export ARGO_NAMESPACE="$${ARGO_NAMESPACE:-$(ARGO_NAMESPACE)}"; \
+	export ARGO_WORKFLOW_SERVICE_ACCOUNT="$${ARGO_WORKFLOW_SERVICE_ACCOUNT:-$(ARGO_WORKFLOW_SERVICE_ACCOUNT)}"; \
+	export BACKTEST_RESULTS_DIR="$${BACKTEST_RESULTS_DIR:-$(API_RESULTS_DIR)}"; \
+	export API_HOST="$(API_HOST)"; \
+	export API_PORT="$(API_PORT)"; \
+	export K8S_CONTEXT="$(K8S_CONTEXT)"; \
+	export K8S_NAMESPACE="$(K8S_NAMESPACE)"; \
+	export API_PORT_FORWARDS_SESSION="$(API_PORT_FORWARDS_SESSION)"; \
+	export POSTGRES_LOCAL_PORT="$(POSTGRES_LOCAL_PORT)"; \
+	export REDIS_LOCAL_PORT="$(REDIS_LOCAL_PORT)"; \
+	export ARGO_SERVER_PORT="$(ARGO_SERVER_PORT)"; \
+	if [ -n "$(ARGO_SERVER_URL)" ]; then export ARGO_SERVER_URL="$(ARGO_SERVER_URL)"; fi; \
+	chmod +x scripts/print_api_serve_prerequisites.sh; \
+	./scripts/print_api_serve_prerequisites.sh; \
+	if command -v backtest >/dev/null 2>&1; then \
+		exec backtest serve --host "$(API_HOST)" --port "$(API_PORT)"; \
+	else \
+		exec python -m app.cli serve --host "$(API_HOST)" --port "$(API_PORT)"; \
+	fi

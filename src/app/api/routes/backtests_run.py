@@ -24,7 +24,7 @@ from app.api.schemas.backtests import (
 from app.config.models import AlpacaDataSource, BacktestConfig
 from app.data.loaders import build_alpaca_data_feed_with_cache
 from app.engine.runner import run_backtests
-from app.output import write_backtest_report_json
+from app.backtests.artifacts import persist_backtest_report
 from app.output.models import RunError
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
@@ -44,7 +44,7 @@ def run_backtest(
     try:
         report = run_backtests(config, config_raw)
         output_path = build_backtest_output_path(deps.output_dir)
-        write_backtest_report_json(report, output_path)
+        persist_backtest_report(report, output_path)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001

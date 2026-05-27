@@ -1,4 +1,5 @@
 import { defaultPlatformSettings } from './defaults'
+import { normalizeThemePreset } from '../theme/registry'
 import type { AppearanceSettings } from '../types/settings'
 
 const APPEARANCE_STORAGE_KEY = 'kairos.appearance-settings.v1'
@@ -18,6 +19,7 @@ export function loadAppearanceSettings(): AppearanceSettings {
     return {
       ...defaultPlatformSettings.appearance,
       ...parsed,
+      theme_preset: normalizeThemePreset(parsed.theme_preset),
     }
   } catch {
     return defaultPlatformSettings.appearance

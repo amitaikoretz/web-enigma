@@ -5,9 +5,42 @@ import type {
   BacktestCreateRequest,
   BacktestCreateResponse,
   BacktestDetailResponse,
-  BacktestListItem,
+  BacktestListPageResponse,
   BacktestStatusResponse,
 } from '../types/backtests'
+
+export interface FetchBacktestsParams {
+  page?: number
+  pageSize?: number
+}
+
+function normalizeBacktestListPage(
+  body: unknown,
+  params: FetchBacktestsParams,
+): BacktestListPageResponse {
+  const page = params.page ?? 1
+  const pageSize = params.pageSize ?? 25
+
+  if (Array.isArray(body)) {
+    const offset = (page - 1) * pageSize
+    const items = body as BacktestListPageResponse['items']
+    return {
+      items: items.slice(offset, offset + pageSize),
+      total: items.length,
+      page,
+      page_size: pageSize,
+    }
+  }
+
+  const record = body as Partial<BacktestListPageResponse>
+  const items = Array.isArray(record.items) ? record.items : []
+  return {
+    items,
+    total: typeof record.total === 'number' ? record.total : items.length,
+    page: typeof record.page === 'number' ? record.page : page,
+    page_size: typeof record.page_size === 'number' ? record.page_size : pageSize,
+  }
+}
 
 export async function createBacktest(
   payload: BacktestCreateRequest,
@@ -41,12 +74,18 @@ export async function launchArgoBacktest(
   return response.json() as Promise<BacktestArgoLaunchResponse>
 }
 
-export async function fetchBacktests(): Promise<BacktestListItem[]> {
-  const response = await fetch('/api/backtests')
+export async function fetchBacktests(
+  params: FetchBacktestsParams = {},
+): Promise<BacktestListPageResponse> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page ?? 1))
+  searchParams.set('page_size', String(params.pageSize ?? 25))
+  const response = await fetch(`/api/backtests?${searchParams.toString()}`)
   if (!response.ok) {
     throw new Error(await readApiError(response, 'Failed to load backtests'))
   }
-  return response.json() as Promise<BacktestListItem[]>
+  const body: unknown = await response.json()
+  return normalizeBacktestListPage(body, params)
 }
 
 export async function fetchBacktestDetail(backtestId: string): Promise<BacktestDetailResponse> {

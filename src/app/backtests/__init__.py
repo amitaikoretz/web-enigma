@@ -5,10 +5,13 @@ from app.backtests.models import (
     BacktestCreateResponse,
     BacktestDetailResponse,
     BacktestListItem,
+    BacktestListPageResponse,
     BacktestSelectionSummary,
     BacktestStatusResponse,
 )
+from app.backtests.persistence import BacktestArtifactPaths, SqlAlchemyBacktestJobRepository
 from app.backtests.service import (
+    BacktestArtifactStore,
     BacktestJobService,
     BacktestResultRepository,
     build_backtest_config,
@@ -18,14 +21,18 @@ from app.backtests.service import (
 __all__ = [
     "BacktestArgoLaunchRequest",
     "BacktestArgoLaunchResponse",
+    "BacktestArtifactPaths",
+    "BacktestArtifactStore",
     "BacktestCreateRequest",
     "BacktestCreateResponse",
     "BacktestDetailResponse",
     "BacktestJobService",
     "BacktestListItem",
+    "BacktestListPageResponse",
     "BacktestResultRepository",
     "BacktestSelectionSummary",
     "BacktestStatusResponse",
+    "SqlAlchemyBacktestJobRepository",
     "build_backtest_config",
     "build_backtest_config_raw",
 ]
