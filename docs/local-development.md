@@ -227,6 +227,8 @@ Evaluate the latest completed Alpaca bar and submit paper/live orders for an Alp
 backtest alpaca-run --config /path/to/alpaca.yaml
 ```
 
+Candidate logging for live Alpaca runs is controlled from **Settings → Live trading → Log live entry candidates**, or via `execution.include_candidate_log` in the Alpaca YAML. When enabled, events append to `{state_directory}/{run_id}/candidates.jsonl`.
+
 ## Troubleshooting
 
 `DATABASE_URL is required for database-backed API usage`

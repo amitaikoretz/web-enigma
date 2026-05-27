@@ -25,39 +25,281 @@ def _secret_name() -> str:
     return os.environ.get("BACKTEST_WORKFLOW_SECRET", "app-secrets")
 
 
-def _plan_shards_container(*, split_by_template: str) -> dict[str, Any]:
+def _api_base_url() -> str:
+    return os.environ.get("BACKTEST_API_BASE_URL", "http://api.backtest.svc.cluster.local:8000")
+
+
+def _volume_mounts(*, include_cache: bool = False) -> list[dict[str, str]]:
+    mounts = [
+        {"name": "workspace", "mountPath": "/workspace"},
+        {"name": "backtest-results", "mountPath": "/data/backtest-results"},
+    ]
+    if include_cache:
+        mounts.append({"name": "backtest-cache", "mountPath": "/data/cache"})
+    return mounts
+
+
+def _container_env() -> list[dict[str, Any]]:
+    return [{"secretRef": {"name": _secret_name()}}]
+
+
+def _step_parameters(pairs: list[tuple[str, str]]) -> dict[str, Any]:
+    return {
+        "parameters": [{"name": name, "value": value} for name, value in pairs],
+    }
+
+
+def _print_payload_template() -> dict[str, Any]:
+    return {
+        "name": "print-payload",
+        "inputs": {
+            "parameters": [
+                {"name": "api-base-url"},
+                {"name": "config-path"},
+                {"name": "config-b64"},
+                {"name": "split-by"},
+                {"name": "backtest-id"},
+                {"name": "output-path"},
+            ]
+        },
+        "container": {
+            "image": _workflow_image(),
+            "imagePullPolicy": "IfNotPresent",
+            "command": ["backtest", "print-argo-payload"],
+            "args": [
+                "--api-base-url",
+                "{{inputs.parameters.api-base-url}}",
+                "--config-path",
+                "{{inputs.parameters.config-path}}",
+                "--config-b64",
+                "{{inputs.parameters.config-b64}}",
+                "--split-by",
+                "{{inputs.parameters.split-by}}",
+                "--backtest-id",
+                "{{inputs.parameters.backtest-id}}",
+            ],
+            "envFrom": _container_env(),
+            "volumeMounts": _volume_mounts(),
+        },
+    }
+
+
+def _plan_shards_template() -> dict[str, Any]:
     # Stage config from an inline parameter when set; otherwise read config-path on the PVC.
-    # shards-param goes to /tmp so Argo's wait sidecar can collect the output parameter
-    # (paths on workflow volume mounts are skipped by the emissary executor).
+    # Output parameters go to /tmp so Argo's wait sidecar can collect them reliably.
     plan_script = "\n".join(
         [
             "set -e",
-            'if [ -n "{{workflow.parameters.config-b64}}" ]; then',
-            "  mkdir -p /workspace",
-            '  echo "{{workflow.parameters.config-b64}}" | base64 -d > /workspace/config.yaml',
-            "  CONFIG=/workspace/config.yaml",
+            'if [ -n "{{inputs.parameters.backtest-id}}" ]; then',
+            '  WORK="/data/backtest-results/{{inputs.parameters.backtest-id}}"',
             "else",
-            '  CONFIG="{{workflow.parameters.config-path}}"',
+            '  WORK="/workspace"',
             "fi",
-            "exec backtest plan-shards \\",
+            'mkdir -p "$WORK"',
+            'if [ -n "{{inputs.parameters.config-b64}}" ]; then',
+            '  echo "{{inputs.parameters.config-b64}}" | base64 -d > "$WORK/config.yaml"',
+            '  CONFIG="$WORK/config.yaml"',
+            "else",
+            '  CONFIG="{{inputs.parameters.config-path}}"',
+            "fi",
+            "backtest plan-shards \\",
             '  --config "$CONFIG" \\',
-            "  --work-dir /workspace \\",
-            "  --manifest /workspace/manifest.json \\",
+            '  --work-dir "$WORK" \\',
+            '  --manifest "$WORK/manifest.json" \\',
             "  --shards-param /tmp/shards-param.json \\",
-            f"  --split-by {split_by_template}",
+            '  --split-by "{{inputs.parameters.split-by}}"',
+            'echo "$WORK/manifest.json" > /tmp/manifest-path.txt',
+            'echo "$WORK" > /tmp/work-dir.txt',
         ]
     )
     return {
-        "image": _workflow_image(),
-        "imagePullPolicy": "IfNotPresent",
-        "command": ["sh", "-c"],
-        "args": [plan_script],
-        "envFrom": [{"secretRef": {"name": _secret_name()}}],
-        "volumeMounts": [
-            {"name": "workspace", "mountPath": "/workspace"},
-            {"name": "backtest-results", "mountPath": "/data/backtest-results"},
-        ],
+        "name": "plan-shards",
+        "inputs": {
+            "parameters": [
+                {"name": "config-path"},
+                {"name": "config-b64"},
+                {"name": "split-by"},
+                {"name": "backtest-id"},
+            ]
+        },
+        "container": {
+            "image": _workflow_image(),
+            "imagePullPolicy": "IfNotPresent",
+            "command": ["sh", "-c"],
+            "args": [plan_script],
+            "envFrom": _container_env(),
+            "volumeMounts": _volume_mounts(),
+        },
+        "outputs": {
+            "parameters": [
+                {
+                    "name": "shards",
+                    "valueFrom": {"path": "/tmp/shards-param.json"},
+                },
+                {
+                    "name": "manifest-path",
+                    "valueFrom": {"path": "/tmp/manifest-path.txt"},
+                },
+                {
+                    "name": "work-dir",
+                    "valueFrom": {"path": "/tmp/work-dir.txt"},
+                },
+            ]
+        },
     }
+
+
+def _run_shard_template() -> dict[str, Any]:
+    run_script = "\n".join(
+        [
+            "set -e",
+            'echo "Running shard {{inputs.parameters.shard-id}}"',
+            "backtest run \\",
+            '  --config "{{inputs.parameters.shard-config-path}}" \\',
+            '  --output "{{inputs.parameters.shard-output-path}}" \\',
+            "  --cache-dir /data/cache",
+            'echo "{{inputs.parameters.shard-output-path}}" > /tmp/shard-output-path.txt',
+        ]
+    )
+    return {
+        "name": "run-shard",
+        "inputs": {
+            "parameters": [
+                {"name": "shard-id"},
+                {"name": "shard-config-path"},
+                {"name": "shard-output-path"},
+            ]
+        },
+        "container": {
+            "image": _workflow_image(),
+            "imagePullPolicy": "IfNotPresent",
+            "command": ["sh", "-c"],
+            "args": [run_script],
+            "envFrom": _container_env(),
+            "volumeMounts": _volume_mounts(include_cache=True),
+        },
+        "outputs": {
+            "parameters": [
+                {
+                    "name": "shard-output-path",
+                    "valueFrom": {"path": "/tmp/shard-output-path.txt"},
+                }
+            ]
+        },
+    }
+
+
+def _merge_reports_template() -> dict[str, Any]:
+    merge_script = "\n".join(
+        [
+            "set -e",
+            "backtest merge \\",
+            '  --manifest "{{inputs.parameters.manifest-path}}" \\',
+            '  --output "{{inputs.parameters.output-path}}" \\',
+            '  --backtest-id "{{inputs.parameters.backtest-id}}"',
+            'echo "{{inputs.parameters.output-path}}" > /tmp/merged-output-path.txt',
+        ]
+    )
+    return {
+        "name": "merge-reports",
+        "inputs": {
+            "parameters": [
+                {"name": "manifest-path"},
+                {"name": "output-path"},
+                {"name": "backtest-id"},
+            ]
+        },
+        "container": {
+            "image": _workflow_image(),
+            "imagePullPolicy": "IfNotPresent",
+            "command": ["sh", "-c"],
+            "args": [merge_script],
+            "envFrom": _container_env(),
+            "volumeMounts": _volume_mounts(),
+        },
+        "outputs": {
+            "parameters": [
+                {
+                    "name": "output-path",
+                    "valueFrom": {"path": "/tmp/merged-output-path.txt"},
+                }
+            ]
+        },
+    }
+
+
+def _backtest_batch_steps() -> list[list[dict[str, Any]]]:
+    return [
+        [
+            {
+                "name": "print-payload",
+                "template": "print-payload",
+                "arguments": _step_parameters(
+                    [
+                        ("api-base-url", "{{workflow.parameters.api-base-url}}"),
+                        ("config-path", "{{workflow.parameters.config-path}}"),
+                        ("config-b64", "{{workflow.parameters.config-b64}}"),
+                        ("split-by", "{{workflow.parameters.split-by}}"),
+                        ("backtest-id", "{{workflow.parameters.backtest-id}}"),
+                        ("output-path", "{{workflow.parameters.output-path}}"),
+                    ]
+                ),
+            }
+        ],
+        [
+            {
+                "name": "plan",
+                "template": "plan-shards",
+                "arguments": _step_parameters(
+                    [
+                        ("config-path", "{{workflow.parameters.config-path}}"),
+                        ("config-b64", "{{workflow.parameters.config-b64}}"),
+                        ("split-by", "{{workflow.parameters.split-by}}"),
+                        ("backtest-id", "{{workflow.parameters.backtest-id}}"),
+                    ]
+                ),
+            }
+        ],
+        [
+            {
+                "name": "run-shards",
+                "template": "run-shard",
+                "arguments": {
+                    "parameters": [
+                        {
+                            "name": "shard-id",
+                            "value": "{{item.shard_id}}",
+                        },
+                        {
+                            "name": "shard-config-path",
+                            "value": "{{item.config_path}}",
+                        },
+                        {
+                            "name": "shard-output-path",
+                            "value": "{{item.output_path}}",
+                        },
+                    ]
+                },
+                "withParam": "{{steps.plan.outputs.parameters.shards}}",
+            }
+        ],
+        [
+            {
+                "name": "merge",
+                "template": "merge-reports",
+                "arguments": _step_parameters(
+                    [
+                        (
+                            "manifest-path",
+                            "{{steps.plan.outputs.parameters.manifest-path}}",
+                        ),
+                        ("output-path", "{{workflow.parameters.output-path}}"),
+                        ("backtest-id", "{{workflow.parameters.backtest-id}}"),
+                    ]
+                ),
+            }
+        ],
+    ]
 
 
 def build_backtest_workflow_spec(
@@ -67,8 +309,10 @@ def build_backtest_workflow_spec(
     split_by: str,
     backtest_id: str,
     config_yaml: str | None = None,
+    api_base_url: str | None = None,
 ) -> dict[str, Any]:
     parameters: list[dict[str, str]] = [
+        {"name": "api-base-url", "value": api_base_url or _api_base_url()},
         {"name": "config-path", "value": config_path},
         {"name": "output-path", "value": output_path},
         {"name": "split-by", "value": split_by},
@@ -78,7 +322,7 @@ def build_backtest_workflow_spec(
             "value": base64.b64encode(config_yaml.encode()).decode() if config_yaml else "",
         },
     ]
-    spec: dict[str, Any] = {
+    return {
         "entrypoint": "backtest-batch",
         "serviceAccountName": _workflow_service_account(),
         "arguments": {
@@ -106,92 +350,11 @@ def build_backtest_workflow_spec(
         "templates": [
             {
                 "name": "backtest-batch",
-                "steps": [
-                    [{"name": "plan", "template": "plan-shards"}],
-                    [
-                        {
-                            "name": "run-shards",
-                            "template": "run-shard",
-                            "arguments": {
-                                "parameters": [
-                                    {
-                                        "name": "shard-config-path",
-                                        "value": "{{item.config_path}}",
-                                    },
-                                    {
-                                        "name": "shard-output-path",
-                                        "value": "{{item.output_path}}",
-                                    },
-                                ]
-                            },
-                            "withParam": "{{steps.plan.outputs.parameters.shards}}",
-                        }
-                    ],
-                    [{"name": "merge", "template": "merge-reports"}],
-                ],
+                "steps": _backtest_batch_steps(),
             },
-            {
-                "name": "plan-shards",
-                "container": _plan_shards_container(
-                    split_by_template="{{workflow.parameters.split-by}}",
-                ),
-                "outputs": {
-                    "parameters": [
-                        {
-                            "name": "shards",
-                            "valueFrom": {"path": "/tmp/shards-param.json"},
-                        }
-                    ]
-                },
-            },
-            {
-                "name": "run-shard",
-                "inputs": {
-                    "parameters": [
-                        {"name": "shard-config-path"},
-                        {"name": "shard-output-path"},
-                    ]
-                },
-                "container": {
-                    "image": _workflow_image(),
-                    "imagePullPolicy": "IfNotPresent",
-                    "command": ["backtest", "run"],
-                    "args": [
-                        "--config",
-                        "{{inputs.parameters.shard-config-path}}",
-                        "--output",
-                        "{{inputs.parameters.shard-output-path}}",
-                        "--cache-dir",
-                        "/data/cache",
-                    ],
-                    "envFrom": [{"secretRef": {"name": _secret_name()}}],
-                    "volumeMounts": [
-                        {"name": "workspace", "mountPath": "/workspace"},
-                        {"name": "backtest-cache", "mountPath": "/data/cache"},
-                    ],
-                },
-            },
-            {
-                "name": "merge-reports",
-                "container": {
-                    "image": _workflow_image(),
-                    "imagePullPolicy": "IfNotPresent",
-                    "command": ["backtest", "merge"],
-                    "args": [
-                        "--manifest",
-                        "/workspace/manifest.json",
-                        "--output",
-                        "{{workflow.parameters.output-path}}",
-                        "--backtest-id",
-                        "{{workflow.parameters.backtest-id}}",
-                    ],
-                    "envFrom": [{"secretRef": {"name": _secret_name()}}],
-                    "volumeMounts": [
-                        {"name": "workspace", "mountPath": "/workspace"},
-                        {"name": "backtest-results", "mountPath": "/data/backtest-results"},
-                    ],
-                },
-            },
+            _print_payload_template(),
+            _plan_shards_template(),
+            _run_shard_template(),
+            _merge_reports_template(),
         ],
     }
-    return spec

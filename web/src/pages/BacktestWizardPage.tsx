@@ -4,13 +4,17 @@ import {
   Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
   FormControl,
+  FormControlLabel,
   InputLabel,
+  Link,
   MenuItem,
   Paper,
   Select,
   Stack,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material'
@@ -578,6 +582,89 @@ export function BacktestWizardPage() {
           </Stack>
         </Paper>
 
+        <Paper sx={{ p: 3 }}>
+          <Stack spacing={2}>
+            <Typography variant="h6">Output and logging</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Control what is persisted in each backtest run. Platform defaults can be reset from
+              settings.
+            </Typography>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={submitAnalyzers.include_equity_curve}
+                    onChange={(_event, checked) =>
+                      setSubmitAnalyzers((current) => ({
+                        ...current,
+                        include_equity_curve: checked,
+                      }))
+                    }
+                  />
+                }
+                label="Include equity curve"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={submitAnalyzers.include_trade_log}
+                    onChange={(_event, checked) =>
+                      setSubmitAnalyzers((current) => ({
+                        ...current,
+                        include_trade_log: checked,
+                      }))
+                    }
+                  />
+                }
+                label="Include trade log"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={submitAnalyzers.include_order_log}
+                    onChange={(_event, checked) =>
+                      setSubmitAnalyzers((current) => ({
+                        ...current,
+                        include_order_log: checked,
+                      }))
+                    }
+                  />
+                }
+                label="Include order log"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={submitAnalyzers.include_candidate_log}
+                    onChange={(_event, checked) =>
+                      setSubmitAnalyzers((current) => ({
+                        ...current,
+                        include_candidate_log: checked,
+                      }))
+                    }
+                  />
+                }
+                label="Include candidate log"
+              />
+            </Stack>
+            {submitAnalyzers.include_candidate_log && (
+              <Alert severity="info">
+                Candidate logging records every entry signal (traded and rejected) and increases
+                backtest output size.
+              </Alert>
+            )}
+            <Link
+              component="button"
+              type="button"
+              variant="body2"
+              onClick={() => setSubmitAnalyzers(platformSettings.backtest_defaults.analyzers)}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              Reset to platform defaults
+            </Link>
+          </Stack>
+        </Paper>
+
         <Paper
           sx={{
             p: 3,
@@ -602,6 +689,14 @@ export function BacktestWizardPage() {
               <Box>
                 <Typography variant="overline">Expanded runs</Typography>
                 <Typography variant="h5">{totalRuns}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="overline">Candidate log</Typography>
+                <Chip
+                  size="small"
+                  label={submitAnalyzers.include_candidate_log ? 'on' : 'off'}
+                  color={submitAnalyzers.include_candidate_log ? 'primary' : 'default'}
+                />
               </Box>
             </Stack>
             {!hasValidDateRange && (

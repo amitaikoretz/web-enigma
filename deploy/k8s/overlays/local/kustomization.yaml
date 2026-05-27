@@ -9,6 +9,8 @@ resources:
   - service-postgres.yaml
   - redis.yaml
   - service-redis.yaml
+  - ingress-class-traefik.yaml
+  - ingress-web.yaml
 
 secretGenerator:
   - name: app-secrets

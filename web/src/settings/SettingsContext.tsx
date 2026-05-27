@@ -32,6 +32,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [appearance, setAppearanceState] = useState<AppearanceSettings>(() => loadAppearanceSettings())
   const [serverSettings, setServerSettings] = useState<ServerPlatformSettings>({
     backtest_defaults: defaultPlatformSettings.backtest_defaults,
+    live_defaults: defaultPlatformSettings.live_defaults,
     platform_behavior: defaultPlatformSettings.platform_behavior,
   })
   const [loading, setLoading] = useState(true)
@@ -64,6 +65,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setError(err instanceof Error ? err.message : 'Failed to load platform settings')
       setServerSettings({
         backtest_defaults: defaultPlatformSettings.backtest_defaults,
+        live_defaults: defaultPlatformSettings.live_defaults,
         platform_behavior: defaultPlatformSettings.platform_behavior,
       })
     } finally {
@@ -85,6 +87,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           setError(err instanceof Error ? err.message : 'Failed to load platform settings')
           setServerSettings({
             backtest_defaults: defaultPlatformSettings.backtest_defaults,
+            live_defaults: defaultPlatformSettings.live_defaults,
             platform_behavior: defaultPlatformSettings.platform_behavior,
           })
         }
@@ -119,6 +122,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       try {
         const payload: ServerPlatformSettings = {
           backtest_defaults: next.backtest_defaults,
+          live_defaults: next.live_defaults,
           platform_behavior: next.platform_behavior,
         }
         const saved = await updatePlatformSettings(payload)

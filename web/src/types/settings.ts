@@ -34,6 +34,7 @@ export interface AnalyzerSettings {
   include_equity_curve: boolean
   include_trade_log: boolean
   include_order_log: boolean
+  include_candidate_log: boolean
 }
 
 export interface ExecutionSettings {
@@ -62,8 +63,13 @@ export interface PlatformBehaviorSettings {
   argo_split_by: ArgoSplitBy
 }
 
+export interface LiveDefaults {
+  include_candidate_log: boolean
+}
+
 export interface ServerPlatformSettings {
   backtest_defaults: BacktestDefaults
+  live_defaults: LiveDefaults
   platform_behavior: PlatformBehaviorSettings
 }
 

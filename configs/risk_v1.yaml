@@ -1,0 +1,22 @@
+# Risk dataset V1 configuration.
+# Feature windows are bar counts (not calendar days). On 5m data, return_20 is ~100 minutes.
+
+risk_dataset:
+  dataset_version: risk_dataset_v1
+  label_version: labels_v1
+  feature_version: features_v1
+
+labels:
+  ambiguous_intrabar_policy: assume_stop_first
+
+features:
+  min_history_bars: 60
+  lookback_bars: 60
+  winsorize_quantiles: [0.01, 0.99]
+  vol_percentile_window: 60
+  include_index_features: true
+  default_benchmark_symbol: SPY
+
+data_cache:
+  directory: .cache/backtest-data
+  enabled: true

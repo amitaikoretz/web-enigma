@@ -19,6 +19,7 @@ class AnalyzerConfig(BaseModel):
     include_equity_curve: bool = True
     include_trade_log: bool = True
     include_order_log: bool = True
+    include_candidate_log: bool = False
 
 
 class BacktestExecutionConfig(BaseModel):
@@ -151,6 +152,7 @@ class AlpacaExecutionConfig(BaseModel):
     mode: Literal["paper", "live"] = "paper"
     poll_interval_seconds: int = Field(default=60, ge=1)
     state_directory: str = ".cache/alpaca-runtime"
+    include_candidate_log: bool = False
 
 
 class AlpacaTradingRunConfig(BaseModel):

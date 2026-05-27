@@ -18,7 +18,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help k8s-local-images build-k8s-app build-k8s-web pull-k8s-deps k3s-deploy k8s-workflows-deploy test-argo-inline bootstrap-backtest-workflows-namespace
+.PHONY: help k8s-local-images build-k8s-app build-k8s-web pull-k8s-deps k3s-deploy k8s-restart-workloads k8s-workflows-deploy k8s-workflows-deploy-local test-argo-inline bootstrap-backtest-workflows-namespace
 
 help: ## List available targets (default)
 	@printf '\n'
@@ -49,19 +49,23 @@ pull-k8s-deps: ## Pull postgres, redis, and busybox images for local k8s
 		$(K8S_CLI) pull $$img; \
 	done
 
-k3s-deploy: ## Apply local kustomize overlay and restart workloads
-	kubectl apply -k $(K8S_LOCAL_OVERLAY)
+k8s-restart-workloads: ## Rollout restart api, controller, web, and worker in K8S_NAMESPACE
 	kubectl -n $(K8S_NAMESPACE) rollout restart deployment/api deployment/controller deployment/web statefulset/worker
 	kubectl -n $(K8S_NAMESPACE) rollout status deployment/api --timeout=180s
 	kubectl -n $(K8S_NAMESPACE) rollout status deployment/controller --timeout=180s
 	kubectl -n $(K8S_NAMESPACE) rollout status deployment/web --timeout=180s
 	kubectl -n $(K8S_NAMESPACE) rollout status statefulset/worker --timeout=240s
 
+k3s-deploy: ## Apply local kustomize overlay and restart workloads
+	kubectl apply -k $(K8S_LOCAL_OVERLAY)
+	$(MAKE) k8s-restart-workloads
+
 k8s-workflows-deploy: ## Apply Argo workflow manifests under deploy/k8s/workflows
 	kubectl apply -k deploy/k8s/workflows
 
 k8s-workflows-deploy-local: ## Apply workflow manifests with RWO PVCs for Rancher Desktop / local-path
 	kubectl apply -k deploy/k8s/overlays/local-workflows
+	$(MAKE) k8s-restart-workloads
 
 bootstrap-backtest-workflows-namespace: ## Bootstrap backtest-workflows namespace (scripts/bootstrap_backtest_workflows_namespace.sh)
 	chmod +x scripts/bootstrap_backtest_workflows_namespace.sh

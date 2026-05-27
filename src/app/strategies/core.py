@@ -3,7 +3,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Sequence
+
+if TYPE_CHECKING:
+    from app.strategies.candidates import EntryIntent
 
 
 DecisionAction = Literal["hold", "buy", "close"]
@@ -51,14 +54,32 @@ class StrategyDecision:
     size: float | None = None
     reason: str | None = None
     auditor_rejection: bool = False
+    entry_intent: EntryIntent | None = None
 
     @classmethod
-    def hold(cls, reason: str | None = None, *, auditor_rejection: bool = False) -> "StrategyDecision":
-        return cls(action="hold", reason=reason, auditor_rejection=auditor_rejection)
+    def hold(
+        cls,
+        reason: str | None = None,
+        *,
+        auditor_rejection: bool = False,
+        entry_intent: EntryIntent | None = None,
+    ) -> "StrategyDecision":
+        return cls(
+            action="hold",
+            reason=reason,
+            auditor_rejection=auditor_rejection,
+            entry_intent=entry_intent,
+        )
 
     @classmethod
-    def buy(cls, size: float, reason: str | None = None) -> "StrategyDecision":
-        return cls(action="buy", size=float(size), reason=reason)
+    def buy(
+        cls,
+        size: float,
+        reason: str | None = None,
+        *,
+        entry_intent: EntryIntent | None = None,
+    ) -> "StrategyDecision":
+        return cls(action="buy", size=float(size), reason=reason, entry_intent=entry_intent)
 
     @classmethod
     def close(cls, reason: str | None = None) -> "StrategyDecision":

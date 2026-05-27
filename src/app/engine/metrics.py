@@ -7,6 +7,8 @@ from typing import Any
 import pandas as pd
 
 from app.output.models import (
+    CandidateDiagnostics,
+    CandidateRecord,
     FilterDiagnostics,
     HistogramBin,
     OrderRecord,
@@ -190,6 +192,25 @@ def build_rejection_records(rejection_log: list[dict[str, Any]]) -> list[Rejecti
         )
         for raw in rejection_log
     ]
+
+
+def build_candidate_records(candidate_log: list[Any]) -> list[CandidateRecord]:
+    records: list[CandidateRecord] = []
+    for raw in candidate_log:
+        if hasattr(raw, "model_dump"):
+            records.append(CandidateRecord.model_validate(raw.model_dump()))
+        elif isinstance(raw, dict):
+            records.append(CandidateRecord.model_validate(raw))
+    return records
+
+
+def compute_candidate_diagnostics(candidates: list[CandidateRecord]) -> CandidateDiagnostics:
+    traded = sum(1 for candidate in candidates if candidate.was_traded)
+    return CandidateDiagnostics(
+        total_candidates=len(candidates),
+        traded_candidates=traded,
+        rejected_candidates=len(candidates) - traded,
+    )
 
 
 def compute_trade_diagnostics(

@@ -3,11 +3,14 @@ import { LinearProgress, Paper, Stack, Typography } from '@mui/material'
 interface BacktestProgressPanelProps {
   completedRuns: number
   totalRuns: number
+  progressPct: number
 }
 
-export function BacktestProgressPanel({ completedRuns, totalRuns }: BacktestProgressPanelProps) {
-  const progressValue = totalRuns === 0 ? 0 : (completedRuns / totalRuns) * 100
-
+export function BacktestProgressPanel({
+  completedRuns,
+  totalRuns,
+  progressPct,
+}: BacktestProgressPanelProps) {
   return (
     <Paper sx={{ p: 3 }}>
       <Stack spacing={1.5}>
@@ -17,7 +20,7 @@ export function BacktestProgressPanel({ completedRuns, totalRuns }: BacktestProg
         </Typography>
         <LinearProgress
           variant={totalRuns === 0 ? 'indeterminate' : 'determinate'}
-          value={progressValue}
+          value={progressPct}
           color="primary"
           sx={{
             height: 10,

@@ -136,6 +136,8 @@ def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
 
     status_body = _wait_for_terminal_status(client, body["backtest_id"])
     assert status_body["status"] == "completed"
+    assert status_body["is_terminal"] is True
+    assert status_body["progress_pct"] == 100.0
     assert status_body["total_runs"] == 4
     assert status_body["successful_runs"] == 4
 
@@ -197,11 +199,178 @@ def test_backtest_status_reports_running_then_completed(tmp_path, monkeypatch):
     assert started.wait(timeout=2)
     running = client.get(f"/backtests/{backtest_id}/status")
     assert running.status_code == 200
-    assert running.json()["status"] == "running"
+    running_body = running.json()
+    assert running_body["status"] == "running"
+    assert running_body["is_terminal"] is False
+    assert running_body["progress_pct"] == 0.0
 
     finish.set()
     completed = _wait_for_terminal_status(client, backtest_id)
     assert completed["status"] == "completed"
+    assert completed["is_terminal"] is True
+    assert completed["progress_pct"] == 100.0
+
+
+def test_local_backtest_status_reports_incremental_progress(tmp_path, monkeypatch):
+    progress_samples: list[float] = []
+
+    def incremental_runner(config, config_raw, on_run_complete=None, on_run_error=None, **_kwargs):
+        total = len(config.runs)
+        for index, run in enumerate(config.runs, start=1):
+            result = RunResult(
+                run_id=run.run_id,
+                name=run.name,
+                status="success",
+                strategy=run.strategy or "",
+                symbol=run.data.symbol if hasattr(run.data, "symbol") else None,
+                data_source=run.data.type,
+                summary=RunSummary(
+                    start_value=10000.0,
+                    end_value=10500.0,
+                    return_pct=5.0,
+                    max_drawdown_pct=1.5,
+                    sharpe_ratio=1.2,
+                    total_trades=3,
+                    won_trades=2,
+                    lost_trades=1,
+                ),
+            )
+            if on_run_complete is not None:
+                on_run_complete(result, index, total)
+            time.sleep(0.05)
+        return _fake_runner(config, config_raw)
+
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", incremental_runner)
+    client = _build_client(tmp_path)
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+
+    deadline = time.time() + 5.0
+    while time.time() < deadline:
+        body = client.get(f"/backtests/{backtest_id}/status").json()
+        progress_samples.append(body["progress_pct"])
+        if body["is_terminal"]:
+            break
+        time.sleep(0.02)
+
+    assert max(progress_samples) == 100.0
+    assert any(0 < value < 100 for value in progress_samples)
+
+
+def test_argo_status_progress_from_shard_reports(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from app.backtests.models import BacktestListItem
+    from app.backtests.sharding import ShardPlan, ShardSpec, write_shard_manifest
+
+    class FakeArgoSubmitter:
+        is_configured = True
+
+        def get_workflow_phase(self, workflow_name: str) -> str | None:
+            del workflow_name
+            return "Running"
+
+    client = _build_client(tmp_path)
+    client.app.state.deps.backtest_jobs.argo_submitter = FakeArgoSubmitter()
+    repository = BacktestResultRepository(tmp_path / "api-results")
+    backtest_id = "argo-progress-test"
+    work_dir = repository.output_dir / backtest_id
+    shards_dir = work_dir / "shards"
+    shards_dir.mkdir(parents=True)
+    shard_one = shards_dir / "aapl.json"
+    shard_two = shards_dir / "msft.json"
+    shard_one.write_text(
+        BacktestReport(
+            generated_at=datetime.now(UTC),
+            app_version="0.1.0",
+            config_sha256="abc",
+            input_config={},
+            total_runs=2,
+            successful_runs=2,
+            failed_runs=0,
+            status="success",
+            results=[],
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    plan = ShardPlan(
+        config_path=str(work_dir / "original.yaml"),
+        split_by="symbol",
+        shards=[
+            ShardSpec(shard_id="aapl", config_path=str(shards_dir / "aapl.yaml"), output_path=str(shard_one)),
+            ShardSpec(shard_id="msft", config_path=str(shards_dir / "msft.yaml"), output_path=str(shard_two)),
+        ],
+    )
+    write_shard_manifest(plan, work_dir / "manifest.json")
+    repository.write_metadata(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="running",
+            total_runs=4,
+            execution_backend="argo",
+            workflow_name="backtest-argo-progress-test",
+            workflow_namespace="backtest-workflows",
+        )
+    )
+
+    body = client.get(f"/backtests/{backtest_id}/status").json()
+
+    assert body["status"] == "running"
+    assert body["completed_runs"] == 2
+    assert body["progress_pct"] == 50.0
+    assert body["is_terminal"] is False
+
+
+def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from app.backtests.models import BacktestListItem
+
+    class FakeArgoSubmitter:
+        is_configured = True
+
+        def get_workflow_phase(self, workflow_name: str) -> str | None:
+            del workflow_name
+            return "Succeeded"
+
+    client = _build_client(tmp_path)
+    client.app.state.deps.backtest_jobs.argo_submitter = FakeArgoSubmitter()
+    repository = BacktestResultRepository(tmp_path / "api-results")
+    backtest_id = "argo-reconcile-test"
+    repository.write_metadata(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="running",
+            total_runs=1,
+            execution_backend="argo",
+            workflow_name="backtest-argo-reconcile-test",
+            workflow_namespace="backtest-workflows",
+        )
+    )
+    repository.save_report(
+        backtest_id,
+        BacktestReport(
+            generated_at=datetime.now(UTC),
+            app_version="0.1.0",
+            config_sha256="abc",
+            input_config={},
+            total_runs=1,
+            successful_runs=1,
+            failed_runs=0,
+            status="success",
+            results=[],
+        ),
+    )
+
+    body = client.get(f"/backtests/{backtest_id}/status").json()
+
+    assert body["status"] == "completed"
+    assert body["is_terminal"] is True
+    assert body["progress_pct"] == 100.0
 
 
 def test_list_backtests_returns_newest_first(tmp_path, monkeypatch):

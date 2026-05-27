@@ -472,6 +472,54 @@ export function SettingsPage() {
                 }
                 label="Include order log"
               />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.backtest_defaults.analyzers.include_candidate_log}
+                    onChange={(_event, checked) =>
+                      handleDraftChange({
+                        ...draft,
+                        backtest_defaults: {
+                          ...draft.backtest_defaults,
+                          analyzers: {
+                            ...draft.backtest_defaults.analyzers,
+                            include_candidate_log: checked,
+                          },
+                        },
+                      })
+                    }
+                  />
+                }
+                label="Include candidate log"
+              />
+            </Stack>
+            <Typography variant="body2" color="text.secondary">
+              Candidate logging records entry candidates (traded and rejected) for risk-model dataset
+              building. It increases backtest output size.
+            </Typography>
+            <Stack spacing={2}>
+              <Typography variant="subtitle1">Live trading</Typography>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.live_defaults.include_candidate_log}
+                    onChange={(_event, checked) =>
+                      handleDraftChange({
+                        ...draft,
+                        live_defaults: {
+                          ...draft.live_defaults,
+                          include_candidate_log: checked,
+                        },
+                      })
+                    }
+                  />
+                }
+                label="Log live entry candidates"
+              />
+              <Typography variant="body2" color="text.secondary">
+                Appends candidate events to the live runtime state directory for later labeling and
+                calibration.
+              </Typography>
             </Stack>
           </Stack>
         </Paper>

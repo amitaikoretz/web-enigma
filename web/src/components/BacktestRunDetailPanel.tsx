@@ -1,6 +1,7 @@
 import {
   Alert,
   Box,
+  Chip,
   Stack,
   Tab,
   Tabs,
@@ -73,7 +74,10 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
   const tradeDiagnostics = resolved.tradeDiagnostics
   const filterDiagnostics = resolved.filterDiagnostics
   const riskMetrics = resolved.riskMetrics
+  const candidateDiagnostics = resolved.candidateDiagnostics
+  const includeCandidateLog = resolved.includeCandidateLog
   const distributions = tradeDiagnostics?.distributions ?? null
+  const candidates = result.candidates ?? []
 
   const sortedTrades = [...result.trades].sort((left, right) => {
     const leftValue = left.datetime ? dayjs(left.datetime).valueOf() : Number.NEGATIVE_INFINITY
@@ -147,7 +151,8 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
           </BacktestAnalysisSection>
         )}
 
-        {tab === 'diagnostics' && (tradeDiagnostics || filterDiagnostics || riskMetrics) && (
+        {tab === 'diagnostics' &&
+          (tradeDiagnostics || filterDiagnostics || riskMetrics || includeCandidateLog || candidateDiagnostics) && (
           <BacktestAnalysisSection
             title="Strategy diagnostics"
             description="Trade economics, distributions, filters, and risk context."
@@ -170,6 +175,65 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
                 )}
                 {filterDiagnostics && <FilterDiagnosticsPanel diagnostics={filterDiagnostics} />}
                 {riskMetrics && <RiskMetricsPanel metrics={riskMetrics} />}
+                {(includeCandidateLog || candidateDiagnostics) && (
+                  <Box sx={{ gridColumn: { lg: '1 / -1' } }}>
+                    <Stack spacing={1.5}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <Typography variant="subtitle1">Candidate log</Typography>
+                        <Chip
+                          size="small"
+                          label={includeCandidateLog ? 'enabled' : 'disabled'}
+                          color={includeCandidateLog ? 'primary' : 'default'}
+                        />
+                      </Stack>
+                      {candidateDiagnostics ? (
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
+                          <Metric label="Total candidates" value={String(candidateDiagnostics.total_candidates)} />
+                          <Metric label="Traded" value={String(candidateDiagnostics.traded_candidates)} />
+                          <Metric label="Rejected" value={String(candidateDiagnostics.rejected_candidates)} />
+                        </Stack>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary">
+                          Candidate logging was enabled but no candidates were recorded for this run.
+                        </Typography>
+                      )}
+                      {candidates.length > 0 && (
+                        <DiagnosticsTableShell title={`Candidate records (${candidates.length})`}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>When</TableCell>
+                                <TableCell>Symbol</TableCell>
+                                <TableCell align="right">Signal</TableCell>
+                                <TableCell>Traded</TableCell>
+                                <TableCell>Reject reason</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {candidates.map((candidate) => (
+                                <TableRow key={candidate.candidate_id} hover>
+                                  <TableCell>
+                                    {formatTimestampOrDash(
+                                      candidate.timestamp,
+                                      platformSettings.platform_behavior.timezone,
+                                      appearance.time_display_format,
+                                    )}
+                                  </TableCell>
+                                  <TableCell>{candidate.symbol}</TableCell>
+                                  <TableCell align="right">
+                                    {formatNumber(candidate.signal_score, 2)}
+                                  </TableCell>
+                                  <TableCell>{candidate.was_traded ? 'yes' : 'no'}</TableCell>
+                                  <TableCell>{candidate.reject_reason ?? '—'}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </DiagnosticsTableShell>
+                      )}
+                    </Stack>
+                  </Box>
+                )}
               </DiagnosticsLayout>
             </Stack>
           </BacktestAnalysisSection>

@@ -216,7 +216,7 @@ def test_volume_rally_core_requires_rising_macd_histogram():
 
 
 def test_volume_rally_core_requires_adx_threshold():
-    core = VolumeRallyCore(_volume_rally_params(adx_min=101.0))
+    core = VolumeRallyCore(_volume_rally_params(adx_min=101.0, min_confirmations=6))
     bars = _bars(
         [10, 10.5, 11, 11.4, 11.7, 12.4],
         highs=[10.2, 10.7, 11.1, 11.5, 11.8, 12.6],
@@ -232,6 +232,8 @@ def test_volume_rally_core_requires_adx_threshold():
     )
     decision = core.on_bar(_context(bars))
     assert decision.action == "hold"
+    assert decision.reason == "insufficient_confirmations"
+    assert decision.entry_intent is not None
 
 
 def test_volume_rally_entry_signal_requires_volume_and_breakout():

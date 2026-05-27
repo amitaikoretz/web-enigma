@@ -146,7 +146,8 @@ class BacktestArgoLaunchResponse(BaseModel):
 
 
 class BacktestStatusResponse(BacktestListItem):
-    pass
+    progress_pct: float = Field(ge=0, le=100)
+    is_terminal: bool
 
 
 class BacktestDetailResponse(BaseModel):

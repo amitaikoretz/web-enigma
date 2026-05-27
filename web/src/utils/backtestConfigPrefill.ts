@@ -40,15 +40,16 @@ function parseAnalyzers(value: unknown): BacktestCreateRequest['analyzers'] | un
   if (!isRecord(value)) {
     return undefined
   }
-  const { include_equity_curve, include_trade_log, include_order_log } = value
+  const { include_equity_curve, include_trade_log, include_order_log, include_candidate_log } = value
   if (
     typeof include_equity_curve !== 'boolean' ||
     typeof include_trade_log !== 'boolean' ||
-    typeof include_order_log !== 'boolean'
+    typeof include_order_log !== 'boolean' ||
+    typeof include_candidate_log !== 'boolean'
   ) {
     return undefined
   }
-  return { include_equity_curve, include_trade_log, include_order_log }
+  return { include_equity_curve, include_trade_log, include_order_log, include_candidate_log }
 }
 
 function parseExecution(value: unknown): BacktestCreateRequest['execution'] | undefined {

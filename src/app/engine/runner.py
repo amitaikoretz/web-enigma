@@ -18,8 +18,10 @@ from app.data.loaders import (
 )
 from app.engine.aggregates import compute_report_aggregates
 from app.engine.metrics import (
+    build_candidate_records,
     build_order_records,
     build_rejection_records,
+    compute_candidate_diagnostics,
     compute_filter_diagnostics,
     compute_risk_metrics,
     compute_trade_diagnostics,
@@ -270,6 +272,8 @@ def _run_single(
         strategy_params=strategy_entry.params,
         symbol=_strategy_symbol(run),
         benchmark_feed=benchmark_feed,
+        include_candidate_log=run.analyzers.include_candidate_log,
+        fill_model=run.execution.fill_model,
     )
 
     bt = Backtest(
@@ -308,10 +312,16 @@ def _run_single(
     raw_orders: list[dict[str, Any]] = []
     raw_trades: list[dict[str, Any]] = []
     raw_rejections: list[dict[str, Any]] = []
+    raw_candidates: list[Any] = []
     if strategy_obj is not None:
         raw_orders = getattr(strategy_obj, "order_log", []) if run.analyzers.include_order_log else []
         raw_trades = getattr(strategy_obj, "trade_log", []) if run.analyzers.include_trade_log else []
         raw_rejections = getattr(strategy_obj, "rejection_log", [])
+        if run.analyzers.include_candidate_log:
+            raw_candidates = getattr(strategy_obj, "candidate_log", [])
+
+    candidates = build_candidate_records(raw_candidates)
+    candidate_diagnostics = compute_candidate_diagnostics(candidates)
 
     orders = build_order_records(raw_orders)
     trades = enrich_trade_records(raw_trades, closed_trades)
@@ -345,6 +355,7 @@ def _run_single(
             "rejections": [rejection.model_dump() for rejection in rejections],
             **filter_diagnostics.model_dump(),
         },
+        "candidate_diagnostics": candidate_diagnostics.model_dump(),
     }
 
     summary = RunSummary(
@@ -373,5 +384,6 @@ def _run_single(
         orders=orders,
         trades=trades,
         rejections=rejections,
+        candidates=candidates if run.analyzers.include_candidate_log else [],
         equity_curve=equity_curve if run.analyzers.include_equity_curve else [],
     ), data_feed_result.cache_status

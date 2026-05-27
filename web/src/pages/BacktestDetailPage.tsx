@@ -24,7 +24,7 @@ import { BacktestRunsComparisonTable } from '../components/BacktestRunsCompariso
 import { BacktestStrategyAggregatePanel } from '../components/BacktestStrategyAggregatePanel'
 import { BacktestSummaryDashboard } from '../components/BacktestSummaryDashboard'
 import { useSettings } from '../settings/useSettings'
-import type { BacktestDetailResponse, BacktestListItem } from '../types/backtests'
+import type { BacktestDetailResponse, BacktestListItem, BacktestStatusResponse } from '../types/backtests'
 import type { ComparisonViewMode } from '../utils/backtestAggregates'
 import {
   findRunById,
@@ -42,11 +42,21 @@ function formatTimestamp(
   return formatInTimezone(value, timezone, timeDisplayFormat, true)
 }
 
+function listItemToStatus(item: BacktestListItem): BacktestStatusResponse {
+  const progress_pct =
+    item.total_runs === 0 ? 0 : Math.min(100, (item.completed_runs / item.total_runs) * 100)
+  return {
+    ...item,
+    progress_pct,
+    is_terminal: item.status === 'completed' || item.status === 'failed',
+  }
+}
+
 export function BacktestDetailPage() {
   const { platformSettings, appearance } = useSettings()
   const { backtestId = '' } = useParams()
   const [detail, setDetail] = useState<BacktestDetailResponse | null>(null)
-  const [metadata, setMetadata] = useState<BacktestListItem | null>(null)
+  const [metadata, setMetadata] = useState<BacktestStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ComparisonViewMode>('symbol')
@@ -65,7 +75,7 @@ export function BacktestDetailPage() {
         const response = await fetchBacktestDetail(backtestId)
         if (!cancelled) {
           setDetail(response)
-          setMetadata((current) => current ?? response.metadata)
+          setMetadata((current) => current ?? listItemToStatus(response.metadata))
         }
       } catch (err) {
         if (!cancelled) {
@@ -101,11 +111,11 @@ export function BacktestDetailPage() {
 
         setMetadata(status)
 
-        if (status.status === 'completed' || status.status === 'failed') {
+        if (status.is_terminal) {
           const nextDetail = await fetchBacktestDetail(backtestId)
           if (!cancelled) {
             setDetail(nextDetail)
-            setMetadata(nextDetail.metadata)
+            setMetadata(status)
             setLoading(false)
           }
           return true
@@ -237,10 +247,11 @@ export function BacktestDetailPage() {
         </Alert>
       )}
 
-      {isActive && (
+      {isActive && metadata && (
         <BacktestProgressPanel
           completedRuns={metadata.completed_runs}
           totalRuns={metadata.total_runs}
+          progressPct={metadata.progress_pct}
         />
       )}
 

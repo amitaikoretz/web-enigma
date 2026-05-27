@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 from typing import Any
 
@@ -15,13 +16,16 @@ from app.api import app as fastapi_app
 from app.api_logging import DEFAULT_LOG_DIR, build_timestamped_log_file, configure_api_logging
 from app.strategies.auditor_logging import configure_strategy_logging
 from app.config.models import AlpacaTradingConfig, BacktestConfig, LiveTradingConfig
+from app.backtests.argo_payload import build_argo_launch_payload, format_argo_launch_curl
 from app.backtests.merge import merge_exit_code, merge_from_manifest
 from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_manifest, write_shards_param
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
-from app.live.executor import build_alpaca_executor
+from app.settings import PlatformSettingsService
 from app.live import runtime as live_runtime
 from app.output import write_backtest_report_json
 from app.reporting import generate_html_report
+from app.risk.data.report_loader import CandidateLoadError
+from app.risk.dataset.builder import build_risk_dataset
 from app.strategies.registry import list_strategies
 
 console = Console()
@@ -130,9 +134,17 @@ def _cmd_alpaca_run(config_path: str) -> int:
         return 2
 
     failures = 0
+    settings_path = Path(".cache/backtest-results/settings/platform-settings.json")
+    live_include_candidate_log = None
+    if settings_path.exists():
+        live_include_candidate_log = PlatformSettingsService(settings_path).load().live_defaults.include_candidate_log
     for run in config.runs:
         try:
-            executor = build_alpaca_executor(run=run, execution=config.global_config.execution)
+            executor = build_alpaca_executor(
+                run=run,
+                execution=config.global_config.execution,
+                include_candidate_log=live_include_candidate_log,
+            )
             events = executor.process_latest_bar()
         except Exception as exc:  # noqa: BLE001
             failures += 1
@@ -275,6 +287,53 @@ def _cmd_merge(manifest_path: str, output_path: str, backtest_id: str | None) ->
     return merge_exit_code(report)
 
 
+def _cmd_print_argo_payload(
+    api_base_url: str,
+    config_path: str | None,
+    config_text_file: str | None,
+    config_b64: str | None,
+    split_by: str | None,
+    backtest_id: str | None,
+) -> int:
+    config_text: str | None = None
+    resolved_config_path = config_path.strip() if config_path else None
+    if config_b64 and config_b64.strip():
+        try:
+            config_text = base64.b64decode(config_b64).decode()
+        except (ValueError, UnicodeDecodeError) as exc:
+            print(f"Invalid config-b64: {exc}")
+            return 2
+    elif config_text_file:
+        text_path = Path(config_text_file)
+        if not text_path.exists():
+            print(f"Config text file not found: {config_text_file}")
+            return 2
+        config_text = text_path.read_text(encoding="utf-8")
+
+    try:
+        if config_text is not None:
+            payload = build_argo_launch_payload(
+                config_text=config_text,
+                split_by=split_by or "",
+                backtest_id=backtest_id or "",
+            )
+        elif resolved_config_path:
+            payload = build_argo_launch_payload(
+                config_path=resolved_config_path,
+                split_by=split_by or "",
+                backtest_id=backtest_id or "",
+            )
+        else:
+            print("Provide one of --config-path, --config-text-file, or --config-b64")
+            return 2
+    except ValueError as exc:
+        print(f"Payload build failed: {exc}")
+        return 2
+
+    print(format_argo_launch_curl(api_base_url, payload))
+    return 0
+
+
 def _cmd_argo_reconciler(output_dir: str, once: bool) -> int:
     from app.backtests.argo_reconciler import reconcile_backtest_workflows
 
@@ -300,6 +359,38 @@ def _cmd_live_reconciler(config_path: str, once: bool) -> int:
     results = service.run_once()
     if once and results:
         console.print(f"reconciliations={len(results)} status={results[0].status.value}")
+    return 0
+
+
+def _cmd_build_risk_dataset(
+    input_paths: list[str],
+    output_path: str,
+    config_path: str | None,
+    cache_dir: str | None,
+) -> int:
+    paths = [Path(path) for path in input_paths]
+    for path in paths:
+        if not path.exists():
+            print(f"Input file not found: {path}")
+            return 2
+    try:
+        manifest = build_risk_dataset(
+            paths,
+            output_path=Path(output_path),
+            config_path=Path(config_path) if config_path else None,
+            cache_dir=cache_dir,
+        )
+    except CandidateLoadError as exc:
+        print(f"Risk dataset build failed: {exc}")
+        return 2
+    except (ValueError, NotImplementedError, RuntimeError) as exc:
+        print(f"Risk dataset build failed: {exc}")
+        return 2
+
+    console.print(
+        f"Risk dataset created: {manifest.output_path} "
+        f"(rows={manifest.joined_rows}, candidates={manifest.total_candidates})"
+    )
     return 0
 
 
@@ -376,6 +467,56 @@ def merge_command(
     ),
 ) -> None:
     raise typer.Exit(code=_cmd_merge(manifest, output, backtest_id))
+
+
+@app.command("build-risk-dataset", help="Build labeled feature dataset from backtest report JSON(s)")
+def build_risk_dataset_command(
+    input_json: list[str] = typer.Option(..., "--input", help="Backtest JSON input path (repeatable)"),
+    output: str = typer.Option(..., "--output", help="Parquet output path"),
+    config: str | None = typer.Option(None, "--config", help="Risk dataset YAML config path"),
+    cache_dir: str | None = typer.Option(None, "--cache-dir", help="Override parquet cache directory"),
+) -> None:
+    raise typer.Exit(code=_cmd_build_risk_dataset(input_json, output, config, cache_dir))
+
+
+@app.command(
+    "print-argo-payload",
+    help="Print a curl command that launches this backtest via POST /backtests/argo",
+)
+def print_argo_payload_command(
+    api_base_url: str = typer.Option(
+        ...,
+        "--api-base-url",
+        help="API base URL (e.g. http://localhost:8000)",
+    ),
+    config_path: str | None = typer.Option(
+        None,
+        "--config-path",
+        help="Config path on the shared backtest-results volume",
+    ),
+    config_text_file: str | None = typer.Option(
+        None,
+        "--config-text-file",
+        help="Local file whose contents become inline config_text in the payload",
+    ),
+    config_b64: str | None = typer.Option(
+        None,
+        "--config-b64",
+        help="Base64-encoded config YAML (matches workflow config-b64 parameter)",
+    ),
+    split_by: str | None = typer.Option(None, "--split-by", help="Argo shard grouping"),
+    backtest_id: str | None = typer.Option(None, "--backtest-id", help="Backtest job id"),
+) -> None:
+    raise typer.Exit(
+        code=_cmd_print_argo_payload(
+            api_base_url,
+            config_path,
+            config_text_file,
+            config_b64,
+            split_by,
+            backtest_id,
+        )
+    )
 
 
 @app.command("argo-reconciler", help="Reconcile Argo backtest workflow status with job metadata")
