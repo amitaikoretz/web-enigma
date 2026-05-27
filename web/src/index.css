@@ -104,3 +104,89 @@ body {
     transform: translate(80px, 50px) scale(1.15);
   }
 }
+
+/* Restrained glass atmosphere for light glass presets */
+.glass-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.glass-wash {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+}
+
+.glass-wash-frost {
+  width: 420px;
+  height: 280px;
+  background: #d4dfe8;
+  top: -80px;
+  right: -60px;
+}
+
+.glass-wash-frost-b {
+  width: 300px;
+  height: 300px;
+  background: #c8d4df;
+  bottom: -100px;
+  left: 10%;
+  opacity: 0.35;
+}
+
+.glass-wash-silica {
+  width: 350px;
+  height: 350px;
+  background: rgba(210, 218, 225, 0.7);
+  top: -50px;
+  left: 30%;
+}
+
+.glass-wash-silica-b {
+  width: 280px;
+  height: 280px;
+  background: rgba(200, 210, 220, 0.55);
+  bottom: -80px;
+  right: 15%;
+  opacity: 0.35;
+}
+
+.glass-wash-alto {
+  width: 500px;
+  height: 200px;
+  background: #f0f2f4;
+  top: 20%;
+  left: -10%;
+  filter: blur(100px);
+  opacity: 0.55;
+}
+
+.glass-wash-alto-b {
+  width: 320px;
+  height: 320px;
+  background: #e4e7eb;
+  bottom: -60px;
+  right: 8%;
+  opacity: 0.4;
+}
+
+.glass-wash-glacial {
+  width: 380px;
+  height: 240px;
+  background: rgba(190, 210, 230, 0.45);
+  top: 10%;
+  right: -5%;
+}
+
+.glass-wash-glacial-b {
+  width: 260px;
+  height: 260px;
+  background: rgba(210, 225, 240, 0.4);
+  bottom: 5%;
+  left: 5%;
+  opacity: 0.4;
+}

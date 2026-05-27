@@ -9,6 +9,30 @@ from app.config.models import AnalyzerConfig, BacktestExecutionConfig, BrokerCon
 
 SUPPORTED_RESOLUTIONS = ("1m", "5m", "15m", "1h", "1d")
 SUPPORTED_FEEDS = ("iex", "sip", "otc")
+BACKTEST_RESULTS_TABLE_COLUMN_IDS = frozenset(
+    {
+        "created",
+        "status",
+        "report",
+        "date_range",
+        "universe",
+        "runs",
+        "runtime",
+        "json",
+        "yaml",
+    }
+)
+DEFAULT_BACKTEST_RESULTS_TABLE_COLUMNS = [
+    "created",
+    "status",
+    "report",
+    "date_range",
+    "universe",
+    "runs",
+    "runtime",
+    "json",
+    "yaml",
+]
 
 
 class AppearanceDefaults(BaseModel):
@@ -46,6 +70,7 @@ class BacktestDefaults(BaseModel):
         )
     )
     execution: BacktestExecutionConfig = Field(default_factory=BacktestExecutionConfig)
+    results_table_columns: list[str] = Field(default_factory=lambda: list(DEFAULT_BACKTEST_RESULTS_TABLE_COLUMNS))
 
     @field_validator("symbols_seed_list")
     @classmethod
@@ -61,13 +86,29 @@ class BacktestDefaults(BaseModel):
             raise ValueError("symbols_seed_list must include at least one symbol")
         return normalized
 
+    @field_validator("results_table_columns")
+    @classmethod
+    def validate_results_table_columns(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("results_table_columns must include at least one column")
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            if item not in BACKTEST_RESULTS_TABLE_COLUMN_IDS:
+                raise ValueError(f"Unknown results table column '{item}'")
+            if item in seen:
+                continue
+            seen.add(item)
+            normalized.append(item)
+        return normalized
+
 
 class PlatformBehaviorSettings(BaseModel):
     timezone: str = "America/New_York"
     auto_refresh_interval_seconds: float = Field(default=1.5, ge=0.5, le=60)
     confirm_before_launch: bool = False
     preferred_landing_page: Literal["backtests", "new_backtest", "chart"] = "backtests"
-    backtest_execution_backend: Literal["local", "argo"] = "local"
+    backtest_execution_backend: Literal["local", "argo"] = "argo"
     argo_split_by: Literal["run", "symbol", "strategy", "symbol_strategy"] = "symbol_strategy"
 
 

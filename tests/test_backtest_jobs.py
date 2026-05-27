@@ -6,21 +6,14 @@ from threading import Event
 
 from fastapi.testclient import TestClient
 
-from app.api import create_app
 from app.backtests.models import BacktestCreateRequest
-from app.backtests.service import BacktestResultRepository, build_backtest_config
-from app.config.models import DataCacheConfig
-from app.output.models import BacktestReport, RunResult, RunSummary
+from app.backtests.service import BacktestArtifactStore, build_backtest_config
+from app.output.models import BacktestReport, OrderRecord, RunResult, RunSummary, TradeRecord
+from tests.conftest import build_backtest_client
 
 
 def _build_client(tmp_path) -> TestClient:
-    return TestClient(
-        create_app(
-            cache_config=DataCacheConfig(directory=str(tmp_path / "cache")),
-            output_dir=tmp_path / "api-results",
-            log_file=tmp_path / "api.log",
-        )
-    )
+    return build_backtest_client(tmp_path)
 
 
 def _wizard_payload() -> dict[str, object]:
@@ -69,6 +62,27 @@ def _fake_runner(config, config_raw, on_run_complete=None, on_run_error=None, **
                 won_trades=2,
                 lost_trades=1,
             ),
+            orders=[
+                OrderRecord(
+                    datetime="2024-01-02T00:00:00+00:00",
+                    status="Completed",
+                    is_buy=True,
+                    size=1.0,
+                    price=100.0,
+                    value=100.0,
+                    commission=0.0,
+                )
+            ],
+            trades=[
+                TradeRecord(
+                    datetime="2024-01-03T00:00:00+00:00",
+                    size=1.0,
+                    price=105.0,
+                    value=105.0,
+                    pnl=5.0,
+                    pnlcomm=5.0,
+                )
+            ],
         )
         if on_run_complete is not None:
             on_run_complete(result, index, total)
@@ -114,12 +128,16 @@ def test_build_backtest_config_expands_symbols_and_strategies_cartesian() -> Non
     ]
 
 
-def test_result_repository_uses_path_agnostic_ids(tmp_path) -> None:
-    repository = BacktestResultRepository(tmp_path)
+def test_artifact_store_uses_path_agnostic_ids(tmp_path) -> None:
+    store = BacktestArtifactStore(tmp_path)
 
-    assert repository.report_path("job123").name == "job123.json"
-    assert repository.metadata_path("job123").name == "job123.meta.json"
-    assert repository.config_path("job123").name == "job123.yaml"
+    assert store.report_path("job123").name == "job123.json"
+    assert store.config_path("job123").name == "job123.yaml"
+    paths = store.artifact_paths("job123")
+    assert paths.candidates_parquet_path.endswith("job123.candidates.parquet")
+    assert paths.orders_parquet_path.endswith("job123.orders.parquet")
+    assert paths.trades_parquet_path.endswith("job123.trades.parquet")
+    assert paths.rejections_parquet_path.endswith("job123.rejections.parquet")
 
 
 def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
@@ -148,6 +166,8 @@ def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
     assert detail_body["output_path"].endswith(f"/{body['backtest_id']}.json")
     assert detail_body["report"]["total_runs"] == 4
     assert detail_body["report"]["results"][0]["symbol"] == "AAPL"
+    assert len(detail_body["report"]["results"][0]["orders"]) == 1
+    assert len(detail_body["report"]["results"][0]["trades"]) == 1
 
 
 def test_create_backtest_uses_saved_settings_defaults_for_optional_fields(tmp_path, monkeypatch):
@@ -271,8 +291,10 @@ def test_argo_status_progress_from_shard_reports(tmp_path, monkeypatch):
             return "Running"
 
     client = _build_client(tmp_path)
-    client.app.state.deps.backtest_jobs.argo_submitter = FakeArgoSubmitter()
-    repository = BacktestResultRepository(tmp_path / "api-results")
+    jobs = client.app.state.deps.backtest_jobs
+    jobs.argo_submitter = FakeArgoSubmitter()
+    repository = jobs.repository
+    job_repository = jobs.job_repository
     backtest_id = "argo-progress-test"
     work_dir = repository.output_dir / backtest_id
     shards_dir = work_dir / "shards"
@@ -302,7 +324,7 @@ def test_argo_status_progress_from_shard_reports(tmp_path, monkeypatch):
         ],
     )
     write_shard_manifest(plan, work_dir / "manifest.json")
-    repository.write_metadata(
+    job_repository.create(
         BacktestListItem(
             id=backtest_id,
             created_at=datetime.now(UTC),
@@ -312,7 +334,8 @@ def test_argo_status_progress_from_shard_reports(tmp_path, monkeypatch):
             execution_backend="argo",
             workflow_name="backtest-argo-progress-test",
             workflow_namespace="backtest-workflows",
-        )
+        ),
+        paths=repository.artifact_paths(backtest_id),
     )
 
     body = client.get(f"/backtests/{backtest_id}/status").json()
@@ -336,10 +359,12 @@ def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):
             return "Succeeded"
 
     client = _build_client(tmp_path)
-    client.app.state.deps.backtest_jobs.argo_submitter = FakeArgoSubmitter()
-    repository = BacktestResultRepository(tmp_path / "api-results")
+    jobs = client.app.state.deps.backtest_jobs
+    jobs.argo_submitter = FakeArgoSubmitter()
+    repository = jobs.repository
+    job_repository = jobs.job_repository
     backtest_id = "argo-reconcile-test"
-    repository.write_metadata(
+    job_repository.create(
         BacktestListItem(
             id=backtest_id,
             created_at=datetime.now(UTC),
@@ -349,7 +374,8 @@ def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):
             execution_backend="argo",
             workflow_name="backtest-argo-reconcile-test",
             workflow_namespace="backtest-workflows",
-        )
+        ),
+        paths=repository.artifact_paths(backtest_id),
     )
     repository.save_report(
         backtest_id,
@@ -386,8 +412,64 @@ def test_list_backtests_returns_newest_first(tmp_path, monkeypatch):
     response = client.get("/backtests")
 
     assert response.status_code == 200
-    ids = [item["id"] for item in response.json()]
+    body = response.json()
+    ids = [item["id"] for item in body["items"]]
+    assert body["total"] == 2
+    assert body["page"] == 1
+    assert body["page_size"] == 25
     assert ids[:2] == [second, first]
+
+
+def test_list_backtests_supports_pagination(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    created_ids: list[str] = []
+    for _ in range(3):
+        backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+        _wait_for_terminal_status(client, backtest_id)
+        created_ids.append(backtest_id)
+        time.sleep(0.02)
+
+    page_one = client.get("/backtests", params={"page": 1, "page_size": 2})
+    page_two = client.get("/backtests", params={"page": 2, "page_size": 2})
+    beyond = client.get("/backtests", params={"page": 99, "page_size": 2})
+    invalid = client.get("/backtests", params={"page": 0, "page_size": 2})
+
+    assert page_one.status_code == 200
+    page_one_body = page_one.json()
+    assert page_one_body["total"] == 3
+    assert page_one_body["page"] == 1
+    assert page_one_body["page_size"] == 2
+    assert len(page_one_body["items"]) == 2
+    assert [item["id"] for item in page_one_body["items"]] == created_ids[-1:-3:-1]
+
+    assert page_two.status_code == 200
+    page_two_body = page_two.json()
+    assert page_two_body["page"] == 2
+    assert len(page_two_body["items"]) == 1
+    assert page_two_body["items"][0]["id"] == created_ids[0]
+
+    assert beyond.status_code == 200
+    assert beyond.json()["items"] == []
+
+    assert invalid.status_code == 422
+
+
+def test_completed_backtest_records_wall_runtime(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+    body = _wait_for_terminal_status(client, backtest_id)
+
+    assert body["started_at"] is not None
+    assert body["finished_at"] is not None
+    assert body["status"] == "completed"
+
+    list_item = client.get("/backtests", params={"page": 1, "page_size": 1}).json()["items"][0]
+    assert list_item["started_at"] is not None
+    assert list_item["finished_at"] is not None
 
 
 def test_create_backtest_rejects_invalid_dates_and_empty_selections(tmp_path):
@@ -448,6 +530,24 @@ def test_get_backtest_and_status_return_404_for_unknown_id(tmp_path):
     assert status_response.status_code == 404
 
 
+def test_list_backtests_returns_api_error_detail_on_unhandled_failure(tmp_path, monkeypatch):
+    client = _build_client(tmp_path)
+
+    def fail_count() -> int:
+        raise RuntimeError("relation backtest_jobs does not exist")
+
+    monkeypatch.setattr(
+        client.app.state.deps.backtest_jobs.job_repository,
+        "count",
+        fail_count,
+    )
+
+    response = TestClient(client.app, raise_server_exceptions=False).get("/backtests")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "relation backtest_jobs does not exist"
+
+
 def test_get_backtest_report_returns_json_file(tmp_path, monkeypatch):
     monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
     client = _build_client(tmp_path)
@@ -495,23 +595,25 @@ def test_get_backtest_config_returns_404_when_missing(tmp_path):
     assert response.status_code == 404
 
 
-def test_delete_backtest_removes_metadata_and_report(tmp_path, monkeypatch):
+def test_delete_backtest_removes_db_row_and_report(tmp_path, monkeypatch):
     monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
     client = _build_client(tmp_path)
-    repository = BacktestResultRepository(tmp_path / "api-results")
+    jobs = client.app.state.deps.backtest_jobs
+    repository = jobs.repository
+    job_repository = jobs.job_repository
 
     backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
     _wait_for_terminal_status(client, backtest_id)
 
     assert repository.report_path(backtest_id).exists()
-    assert repository.metadata_path(backtest_id).exists()
+    assert job_repository.get(backtest_id) is not None
     assert repository.config_path(backtest_id).exists()
 
     response = client.delete(f"/backtests/{backtest_id}")
 
     assert response.status_code == 204
     assert not repository.report_path(backtest_id).exists()
-    assert not repository.metadata_path(backtest_id).exists()
+    assert job_repository.get(backtest_id) is None
     assert not repository.config_path(backtest_id).exists()
     assert client.get(f"/backtests/{backtest_id}").status_code == 404
 

@@ -2,7 +2,19 @@ import type { BacktestFeed } from './backtests'
 import type { Resolution } from './marketData'
 
 export type ThemeModePreference = 'dark' | 'light' | 'system'
-export type ThemePreset = 'default' | 'alpine' | 'solaris' | 'aurora'
+export type ThemePreset =
+  | 'default'
+  | 'alpine'
+  | 'fjord'
+  | 'oslo'
+  | 'helsinki'
+  | 'polar'
+  | 'frost'
+  | 'silica'
+  | 'alto'
+  | 'glacial'
+  | 'solaris'
+  | 'aurora'
 export type DensityPreference = 'comfortable' | 'compact'
 export type LayoutWidthPreference = 'standard' | 'wide'
 export type TimeDisplayFormat = '12h' | '24h'
@@ -41,6 +53,17 @@ export interface ExecutionSettings {
   fill_model: 'close' | 'next_bar'
 }
 
+export type BacktestResultsColumnId =
+  | 'created'
+  | 'status'
+  | 'report'
+  | 'date_range'
+  | 'universe'
+  | 'runs'
+  | 'runtime'
+  | 'json'
+  | 'yaml'
+
 export interface BacktestDefaults {
   symbols_seed_list: string[]
   date_range_preset: DateRangePreset
@@ -49,6 +72,7 @@ export interface BacktestDefaults {
   broker: BrokerSettings
   analyzers: AnalyzerSettings
   execution: ExecutionSettings
+  results_table_columns: BacktestResultsColumnId[]
 }
 
 export type BacktestExecutionBackend = 'local' | 'argo'

@@ -22,7 +22,7 @@ from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_ma
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
 from app.settings import PlatformSettingsService
 from app.live import runtime as live_runtime
-from app.output import write_backtest_report_json
+from app.backtests.artifacts import persist_backtest_report
 from app.reporting import generate_html_report
 from app.risk.data.report_loader import CandidateLoadError
 from app.risk.dataset.builder import build_risk_dataset
@@ -106,7 +106,7 @@ def _cmd_run(
             ),
         )
     output = Path(output_path)
-    write_backtest_report_json(report, output)
+    persist_backtest_report(report, output)
 
     console.print(
         f"Completed {report.total_runs} runs: "
@@ -274,7 +274,7 @@ def _cmd_merge(manifest_path: str, output_path: str, backtest_id: str | None) ->
     except (ValueError, FileNotFoundError) as exc:
         print(f"Merge failed: {exc}")
         return 2
-    write_backtest_report_json(report, output)
+    persist_backtest_report(report, output)
     if backtest_id:
         from app.backtests.argo_reconciler import update_metadata_from_report
 
@@ -525,6 +525,45 @@ def argo_reconciler_command(
     once: bool = typer.Option(False, "--once", help="Run one reconciliation pass and exit"),
 ) -> None:
     raise typer.Exit(code=_cmd_argo_reconciler(output_dir, once))
+
+
+def _cmd_import_metadata(output_dir: str) -> int:
+    import json
+
+    from app.backtests.artifacts import default_artifact_paths
+    from app.backtests.models import BacktestListItem
+    from app.backtests.persistence import SqlAlchemyBacktestJobRepository
+    from app.db.session import get_session_factory
+
+    results_dir = Path(output_dir).resolve()
+    if not results_dir.is_dir():
+        print(f"Results directory not found: {results_dir}")
+        return 2
+
+    job_repository = SqlAlchemyBacktestJobRepository(get_session_factory())
+    imported = 0
+    for meta_path in sorted(results_dir.glob("*.meta.json")):
+        backtest_id = meta_path.name[: -len(".meta.json")]
+        if job_repository.get(backtest_id) is not None:
+            continue
+        try:
+            metadata = BacktestListItem.model_validate_json(meta_path.read_text(encoding="utf-8"))
+        except (ValueError, json.JSONDecodeError) as exc:
+            print(f"Skipping {meta_path.name}: {exc}")
+            continue
+        paths = default_artifact_paths(results_dir, backtest_id)
+        job_repository.create(metadata, paths=paths)
+        imported += 1
+
+    console.print(f"Imported {imported} legacy metadata file(s) into backtest_jobs")
+    return 0
+
+
+@app.command("import-metadata", help="Import legacy .meta.json files into the backtest_jobs table")
+def import_metadata_command(
+    output_dir: str = typer.Option(..., "--output-dir", help="Backtest results directory"),
+) -> None:
+    raise typer.Exit(code=_cmd_import_metadata(output_dir))
 
 
 @app.command("serve", help="Run the FastAPI market data service")

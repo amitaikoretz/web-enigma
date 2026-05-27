@@ -52,12 +52,9 @@ class _FakeResponse:
 
 
 def _build_client(tmp_path) -> TestClient:
-    app = create_app(
-        DataCacheConfig(directory=str(tmp_path)),
-        output_dir=tmp_path / "api-results",
-        log_file=tmp_path / "api.log",
-    )
-    return TestClient(app)
+    from tests.conftest import build_backtest_client
+
+    return build_backtest_client(tmp_path)
 
 
 def _build_contract_client(tmp_path) -> tuple[TestClient, sessionmaker[Session]]:
@@ -180,7 +177,7 @@ def test_get_server_info_returns_backtest_storage_paths(tmp_path):
     assert body["backtest_cache_dir"] == str(tmp_path.resolve())
     assert body["platform_settings_path"] == str(expected_results_dir / "settings" / "platform-settings.json")
     assert body["argo_workflows_enabled"] is False
-    assert body["backtest_execution_backend"] == "local"
+    assert body["backtest_execution_backend"] == "argo"
 
 
 def test_get_settings_returns_defaults_when_file_missing(tmp_path):
@@ -216,6 +213,50 @@ def test_put_settings_persists_round_trip(tmp_path):
     assert get_response.json()["platform_behavior"]["timezone"] == "America/New_York"
 
 
+def test_put_settings_persists_results_table_columns(tmp_path):
+    client = _build_client(tmp_path)
+    payload = client.get("/settings").json()
+    payload["backtest_defaults"]["results_table_columns"] = [
+        "created",
+        "status",
+        "runtime",
+        "runs",
+    ]
+
+    put_response = client.put("/settings", json=payload)
+    get_response = client.get("/settings")
+
+    assert put_response.status_code == 200
+    assert get_response.status_code == 200
+    assert get_response.json()["backtest_defaults"]["results_table_columns"] == [
+        "created",
+        "status",
+        "runtime",
+        "runs",
+    ]
+
+
+def test_put_settings_rejects_invalid_results_table_columns(tmp_path):
+    client = _build_client(tmp_path)
+    payload = client.get("/settings").json()
+    payload["backtest_defaults"]["results_table_columns"] = ["created", "not_a_column"]
+
+    response = client.put("/settings", json=payload)
+
+    assert response.status_code == 422
+    assert "results_table_columns" in response.text or "Unknown results table column" in response.text
+
+
+def test_put_settings_rejects_empty_results_table_columns(tmp_path):
+    client = _build_client(tmp_path)
+    payload = client.get("/settings").json()
+    payload["backtest_defaults"]["results_table_columns"] = []
+
+    response = client.put("/settings", json=payload)
+
+    assert response.status_code == 422
+
+
 def test_put_settings_rejects_invalid_execution_defaults(tmp_path):
     client = _build_client(tmp_path)
     payload = client.get("/settings").json()
@@ -245,7 +286,16 @@ def test_run_backtest_accepts_inline_yaml_and_writes_report(tmp_path):
     raw_report, report = _read_report(body["output_path"])
     assert report.status == "success"
     assert report.input_config_path is None
-    assert "equity_curve" not in raw_report["results"][0]
+    result = raw_report["results"][0]
+    assert "equity_curve" not in result
+    assert "candidates" not in result
+    assert "orders" not in result
+    assert "trades" not in result
+    assert "rejections" not in result
+    stem = Path(body["output_path"]).stem
+    output_dir = Path(body["output_path"]).parent
+    assert (output_dir / f"{stem}.orders.parquet").exists()
+    assert (output_dir / f"{stem}.trades.parquet").exists()
 
 
 def test_run_backtest_accepts_inline_json(tmp_path):
@@ -329,7 +379,7 @@ def test_run_backtest_write_failure_returns_500(tmp_path, monkeypatch):
     def fail_write(*args, **kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr("app.api.routes.backtests_run.write_backtest_report_json", fail_write)
+    monkeypatch.setattr("app.api.routes.backtests_run.persist_backtest_report", fail_write)
 
     response = client.post(
         "/backtests/run",

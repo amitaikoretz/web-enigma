@@ -29,7 +29,8 @@ export ALPACA_SECRET_KEY='your-secret'
 
 Notes:
 
-- `DATABASE_URL` is required for database-backed API endpoints and live runtime services.
+- `DATABASE_URL` is required for database-backed API endpoints, async backtest job APIs (`POST /backtests`, status polling, Argo launch), and live runtime services.
+- `BACKTEST_RESULTS_DIR` optionally overrides where backtest artifacts (JSON, YAML, Parquet) are written. Job metadata and status live in PostgreSQL (`backtest_jobs` table).
 - `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` are required for Alpaca-backed market data and Alpaca trading commands.
 - `BACKTEST_CACHE_DIR` optionally overrides the default parquet cache directory (`.cache/backtest-data`). In Kubernetes this is typically `/data/cache`.
 
@@ -41,7 +42,13 @@ Initialize the database schema:
 alembic upgrade head
 ```
 
-This creates the API and live runtime tables managed by Alembic.
+This creates the API, backtest job, and live runtime tables managed by Alembic.
+
+If you have legacy `{backtest_id}.meta.json` files from before the database migration, import them once:
+
+```bash
+backtest import-metadata --output-dir "${BACKTEST_RESULTS_DIR:-/tmp/backtest-api-results}"
+```
 
 ## First Successful Backtest
 

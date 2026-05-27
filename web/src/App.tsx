@@ -24,6 +24,8 @@ import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 
 import { ChartPage } from './components/ChartPage'
 import { useSettings } from './settings/useSettings'
+import { navActiveBackground, ThemeAtmosphere } from './theme/atmosphere'
+import { getAppBarBackground, getPageBackground } from './theme/registry'
 import { BacktestDetailPage } from './pages/BacktestDetailPage'
 import { BacktestsListPage } from './pages/BacktestsListPage'
 import { BacktestWizardPage } from './pages/BacktestWizardPage'
@@ -58,6 +60,12 @@ function NavButtons({
 }: {
   onNavigate?: () => void
 }) {
+  const theme = useTheme()
+  const activeBg = navActiveBackground(
+    theme.palette.mode === 'dark',
+    theme.palette.primary.main,
+  )
+
   return (
     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
       {NAV_ITEMS.map((item) => (
@@ -71,7 +79,7 @@ function NavButtons({
           sx={{
             justifyContent: { xs: 'flex-start', sm: 'center' },
             '&.active': {
-              bgcolor: 'rgba(255,255,255,0.12)',
+              bgcolor: activeBg,
             },
           }}
         >
@@ -101,6 +109,13 @@ function App() {
   }
 
   const isDarkMode = theme.palette.mode === 'dark'
+  const pageBackground = getPageBackground(
+    appearance.theme_preset,
+    theme.palette.mode,
+    appearance.reduced_motion,
+  )
+  const appBarBackground = getAppBarBackground(appearance.theme_preset, theme.palette.mode)
+  const contentPaddingY = appearance.theme_preset === 'polar' ? 4 : 3
 
   return (
     <Box
@@ -109,53 +124,25 @@ function App() {
         position: 'relative',
         minHeight: '100vh',
         bgcolor: 'background.default',
-        backgroundImage:
-          appearance.reduced_motion
-            ? 'none'
-            : appearance.theme_preset === 'alpine'
-              ? 'radial-gradient(circle at top left, rgba(2,132,199,0.06), transparent 35%), radial-gradient(circle at bottom right, rgba(30,58,138,0.04), transparent 45%)'
-              : appearance.theme_preset === 'solaris'
-                ? 'radial-gradient(circle at top right, rgba(245,158,11,0.05), transparent 40%)'
-                : appearance.theme_preset === 'aurora'
-                  ? 'none'
-                  : 'radial-gradient(circle at top left, rgba(108,184,255,0.14), transparent 30%), radial-gradient(circle at bottom right, rgba(14,165,183,0.12), transparent 28%)',
+        backgroundImage: pageBackground ?? 'none',
       }}
     >
-      {appearance.theme_preset === 'aurora' && (
-        <div className="aurora-bg">
-          <div
-            className="aurora-sphere sphere-1"
-            style={appearance.reduced_motion ? { animation: 'none' } : undefined}
-          />
-          <div
-            className="aurora-sphere sphere-2"
-            style={appearance.reduced_motion ? { animation: 'none' } : undefined}
-          />
-          <div
-            className="aurora-sphere sphere-3"
-            style={appearance.reduced_motion ? { animation: 'none' } : undefined}
-          />
-        </div>
-      )}
+      <ThemeAtmosphere
+        preset={appearance.theme_preset}
+        reducedMotion={appearance.reduced_motion}
+      />
 
       <AppBar
         position="sticky"
         elevation={0}
-        sx={(theme) => ({
+        sx={{
           position: 'relative',
           zIndex: 2,
           backdropFilter: 'blur(18px)',
-          bgcolor:
-            theme.palette.mode === 'dark'
-              ? appearance.theme_preset === 'aurora'
-                ? 'rgba(11,15,25,0.65)'
-                : 'rgba(13,17,23,0.82)'
-              : appearance.theme_preset === 'alpine'
-                ? 'rgba(241,245,249,0.8)'
-                : 'rgba(255,255,255,0.84)',
+          bgcolor: appBarBackground,
           color: theme.palette.text.primary,
           borderBottom: `1px solid ${theme.palette.divider}`,
-        })}
+        }}
       >
         <Toolbar sx={{ justifyContent: 'space-between', gap: 2 }}>
           <Stack spacing={0.25}>
@@ -200,7 +187,7 @@ function App() {
 
       <Container
         maxWidth={appearance.layout_width === 'wide' ? false : 'xl'}
-        sx={{ position: 'relative', zIndex: 1, py: 3 }}
+        sx={{ position: 'relative', zIndex: 1, py: contentPaddingY }}
       >
         <Routes>
           <Route path="/" element={<Navigate to={landingPage} replace />} />

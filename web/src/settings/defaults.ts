@@ -33,6 +33,17 @@ export const defaultPlatformSettings: PlatformSettings = {
     execution: {
       fill_model: 'close',
     },
+    results_table_columns: [
+      'created',
+      'status',
+      'report',
+      'date_range',
+      'universe',
+      'runs',
+      'runtime',
+      'json',
+      'yaml',
+    ],
   },
   live_defaults: {
     include_candidate_log: false,
@@ -42,7 +53,7 @@ export const defaultPlatformSettings: PlatformSettings = {
     auto_refresh_interval_seconds: 1.5,
     confirm_before_launch: false,
     preferred_landing_page: 'backtests',
-    backtest_execution_backend: 'local',
+    backtest_execution_backend: 'argo',
     argo_split_by: 'symbol_strategy',
   },
 }

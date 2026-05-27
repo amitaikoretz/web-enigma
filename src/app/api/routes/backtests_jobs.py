@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
 
 from app.api.deps import ApiDependencies, get_deps
@@ -9,6 +9,7 @@ from app.backtests import (
     BacktestCreateResponse,
     BacktestDetailResponse,
     BacktestListItem,
+    BacktestListPageResponse,
     BacktestStatusResponse,
 )
 
@@ -31,9 +32,13 @@ def create_backtest(
     return deps.backtest_jobs.submit(payload)
 
 
-@router.get("", response_model=list[BacktestListItem])
-def list_backtests(deps: ApiDependencies = Depends(get_deps)) -> list[BacktestListItem]:
-    return deps.backtest_jobs.list_backtests()
+@router.get("", response_model=BacktestListPageResponse)
+def list_backtests(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    deps: ApiDependencies = Depends(get_deps),
+) -> BacktestListPageResponse:
+    return deps.backtest_jobs.list_backtests_page(page=page, page_size=page_size)
 
 
 @router.get("/{backtest_id}", response_model=BacktestDetailResponse)

@@ -108,6 +108,15 @@ class BacktestListItem(BaseModel):
     execution_backend: BacktestExecutionBackend = "local"
     workflow_name: str | None = None
     workflow_namespace: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+
+
+class BacktestListPageResponse(BaseModel):
+    items: list[BacktestListItem]
+    total: int
+    page: int
+    page_size: int
 
 
 class BacktestCreateResponse(BaseModel):

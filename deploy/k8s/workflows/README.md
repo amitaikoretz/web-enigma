@@ -53,15 +53,17 @@ When launching via the API, the config YAML is embedded in the workflow as a bas
 
 ## Credentials secret
 
-Workflow pods mount `app-secrets` for Alpaca credentials. Create or copy it into `backtest-workflows`:
+Workflow pods mount `app-secrets` for Alpaca credentials. Sync from your local shell or `.env` (same as the main app stack):
 
 ```bash
-kubectl create secret generic app-secrets -n backtest-workflows \
-  --from-literal=ALPACA_API_KEY='your-key' \
-  --from-literal=ALPACA_SECRET_KEY='your-secret'
+export ALPACA_API_KEY='your-key'
+export ALPACA_SECRET_KEY='your-secret'
+make sync-app-secrets
 ```
 
-If you already have the secret in `backtest`:
+This updates `app-secrets` in **`backtest`** and copies it into **`backtest-workflows`**. New workflow pods pick up the secret immediately; re-submit workflows that were already running before the sync.
+
+If you only need a manual copy from an existing `backtest` secret:
 
 ```bash
 kubectl get secret app-secrets -n backtest -o yaml \

@@ -23,9 +23,12 @@ import {
 import { useEffect, useState } from 'react'
 
 import { fetchServerInfo } from '../api/serverInfo'
+import { BacktestResultsColumnSettings } from '../components/BacktestResultsColumnSettings'
+import { ThemePresetSelect } from '../components/ThemePresetSelect'
 import { defaultPlatformSettings } from '../settings/defaults'
+import { suggestedThemeModeForPreset } from '../theme/registry'
 import { useSettings } from '../settings/useSettings'
-import type { AppearanceSettings, PlatformSettings } from '../types/settings'
+import type { AppearanceSettings, PlatformSettings, ThemePreset } from '../types/settings'
 import type { ServerInfo } from '../types/serverInfo'
 
 type SettingsTab = 'appearance' | 'backtests' | 'behavior'
@@ -77,6 +80,21 @@ export function SettingsPage() {
     setSaveMessage(null)
     patchAppearance({ [key]: value })
   }
+
+  const handleThemePresetChange = (preset: ThemePreset) => {
+    setSaveMessage(null)
+    const suggestedMode = suggestedThemeModeForPreset(preset)
+    if (suggestedMode) {
+      patchAppearance({
+        theme_preset: preset,
+        theme_mode: suggestedMode,
+      })
+      return
+    }
+    patchAppearance({ theme_preset: preset })
+  }
+
+  const themeModeLocked = suggestedThemeModeForPreset(appearance.theme_preset) !== null
 
   const handleDraftChange = (next: PlatformSettings) => {
     setSaveMessage(null)
@@ -137,21 +155,20 @@ export function SettingsPage() {
               subtitle="Changes here apply immediately and stay on this device."
             />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
-              <SelectField
-                label="Theme preset"
+              <ThemePresetSelect
                 value={appearance.theme_preset}
-                onChange={(value) => handleAppearanceChange('theme_preset', value as AppearanceSettings['theme_preset'])}
-                options={[
-                  ['default', 'Default Standard'],
-                  ['alpine', 'Alpine Frost (Glacial Light)'],
-                  ['solaris', 'Solaris Amber (Basalt Dark)'],
-                  ['aurora', 'Aurora Mirage (Glassmorphic Glow)'],
-                ]}
+                onChange={handleThemePresetChange}
               />
               <SelectField
                 label="Theme mode"
                 value={appearance.theme_mode}
                 onChange={(value) => handleAppearanceChange('theme_mode', value as AppearanceSettings['theme_mode'])}
+                disabled={themeModeLocked}
+                helperText={
+                  themeModeLocked
+                    ? 'Theme mode is fixed for the selected preset.'
+                    : undefined
+                }
                 options={[
                   ['dark', 'Dark'],
                   ['light', 'Light'],
@@ -257,7 +274,7 @@ export function SettingsPage() {
             <TextField
               label="Backtest storage directory"
               value={serverInfo?.backtest_results_dir ?? (loading ? 'Loading…' : 'Unavailable')}
-              helperText="Reports (.json), metadata (.meta.json), and saved configs (.yaml) are loaded and written here by the API server."
+              helperText="Reports (.json), Parquet sidecars, and saved configs (.yaml) are stored here; job status is tracked in PostgreSQL."
               slotProps={{
                 input: {
                   readOnly: true,
@@ -497,6 +514,20 @@ export function SettingsPage() {
               Candidate logging records entry candidates (traded and rejected) for risk-model dataset
               building. It increases backtest output size.
             </Typography>
+
+            <BacktestResultsColumnSettings
+              visibleColumns={draft.backtest_defaults.results_table_columns}
+              onChange={(next) =>
+                handleDraftChange({
+                  ...draft,
+                  backtest_defaults: {
+                    ...draft.backtest_defaults,
+                    results_table_columns: next,
+                  },
+                })
+              }
+            />
+
             <Stack spacing={2}>
               <Typography variant="subtitle1">Live trading</Typography>
               <FormControlLabel
@@ -675,12 +706,14 @@ function SelectField({
   onChange,
   options,
   disabled = false,
+  helperText,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   options: Array<[string, string]>
   disabled?: boolean
+  helperText?: string
 }) {
   return (
     <FormControl fullWidth disabled={disabled}>
@@ -692,6 +725,11 @@ function SelectField({
           </MenuItem>
         ))}
       </Select>
+      {helperText && (
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, ml: 1.75 }}>
+          {helperText}
+        </Typography>
+      )}
     </FormControl>
   )
 }

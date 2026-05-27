@@ -16,8 +16,6 @@ secretGenerator:
   - name: app-secrets
     literals:
       - DATABASE_URL=postgresql+psycopg://postgres:postgres@postgres:5432/backtest
-      - ALPACA_API_KEY=
-      - ALPACA_SECRET_KEY=
 
 generatorOptions:
   disableNameSuffixHash: true

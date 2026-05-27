@@ -216,6 +216,41 @@ class ReconciliationRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class BacktestJob(Base):
+    __tablename__ = "backtest_jobs"
+    __table_args__ = (
+        Index("ix_backtest_jobs_status_updated_at", "status", "updated_at"),
+        Index("ix_backtest_jobs_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    report_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    total_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed_runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    successful_runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    failed_runs: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    selection: Mapped[dict | None] = mapped_column(json_type, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_backend: Mapped[str] = mapped_column(String(16), nullable=False, default="local", server_default="local")
+    workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    workflow_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    config_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    report_json_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    report_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidates_json_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidates_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    equity_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    orders_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    trades_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejections_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class WorkerEvent(Base):
     __tablename__ = "worker_events"
     __table_args__ = (

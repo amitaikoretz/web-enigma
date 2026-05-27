@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from alembic import command
@@ -7,12 +8,14 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 
-def test_alembic_upgrade_creates_trading_contracts_table(tmp_path):
+def test_alembic_upgrade_creates_trading_contracts_table(tmp_path, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     database_path = tmp_path / "contracts.db"
     alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
     config = Config(str(alembic_ini))
     config.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
+    os.environ.pop("DATABASE_URL", None)
 
     command.upgrade(config, "head")
 
@@ -48,6 +51,35 @@ def test_alembic_upgrade_creates_trading_contracts_table(tmp_path):
     assert "ix_trading_contracts_start_datetime" in indexes
     assert "ix_trading_contracts_end_datetime" in indexes
     assert runtime_tables.issubset(set(inspector.get_table_names()))
+
+
+def test_alembic_upgrade_creates_backtest_jobs_table(tmp_path, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    database_path = tmp_path / "backtests.db"
+    alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(alembic_ini))
+    config.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
+    os.environ.pop("DATABASE_URL", None)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(f"sqlite:///{database_path}", future=True)
+    inspector = inspect(engine)
+    assert "backtest_jobs" in inspector.get_table_names()
+    columns = {column["name"] for column in inspector.get_columns("backtest_jobs")}
+    assert {
+        "id",
+        "status",
+        "report_json_path",
+        "candidates_parquet_path",
+        "equity_parquet_path",
+        "orders_parquet_path",
+        "trades_parquet_path",
+        "rejections_parquet_path",
+        "created_at",
+        "updated_at",
+    }.issubset(columns)
 
     with engine.begin() as connection:
         connection.execute(

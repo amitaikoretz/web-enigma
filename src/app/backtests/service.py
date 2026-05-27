@@ -10,7 +10,14 @@ from typing import Any
 
 import yaml
 
+from sqlalchemy.orm import Session, sessionmaker
+
 from app.backtests.argo import ArgoWorkflowSubmitter
+from app.backtests.artifacts import (
+    default_artifact_paths,
+    hydrate_report_from_artifacts,
+    write_report_artifacts,
+)
 from app.backtests.models import (
     ArgoSplitBy,
     BacktestArgoLaunchRequest,
@@ -19,9 +26,11 @@ from app.backtests.models import (
     BacktestCreateResponse,
     BacktestDetailResponse,
     BacktestListItem,
+    BacktestListPageResponse,
     BacktestSelectionSummary,
     BacktestStatusResponse,
 )
+from app.backtests.persistence import BacktestArtifactPaths, SqlAlchemyBacktestJobRepository
 from app.backtests.sharding import resolve_split_by
 from app.config.models import (
     AnalyzerConfig,
@@ -47,6 +56,26 @@ class BacktestAlreadyExistsError(RuntimeError):
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _mark_running(item: BacktestListItem) -> BacktestListItem:
+    current = item.model_copy(deep=True)
+    now = _utc_now()
+    current.status = "running"
+    current.updated_at = now
+    if current.started_at is None:
+        current.started_at = now
+    return current
+
+
+def _mark_terminal(item: BacktestListItem, *, status: str) -> BacktestListItem:
+    current = item.model_copy(deep=True)
+    now = _utc_now()
+    current.status = status  # type: ignore[assignment]
+    current.updated_at = now
+    if current.finished_at is None:
+        current.finished_at = now
+    return current
 
 
 def config_to_yaml_text(config_raw: dict[str, Any]) -> str:
@@ -211,7 +240,7 @@ def _progress_pct(completed_runs: int, total_runs: int, status: str) -> float:
     return min(100.0, (completed_runs / total_runs) * 100.0)
 
 
-def compute_completed_runs(metadata: BacktestListItem, repository: BacktestResultRepository) -> int:
+def compute_completed_runs(metadata: BacktestListItem, repository: BacktestArtifactStore) -> int:
     if metadata.status in {"completed", "failed"}:
         return metadata.completed_runs
     if metadata.execution_backend != "argo":
@@ -246,7 +275,45 @@ def build_status_response(metadata: BacktestListItem, completed_runs: int) -> Ba
     return BacktestStatusResponse(**payload)
 
 
-class BacktestResultRepository:
+def finalize_job_from_report(
+    *,
+    backtest_id: str,
+    report: BacktestReport,
+    artifact_store: BacktestArtifactStore,
+    job_repository: SqlAlchemyBacktestJobRepository,
+    metadata: BacktestListItem | None = None,
+) -> BacktestListItem:
+    current = metadata.model_copy(deep=True) if metadata is not None else BacktestListItem(
+        id=backtest_id,
+        created_at=_utc_now(),
+        updated_at=_utc_now(),
+        status="completed",
+        execution_backend="argo",
+        total_runs=report.total_runs,
+        selection=_selection_from_report(report),
+    )
+    current.status = "completed" if report.status != "failure" else "failed"
+    current.report_status = report.status
+    current.completed_runs = report.total_runs
+    current.successful_runs = report.successful_runs
+    current.failed_runs = report.failed_runs
+    current.error_message = None if report.failed_runs == 0 else f"{report.failed_runs} run(s) failed"
+    current.updated_at = _utc_now()
+    if current.finished_at is None:
+        current.finished_at = current.updated_at
+
+    artifact_store.save_report(backtest_id, report)
+    paths = default_artifact_paths(artifact_store.output_dir, backtest_id)
+    written = write_report_artifacts(report, paths=paths)
+    if job_repository.get(backtest_id) is None:
+        job_repository.create(current, paths=written)
+    else:
+        job_repository.update(current)
+        job_repository.update_paths(backtest_id, written)
+    return current
+
+
+class BacktestArtifactStore:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
         self._lock = threading.Lock()
@@ -257,35 +324,14 @@ class BacktestResultRepository:
     def report_path(self, backtest_id: str) -> Path:
         return self.output_dir / f"{backtest_id}.json"
 
-    def metadata_path(self, backtest_id: str) -> Path:
-        return self.output_dir / f"{backtest_id}.meta.json"
-
     def config_path(self, backtest_id: str) -> Path:
         return self.output_dir / f"{backtest_id}.yaml"
 
-    def exists(self, backtest_id: str) -> bool:
-        return (
-            self.metadata_path(backtest_id).exists()
-            or self.report_path(backtest_id).exists()
-            or self.config_path(backtest_id).exists()
-        )
+    def artifact_paths(self, backtest_id: str) -> BacktestArtifactPaths:
+        return default_artifact_paths(self.output_dir, backtest_id)
 
-    def write_metadata(self, item: BacktestListItem) -> None:
-        self.ensure_ready()
-        path = self.metadata_path(item.id)
-        with self._lock:
-            temp_path = path.with_suffix(".tmp")
-            temp_path.write_text(item.model_dump_json(indent=2), encoding="utf-8")
-            temp_path.replace(path)
-
-    def load_metadata(self, backtest_id: str) -> BacktestListItem | None:
-        path = self.metadata_path(backtest_id)
-        if not path.exists():
-            return None
-        return BacktestListItem.model_validate_json(path.read_text(encoding="utf-8"))
-
-    def load_report(self, backtest_id: str) -> BacktestReport | None:
-        path = self.report_path(backtest_id)
+    def load_report(self, backtest_id: str, *, report_json_path: str | None = None) -> BacktestReport | None:
+        path = Path(report_json_path) if report_json_path else self.report_path(backtest_id)
         if not path.exists():
             return None
         return BacktestReport.model_validate_json(path.read_text(encoding="utf-8"))
@@ -304,8 +350,8 @@ class BacktestResultRepository:
         temp_path.write_text(config_to_yaml_text(config_raw), encoding="utf-8")
         temp_path.replace(path)
 
-    def resolve_config_yaml(self, backtest_id: str) -> str | None:
-        path = self.config_path(backtest_id)
+    def resolve_config_yaml(self, backtest_id: str, *, config_path: str | None = None) -> str | None:
+        path = Path(config_path) if config_path else self.config_path(backtest_id)
         if path.exists():
             return path.read_text(encoding="utf-8")
 
@@ -314,88 +360,66 @@ class BacktestResultRepository:
             return None
         return config_to_yaml_text(report.input_config)
 
-    def list_backtests(self) -> list[BacktestListItem]:
-        self.ensure_ready()
-        ids: set[str] = set()
-        for path in self.output_dir.glob("*.meta.json"):
-            ids.add(path.name[: -len(".meta.json")])
-        for path in self.output_dir.glob("*.json"):
-            if path.name.endswith(".meta.json"):
-                continue
-            ids.add(path.stem)
-
-        items: list[BacktestListItem] = []
-        for backtest_id in ids:
-            item = self.get_metadata(backtest_id)
-            if item is not None:
-                items.append(item)
-
-        items.sort(key=lambda item: item.created_at, reverse=True)
-        return items
-
-    def get_metadata(self, backtest_id: str) -> BacktestListItem | None:
-        metadata = self.load_metadata(backtest_id)
-        if metadata is not None:
-            return metadata
-
-        report = self.load_report(backtest_id)
-        if report is None:
-            return None
-        report_path = self.report_path(backtest_id)
-        stat = report_path.stat()
-        created_at = datetime.fromtimestamp(stat.st_ctime, UTC)
-        updated_at = datetime.fromtimestamp(stat.st_mtime, UTC)
-        return BacktestListItem(
-            id=backtest_id,
-            created_at=created_at,
-            updated_at=updated_at,
-            status="completed",
-            report_status=report.status,
-            total_runs=report.total_runs,
-            completed_runs=report.total_runs,
-            successful_runs=report.successful_runs,
-            failed_runs=report.failed_runs,
-            selection=_selection_from_report(report),
-            error_message=None,
-        )
-
-    def get_detail(self, backtest_id: str) -> BacktestDetailResponse | None:
-        metadata = self.get_metadata(backtest_id)
-        if metadata is None:
-            return None
-        report_path = self.report_path(backtest_id)
-        return BacktestDetailResponse(
-            metadata=metadata,
-            output_path=str(report_path) if report_path.exists() else None,
-            report=self.load_report(backtest_id),
-        )
-
-    def delete(self, backtest_id: str) -> bool:
-        if not self.exists(backtest_id):
-            return False
+    def delete_artifacts(self, backtest_id: str, paths: BacktestArtifactPaths | None = None) -> bool:
+        resolved_paths = paths or self.artifact_paths(backtest_id)
+        candidates = [
+            resolved_paths.config_path,
+            resolved_paths.report_json_path,
+            resolved_paths.report_parquet_path,
+            resolved_paths.candidates_json_path,
+            resolved_paths.candidates_parquet_path,
+            resolved_paths.equity_parquet_path,
+            resolved_paths.orders_parquet_path,
+            resolved_paths.trades_parquet_path,
+            resolved_paths.rejections_parquet_path,
+            resolved_paths.manifest_path,
+            str(self.report_path(backtest_id)),
+            str(self.config_path(backtest_id)),
+        ]
+        shard_dir = self.output_dir / backtest_id
+        deleted = False
         with self._lock:
-            for path in (
-                self.report_path(backtest_id),
-                self.metadata_path(backtest_id),
-                self.config_path(backtest_id),
-            ):
-                if path.exists():
+            for candidate in candidates:
+                if not candidate:
+                    continue
+                path = Path(candidate)
+                if path.is_file() and path.exists():
                     path.unlink()
-        return True
+                    deleted = True
+            if shard_dir.is_dir():
+                import shutil
+
+                shutil.rmtree(shard_dir, ignore_errors=True)
+                deleted = True
+        return deleted
+
+
+# Backward-compatible alias for tests and external callers.
+BacktestResultRepository = BacktestArtifactStore
 
 
 class BacktestJobService:
     def __init__(
         self,
-        repository: BacktestResultRepository,
+        repository: BacktestArtifactStore,
+        job_repository: SqlAlchemyBacktestJobRepository,
         cache_config: DataCacheConfig | None = None,
         settings_service: PlatformSettingsService | None = None,
         argo_submitter: ArgoWorkflowSubmitter | None = None,
     ):
         self.repository = repository
+        self.job_repository = job_repository
         self.cache_config = cache_config or DataCacheConfig()
         self.settings_service = settings_service
         self.argo_submitter = argo_submitter or ArgoWorkflowSubmitter()
+
+    def _job_exists(self, backtest_id: str) -> bool:
+        if self.job_repository.get(backtest_id) is not None:
+            return True
+        return (
+            self.repository.report_path(backtest_id).exists()
+            or self.repository.config_path(backtest_id).exists()
+        )
 
     def _platform_settings(self) -> PlatformSettings:
         if self.settings_service is None:
@@ -416,7 +440,8 @@ class BacktestJobService:
             total_runs=len(config.runs),
             selection=_build_selection_summary(payload),
         )
-        self.repository.write_metadata(metadata)
+        paths = default_artifact_paths(self.repository.output_dir, backtest_id)
+        self.job_repository.create(metadata, paths=paths)
         self.repository.save_config_yaml(backtest_id, config_raw)
 
         if platform_settings.platform_behavior.backtest_execution_backend == "argo":
@@ -456,7 +481,7 @@ class BacktestJobService:
 
         platform_settings = self._platform_settings()
         backtest_id = payload.backtest_id or uuid.uuid4().hex
-        if self.repository.exists(backtest_id):
+        if self._job_exists(backtest_id):
             raise BacktestAlreadyExistsError(f"Backtest '{backtest_id}' already exists")
 
         if payload.config_text is not None:
@@ -494,7 +519,8 @@ class BacktestJobService:
             selection=_selection_from_config_raw(config_raw),
             execution_backend="argo",
         )
-        self.repository.write_metadata(metadata)
+        paths = default_artifact_paths(self.repository.output_dir, backtest_id)
+        self.job_repository.create(metadata, paths=paths)
         return self._launch_argo_workflow(
             backtest_id=backtest_id,
             config_path=resolved_config_path,
@@ -509,23 +535,28 @@ class BacktestJobService:
         config_raw = yaml.safe_load(self.repository.config_path(backtest_id).read_text(encoding="utf-8"))
         if not isinstance(config_raw, dict):
             raise ValueError("Config root must be an object")
-        metadata = self.repository.load_metadata(backtest_id)
+        metadata = self.job_repository.get(backtest_id)
         if metadata is None:
             config = BacktestConfig.model_validate(config_raw)
+            created_at = _utc_now()
             metadata = BacktestListItem(
                 id=backtest_id,
-                created_at=_utc_now(),
-                updated_at=_utc_now(),
+                created_at=created_at,
+                updated_at=created_at,
                 status="pending",
                 total_runs=len(config.runs),
                 selection=_selection_from_config_raw(config_raw),
                 execution_backend="argo",
             )
+            paths = default_artifact_paths(self.repository.output_dir, backtest_id)
+            self.job_repository.create(metadata, paths=paths)
         else:
             metadata = metadata.model_copy(deep=True)
             metadata.execution_backend = "argo"
             metadata.status = "pending"
             metadata.updated_at = _utc_now()
+            metadata.finished_at = None
+            self.job_repository.update(metadata)
 
         platform_settings = self._platform_settings()
         resolved_split = resolve_split_by(
@@ -533,7 +564,6 @@ class BacktestJobService:
             override=split_by,
             platform_default=platform_settings.platform_behavior.argo_split_by,
         )
-        self.repository.write_metadata(metadata)
         return self._launch_argo_workflow(
             backtest_id=backtest_id,
             config_path=str(self.repository.config_path(backtest_id).resolve()),
@@ -578,10 +608,9 @@ class BacktestJobService:
         current.execution_backend = "argo"
         current.workflow_name = workflow_name
         current.workflow_namespace = workflow_namespace
-        current.status = "running"
         current.total_runs = len(BacktestConfig.model_validate(config_raw).runs)
-        current.updated_at = _utc_now()
-        self.repository.write_metadata(current)
+        current = _mark_running(current)
+        self.job_repository.update(current)
 
         return BacktestArgoLaunchResponse(
             backtest_id=backtest_id,
@@ -594,26 +623,46 @@ class BacktestJobService:
             output_path=workflow_output_path,
         )
 
-    def list_backtests(self) -> list[BacktestListItem]:
-        items = self.repository.list_backtests()
-        refreshed: list[BacktestListItem] = []
-        for item in items:
-            if item.status in {"pending", "running"}:
-                if item.execution_backend == "argo" and item.workflow_name:
-                    from app.backtests.argo_reconciler import reconcile_backtest
+    def _refresh_list_item(self, item: BacktestListItem) -> BacktestListItem:
+        refreshed = item
+        if item.status in {"pending", "running"}:
+            if item.execution_backend == "argo" and item.workflow_name:
+                from app.backtests.argo_reconciler import reconcile_backtest
 
-                    updated = reconcile_backtest(item.id, self.repository, self.argo_submitter)
-                    if updated is not None:
-                        item = updated
-                completed_runs = compute_completed_runs(item, self.repository)
-                if completed_runs != item.completed_runs:
-                    item = item.model_copy(deep=True)
-                    item.completed_runs = completed_runs
-            refreshed.append(item)
+                updated = reconcile_backtest(
+                    item.id,
+                    self.repository,
+                    self.job_repository,
+                    self.argo_submitter,
+                )
+                if updated is not None:
+                    refreshed = updated
+            completed_runs = compute_completed_runs(refreshed, self.repository)
+            if completed_runs != refreshed.completed_runs:
+                refreshed = refreshed.model_copy(deep=True)
+                refreshed.completed_runs = completed_runs
         return refreshed
 
+    def list_backtests_page(self, *, page: int, page_size: int) -> BacktestListPageResponse:
+        total = self.job_repository.count()
+        offset = (page - 1) * page_size
+        items = self.job_repository.list_recent_page(offset=offset, limit=page_size)
+        refreshed = [self._refresh_list_item(item) for item in items]
+        return BacktestListPageResponse(
+            items=refreshed,
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
+    def list_backtests(self) -> list[BacktestListItem]:
+        total = self.job_repository.count()
+        if total == 0:
+            return []
+        return self.list_backtests_page(page=1, page_size=total).items
+
     def get_status(self, backtest_id: str) -> BacktestStatusResponse | None:
-        metadata = self.repository.get_metadata(backtest_id)
+        metadata = self.job_repository.get(backtest_id)
         if metadata is None:
             return None
 
@@ -624,7 +673,12 @@ class BacktestJobService:
         ):
             from app.backtests.argo_reconciler import reconcile_backtest
 
-            updated = reconcile_backtest(backtest_id, self.repository, self.argo_submitter)
+            updated = reconcile_backtest(
+                backtest_id,
+                self.repository,
+                self.job_repository,
+                self.argo_submitter,
+            )
             if updated is not None:
                 metadata = updated
 
@@ -632,16 +686,29 @@ class BacktestJobService:
         return build_status_response(metadata, completed_runs)
 
     def get_detail(self, backtest_id: str) -> BacktestDetailResponse | None:
-        return self.repository.get_detail(backtest_id)
+        metadata = self.job_repository.get(backtest_id)
+        if metadata is None:
+            return None
+        paths = self.job_repository.get_paths(backtest_id) or self.repository.artifact_paths(backtest_id)
+        report = self.repository.load_report(backtest_id, report_json_path=paths.report_json_path)
+        if report is not None:
+            report = hydrate_report_from_artifacts(report, paths=paths)
+        report_path = Path(paths.report_json_path) if paths.report_json_path else self.repository.report_path(backtest_id)
+        return BacktestDetailResponse(
+            metadata=metadata,
+            output_path=str(report_path) if report_path.exists() else None,
+            report=report,
+        )
 
     def delete(self, backtest_id: str) -> bool:
-        return self.repository.delete(backtest_id)
+        paths = self.job_repository.get_paths(backtest_id)
+        deleted_db = self.job_repository.delete(backtest_id)
+        deleted_files = self.repository.delete_artifacts(backtest_id, paths)
+        return deleted_db or deleted_files
 
     def _run_job(self, metadata: BacktestListItem, config: BacktestConfig, config_raw: dict[str, Any]) -> None:
-        current = metadata.model_copy(deep=True)
-        current.status = "running"
-        current.updated_at = _utc_now()
-        self.repository.write_metadata(current)
+        current = _mark_running(metadata)
+        self.job_repository.update(current)
 
         def mark_progress(result: RunResult) -> None:
             nonlocal current
@@ -651,7 +718,7 @@ class BacktestJobService:
             else:
                 current.failed_runs += 1
             current.updated_at = _utc_now()
-            self.repository.write_metadata(current)
+            self.job_repository.update(current)
 
         try:
             configure_strategy_logging()
@@ -667,11 +734,13 @@ class BacktestJobService:
             )
             self.repository.save_report(current.id, report)
             self.repository.save_config_yaml(current.id, config_raw)
+            paths = default_artifact_paths(self.repository.output_dir, current.id)
+            written = write_report_artifacts(report, paths=paths)
+            self.job_repository.update_paths(current.id, written)
         except Exception as exc:  # noqa: BLE001
-            current.status = "failed"
+            current = _mark_terminal(current, status="failed")
             current.error_message = str(exc)
-            current.updated_at = _utc_now()
-            self.repository.write_metadata(current)
+            self.job_repository.update(current)
             return
 
         current.status = "completed"
@@ -680,5 +749,5 @@ class BacktestJobService:
         current.successful_runs = report.successful_runs
         current.failed_runs = report.failed_runs
         current.error_message = None
-        current.updated_at = _utc_now()
-        self.repository.write_metadata(current)
+        current = _mark_terminal(current, status="completed")
+        self.job_repository.update(current)

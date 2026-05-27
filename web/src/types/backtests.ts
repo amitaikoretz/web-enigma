@@ -213,6 +213,15 @@ export interface BacktestListItem {
   execution_backend?: BacktestExecutionBackend
   workflow_name?: string | null
   workflow_namespace?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+}
+
+export interface BacktestListPageResponse {
+  items: BacktestListItem[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export interface BacktestCreateResponse {
