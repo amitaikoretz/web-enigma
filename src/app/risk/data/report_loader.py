@@ -66,7 +66,7 @@ def _benchmark_symbol(strategy_id: str, params: dict[str, Any], default: str) ->
     return None
 
 
-def _enrich_candidate(
+def enrich_candidate_from_run(
     candidate: CandidateRecord,
     *,
     result: RunResult,
@@ -141,7 +141,7 @@ def load_candidates_from_report(
             continue
         run_cfg = _run_config_for_result(report, result)
         for candidate in result.candidates:
-            row = _enrich_candidate(
+            row = enrich_candidate_from_run(
                 candidate,
                 result=result,
                 run_cfg=run_cfg,

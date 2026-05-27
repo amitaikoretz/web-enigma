@@ -15,7 +15,9 @@ from app.output.models import (
     BacktestReport,
     CandidateRecord,
     EquityPoint,
+    FeatureSnapshotRecord,
     OrderRecord,
+    OutcomeLabelRecord,
     RejectionRecord,
     RunResult,
     TradeRecord,
@@ -25,29 +27,127 @@ RecordT = TypeVar("RecordT")
 
 ArtifactFormat = Literal["json", "yaml", "parquet", "other"]
 ArtifactRole = Literal["primary", "sidecar", "manifest", "shard"]
+_INTERNAL_ARTIFACT_ROLES: frozenset[ArtifactRole] = frozenset({"manifest", "shard"})
 
 
 @dataclass(frozen=True)
 class _ArtifactSpec:
     kind: str
     label: str
+    description: str
     format: ArtifactFormat
     role: ArtifactRole
     path_attr: str
 
 
 _KNOWN_ARTIFACTS: tuple[_ArtifactSpec, ...] = (
-    _ArtifactSpec("config", "Submitted config", "yaml", "primary", "config_path"),
-    _ArtifactSpec("report_json", "Report summary", "json", "primary", "report_json_path"),
-    _ArtifactSpec("report_parquet", "Run summaries", "parquet", "sidecar", "report_parquet_path"),
-    _ArtifactSpec("candidates_json", "Entry candidates (JSON)", "json", "sidecar", "candidates_json_path"),
-    _ArtifactSpec("candidates_parquet", "Entry candidates", "parquet", "sidecar", "candidates_parquet_path"),
-    _ArtifactSpec("equity_parquet", "Equity curves", "parquet", "sidecar", "equity_parquet_path"),
-    _ArtifactSpec("orders_parquet", "Orders", "parquet", "sidecar", "orders_parquet_path"),
-    _ArtifactSpec("trades_parquet", "Trades", "parquet", "sidecar", "trades_parquet_path"),
-    _ArtifactSpec("rejections_parquet", "Signal rejections", "parquet", "sidecar", "rejections_parquet_path"),
-    _ArtifactSpec("manifest_json", "Shard manifest", "json", "manifest", "manifest_path"),
+    _ArtifactSpec(
+        "config",
+        "Submitted config",
+        "Input YAML written when this backtest was submitted",
+        "yaml",
+        "primary",
+        "config_path",
+    ),
+    _ArtifactSpec(
+        "report_json",
+        "Report summary",
+        "Slim JSON index; detailed run data lives in sidecar files",
+        "json",
+        "primary",
+        "report_json_path",
+    ),
+    _ArtifactSpec(
+        "report_parquet",
+        "Run summaries",
+        "Per-run headline metrics: return, Sharpe, max drawdown, and trade counts",
+        "parquet",
+        "sidecar",
+        "report_parquet_path",
+    ),
+    _ArtifactSpec(
+        "candidates_json",
+        "Entry candidates (JSON)",
+        "Strategy entry signals evaluated each bar; hydrates the Candidates tab",
+        "json",
+        "sidecar",
+        "candidates_json_path",
+    ),
+    _ArtifactSpec(
+        "candidates_parquet",
+        "Entry candidates",
+        "Strategy entry signals evaluated each bar; hydrates the Candidates tab",
+        "parquet",
+        "sidecar",
+        "candidates_parquet_path",
+    ),
+    _ArtifactSpec(
+        "equity_parquet",
+        "Equity curves",
+        "Portfolio value time series per run; used in run and strategy charts",
+        "parquet",
+        "sidecar",
+        "equity_parquet_path",
+    ),
+    _ArtifactSpec(
+        "orders_parquet",
+        "Orders",
+        "Broker orders submitted during each run",
+        "parquet",
+        "sidecar",
+        "orders_parquet_path",
+    ),
+    _ArtifactSpec(
+        "trades_parquet",
+        "Trades",
+        "Closed trade records with PnL, size, and exit reason",
+        "parquet",
+        "sidecar",
+        "trades_parquet_path",
+    ),
+    _ArtifactSpec(
+        "rejections_parquet",
+        "Signal rejections",
+        "Filter and auditor reasons a signal was blocked",
+        "parquet",
+        "sidecar",
+        "rejections_parquet_path",
+    ),
+    _ArtifactSpec(
+        "labels_parquet",
+        "Outcome labels",
+        "Risk-model outcome labels for candidate events",
+        "parquet",
+        "sidecar",
+        "labels_parquet_path",
+    ),
+    _ArtifactSpec(
+        "features_parquet",
+        "Feature snapshots",
+        "Risk-model feature vectors at candidate events",
+        "parquet",
+        "sidecar",
+        "features_parquet_path",
+    ),
 )
+
+_DESCRIPTION_BY_KIND = {spec.kind: spec.description for spec in _KNOWN_ARTIFACTS}
+_LABEL_BY_KIND = {spec.kind: spec.label for spec in _KNOWN_ARTIFACTS}
+
+_SIDECAR_FILENAME_SUFFIXES: tuple[tuple[str, str], ...] = (
+    (".candidates.json", "candidates_json"),
+    (".candidates.parquet", "candidates_parquet"),
+    (".equity.parquet", "equity_parquet"),
+    (".orders.parquet", "orders_parquet"),
+    (".trades.parquet", "trades_parquet"),
+    (".rejections.parquet", "rejections_parquet"),
+    (".labels.parquet", "labels_parquet"),
+    (".features.parquet", "features_parquet"),
+)
+
+
+def _is_internal_artifact_path(path: Path) -> bool:
+    return path.name == "manifest.json" or "shards" in path.parts
 
 
 def _artifact_format_for_path(path: Path) -> ArtifactFormat:
@@ -61,21 +161,45 @@ def _artifact_format_for_path(path: Path) -> ArtifactFormat:
     return "other"
 
 
+def _match_sidecar_filename(name: str) -> str | None:
+    for suffix, lookup_kind in _SIDECAR_FILENAME_SUFFIXES:
+        if name.endswith(suffix):
+            return lookup_kind
+    return None
+
+
 def _artifact_label_for_path(path: Path) -> str:
     name = path.name
-    if name.endswith(".candidates.parquet"):
-        return "Entry candidates (shard)"
-    if name.endswith(".equity.parquet"):
-        return "Equity curves (shard)"
-    if name.endswith(".orders.parquet"):
-        return "Orders (shard)"
-    if name.endswith(".trades.parquet"):
-        return "Trades (shard)"
-    if name.endswith(".rejections.parquet"):
-        return "Signal rejections (shard)"
+    lookup_kind = _match_sidecar_filename(name)
+    if lookup_kind is not None:
+        return _LABEL_BY_KIND[lookup_kind]
+    if name == "config.yaml":
+        return _LABEL_BY_KIND["config"]
     if path.suffix == ".json" and "shards" in path.parts:
         return "Shard report"
+    if path.suffix == ".json":
+        return _LABEL_BY_KIND["report_json"]
+    if path.suffix in {".yaml", ".yml"}:
+        return _LABEL_BY_KIND["config"]
+    if path.suffix == ".parquet" and "." not in path.stem:
+        return _LABEL_BY_KIND["report_parquet"]
     return name
+
+
+def _artifact_description_for_path(path: Path) -> str:
+    name = path.name
+    lookup_kind = _match_sidecar_filename(name)
+    if lookup_kind is not None:
+        return _DESCRIPTION_BY_KIND[lookup_kind]
+    if name == "config.yaml":
+        return _DESCRIPTION_BY_KIND["config"]
+    if path.suffix == ".json" and "shards" not in path.parts:
+        return _DESCRIPTION_BY_KIND["report_json"]
+    if path.suffix in {".yaml", ".yml"}:
+        return _DESCRIPTION_BY_KIND["config"]
+    if path.suffix == ".parquet" and "." not in path.stem:
+        return _DESCRIPTION_BY_KIND["report_parquet"]
+    return "Auxiliary backtest output file"
 
 
 def _artifact_role_for_path(path: Path) -> ArtifactRole:
@@ -84,7 +208,7 @@ def _artifact_role_for_path(path: Path) -> ArtifactRole:
     if "shards" in path.parts:
         return "shard"
     if path.suffix.lower() in {".yaml", ".yml"} or path.name.endswith(".json") and not path.name.endswith(".parquet"):
-        if any(token in path.name for token in (".orders.", ".trades.", ".candidates.", ".equity.", ".rejections.")):
+        if any(token in path.name for token in (".orders.", ".trades.", ".candidates.", ".equity.", ".rejections.", ".labels.", ".features.")):
             return "sidecar"
         return "primary"
     return "sidecar"
@@ -115,6 +239,8 @@ def _merge_artifact_paths(
         orders_parquet_path=paths.orders_parquet_path or merged.orders_parquet_path,
         trades_parquet_path=paths.trades_parquet_path or merged.trades_parquet_path,
         rejections_parquet_path=paths.rejections_parquet_path or merged.rejections_parquet_path,
+        labels_parquet_path=paths.labels_parquet_path or merged.labels_parquet_path,
+        features_parquet_path=paths.features_parquet_path or merged.features_parquet_path,
         manifest_path=paths.manifest_path or merged.manifest_path,
     )
 
@@ -131,6 +257,8 @@ def _legacy_flat_paths(output_dir: Path, backtest_id: str) -> BacktestArtifactPa
         orders_parquet_path=str(base / f"{backtest_id}.orders.parquet"),
         trades_parquet_path=str(base / f"{backtest_id}.trades.parquet"),
         rejections_parquet_path=str(base / f"{backtest_id}.rejections.parquet"),
+        labels_parquet_path=str(base / f"{backtest_id}.labels.parquet"),
+        features_parquet_path=str(base / f"{backtest_id}.features.parquet"),
         manifest_path=str(base / backtest_id / "manifest.json"),
     )
 
@@ -139,6 +267,7 @@ def _entry_from_path(
     *,
     kind: str,
     label: str,
+    description: str,
     format: ArtifactFormat,
     role: ArtifactRole,
     path: Path,
@@ -147,6 +276,7 @@ def _entry_from_path(
     return BacktestArtifactEntry(
         kind=kind,
         label=label,
+        description=description,
         format=format,
         role=role,
         path=str(path.resolve()),
@@ -171,6 +301,7 @@ def inventory_backtest_artifacts(
         *,
         kind: str,
         label: str,
+        description: str,
         format: ArtifactFormat,
         role: ArtifactRole,
         path_value: str | None,
@@ -178,11 +309,22 @@ def inventory_backtest_artifacts(
         if not path_value:
             return
         path = Path(path_value)
+        if _is_internal_artifact_path(path):
+            return
         resolved = str(path.resolve())
         if resolved in seen_paths or not path.is_file():
             return
         seen_paths.add(resolved)
-        entries.append(_entry_from_path(kind=kind, label=label, format=format, role=role, path=path))
+        entries.append(
+            _entry_from_path(
+                kind=kind,
+                label=label,
+                description=description,
+                format=format,
+                role=role,
+                path=path,
+            )
+        )
 
     for spec in _KNOWN_ARTIFACTS:
         for paths_obj in (resolved_paths, legacy_paths):
@@ -190,6 +332,7 @@ def inventory_backtest_artifacts(
             add_entry(
                 kind=spec.kind,
                 label=spec.label,
+                description=spec.description,
                 format=spec.format,
                 role=spec.role,
                 path_value=path_value,
@@ -197,7 +340,7 @@ def inventory_backtest_artifacts(
 
     if work_dir.is_dir():
         for path in sorted(work_dir.rglob("*")):
-            if not path.is_file():
+            if not path.is_file() or _is_internal_artifact_path(path):
                 continue
             resolved = str(path.resolve())
             if resolved in seen_paths:
@@ -207,15 +350,17 @@ def inventory_backtest_artifacts(
                 _entry_from_path(
                     kind=f"file:{path.name}",
                     label=_artifact_label_for_path(path),
+                    description=_artifact_description_for_path(path),
                     format=_artifact_format_for_path(path),
                     role=_artifact_role_for_path(path),
                     path=path,
                 )
             )
 
-    role_order = {"primary": 0, "manifest": 1, "sidecar": 2, "shard": 3}
-    entries.sort(key=lambda entry: (role_order.get(entry.role, 99), entry.label, entry.path))
-    return entries
+    role_order = {"primary": 0, "sidecar": 1}
+    visible_entries = [entry for entry in entries if entry.role not in _INTERNAL_ARTIFACT_ROLES]
+    visible_entries.sort(key=lambda entry: (role_order.get(entry.role, 99), entry.label, entry.path))
+    return visible_entries
 
 
 def summarize_backtest_artifacts(
@@ -228,6 +373,7 @@ def summarize_backtest_artifacts(
         BacktestArtifactSummaryItem(
             kind=entry.kind,
             label=entry.label,
+            description=entry.description,
             format=entry.format,
             role=entry.role,
         )
@@ -248,11 +394,77 @@ def resolve_results_root(output_path: Path, backtest_id: str | None = None) -> P
     return parent
 
 
+def flatten_outcome_labels(
+    labels: list[OutcomeLabelRecord],
+    *,
+    run_id: str,
+) -> list[dict]:
+    rows: list[dict] = []
+    for label in labels:
+        payload = label.model_dump(mode="json")
+        payload["run_id"] = run_id
+        rows.append(payload)
+    return rows
+
+
+def flatten_feature_snapshots(
+    features: list[FeatureSnapshotRecord],
+    *,
+    run_id: str,
+) -> list[dict]:
+    rows: list[dict] = []
+    for feature in features:
+        payload = feature.model_dump(mode="json")
+        metadata = payload.pop("metadata_features", {})
+        payload["metadata_features_json"] = json.dumps(metadata) if metadata else None
+        payload["run_id"] = run_id
+        rows.append(payload)
+    return rows
+
+
+def flatten_risk_auxiliary_for_report(
+    report: BacktestReport,
+    auxiliary_by_run: dict[str, tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]],
+) -> tuple[list[dict], list[dict]]:
+    label_rows: list[dict] = []
+    feature_rows: list[dict] = []
+    for result in report.results:
+        if result.run_id not in auxiliary_by_run:
+            continue
+        labels, features = auxiliary_by_run[result.run_id]
+        label_rows.extend(flatten_outcome_labels(labels, run_id=result.run_id))
+        feature_rows.extend(flatten_feature_snapshots(features, run_id=result.run_id))
+    return label_rows, feature_rows
+
+
+def _flatten_outcome_labels_from_report(report: BacktestReport) -> list[dict]:
+    return []
+
+
+def _flatten_feature_snapshots_from_report(report: BacktestReport) -> list[dict]:
+    return []
+
+
+def _write_shard_colocated_sidecars(
+    report_json_path: Path,
+    *,
+    label_rows: list[dict],
+    feature_rows: list[dict],
+) -> None:
+    if "shards" not in report_json_path.parts:
+        return
+    if label_rows:
+        _write_parquet(label_rows, _shard_sidecar_path(report_json_path, "labels"))
+    if feature_rows:
+        _write_parquet(feature_rows, _shard_sidecar_path(report_json_path, "features"))
+
+
 def persist_backtest_report(
     report: BacktestReport,
     output_path: Path,
     *,
     manifest_path: str | Path | None = None,
+    risk_auxiliary_by_run: dict[str, tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]] | None = None,
 ) -> BacktestArtifactPaths:
     write_backtest_report_json(report, output_path)
     backtest_id = output_path.stem
@@ -262,6 +474,15 @@ def persist_backtest_report(
         if manifest_path is not None
         else paths.manifest_path
     )
+    label_rows: list[dict] = []
+    feature_rows: list[dict] = []
+    if risk_auxiliary_by_run:
+        label_rows, feature_rows = flatten_risk_auxiliary_for_report(report, risk_auxiliary_by_run)
+        _write_shard_colocated_sidecars(
+            output_path.resolve(),
+            label_rows=label_rows,
+            feature_rows=feature_rows,
+        )
     return write_report_artifacts(
         report,
         paths=BacktestArtifactPaths(
@@ -273,8 +494,12 @@ def persist_backtest_report(
             orders_parquet_path=paths.orders_parquet_path,
             trades_parquet_path=paths.trades_parquet_path,
             rejections_parquet_path=paths.rejections_parquet_path,
+            labels_parquet_path=paths.labels_parquet_path,
+            features_parquet_path=paths.features_parquet_path,
             manifest_path=resolved_manifest_path,
         ),
+        label_rows=label_rows,
+        feature_rows=feature_rows,
     )
 
 
@@ -290,6 +515,8 @@ def default_artifact_paths(output_dir: Path, backtest_id: str) -> BacktestArtifa
         orders_parquet_path=str(base / f"{backtest_id}.orders.parquet"),
         trades_parquet_path=str(base / f"{backtest_id}.trades.parquet"),
         rejections_parquet_path=str(base / f"{backtest_id}.rejections.parquet"),
+        labels_parquet_path=str(base / f"{backtest_id}.labels.parquet"),
+        features_parquet_path=str(base / f"{backtest_id}.features.parquet"),
         manifest_path=str(base / "manifest.json"),
     )
 
@@ -498,6 +725,8 @@ def write_report_artifacts(
     report: BacktestReport,
     *,
     paths: BacktestArtifactPaths,
+    label_rows: list[dict] | None = None,
+    feature_rows: list[dict] | None = None,
 ) -> BacktestArtifactPaths:
     if paths.report_parquet_path and report.results:
         _write_parquet(_report_summary_rows(report), Path(paths.report_parquet_path))
@@ -547,6 +776,24 @@ def write_report_artifacts(
         ),
         paths.rejections_parquet_path,
     )
+    labels_source = label_rows if label_rows is not None else []
+    if not labels_source:
+        labels_source = _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_outcome_labels_from_report(report),
+            kind="labels",
+        )
+    labels_parquet_path = _maybe_write_parquet(labels_source, paths.labels_parquet_path)
+    features_source = feature_rows if feature_rows is not None else []
+    if not features_source:
+        features_source = _flatten_or_shard_sidecars(
+            report,
+            paths=paths,
+            flatten=lambda: _flatten_feature_snapshots_from_report(report),
+            kind="features",
+        )
+    features_parquet_path = _maybe_write_parquet(features_source, paths.features_parquet_path)
 
     return BacktestArtifactPaths(
         config_path=paths.config_path,
@@ -558,6 +805,8 @@ def write_report_artifacts(
         orders_parquet_path=orders_parquet_path,
         trades_parquet_path=trades_parquet_path,
         rejections_parquet_path=rejections_parquet_path,
+        labels_parquet_path=labels_parquet_path,
+        features_parquet_path=features_parquet_path,
         manifest_path=paths.manifest_path,
     )
 
@@ -607,6 +856,29 @@ def load_trades_from_parquet(path: Path) -> dict[str, list[TradeRecord]]:
 
 def load_rejections_from_parquet(path: Path) -> dict[str, list[RejectionRecord]]:
     return _load_grouped_from_parquet(path, model_validate=RejectionRecord.model_validate)
+
+
+def load_labels_from_parquet(path: Path) -> dict[str, list[OutcomeLabelRecord]]:
+    return _load_grouped_from_parquet(path, model_validate=OutcomeLabelRecord.model_validate)
+
+
+def load_features_from_parquet(path: Path) -> dict[str, list[FeatureSnapshotRecord]]:
+    frame = pd.read_parquet(path)
+    if frame.empty:
+        return {}
+    grouped: dict[str, list[FeatureSnapshotRecord]] = {}
+    for _, row in frame.iterrows():
+        run_id = str(row.get("run_id", ""))
+        payload = row.to_dict()
+        payload.pop("run_id", None)
+        metadata_json = payload.pop("metadata_features_json", None)
+        if metadata_json and not pd.isna(metadata_json):
+            parsed = json.loads(str(metadata_json))
+            payload["metadata_features"] = parsed if isinstance(parsed, dict) else {}
+        else:
+            payload["metadata_features"] = {}
+        grouped.setdefault(run_id, []).append(FeatureSnapshotRecord.model_validate(payload))
+    return grouped
 
 
 def _load_candidates_by_run(paths: BacktestArtifactPaths) -> dict[str, list[CandidateRecord]]:

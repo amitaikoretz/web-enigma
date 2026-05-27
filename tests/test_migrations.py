@@ -77,6 +77,8 @@ def test_alembic_upgrade_creates_backtest_jobs_table(tmp_path, monkeypatch):
         "orders_parquet_path",
         "trades_parquet_path",
         "rejections_parquet_path",
+        "labels_parquet_path",
+        "features_parquet_path",
         "created_at",
         "updated_at",
     }.issubset(columns)

@@ -6,17 +6,38 @@ import type {
   BacktestArtifactRole,
   BacktestArtifactSummaryItem,
 } from '../types/backtests'
+import { resolveArtifactDescription } from '../utils/artifactDescriptions'
 
 type ArtifactChipSource = Pick<
   BacktestArtifactEntry | BacktestArtifactSummaryItem,
   'kind' | 'label' | 'format' | 'role'
->
+> & {
+  description?: string | null
+  path?: string | null
+}
 
-const ROLE_LABELS: Record<BacktestArtifactRole, string> = {
-  primary: 'Primary',
-  sidecar: 'Sidecar',
-  manifest: 'Manifest',
-  shard: 'Shard',
+export function isPublicArtifact(artifact: ArtifactChipSource): boolean {
+  if (artifact.role === 'shard' || artifact.role === 'manifest') {
+    return false
+  }
+  if (artifact.kind === 'manifest_json') {
+    return false
+  }
+  if (
+    artifact.label === 'Shard report' ||
+    artifact.label === 'Shard manifest' ||
+    artifact.label.includes('(shard)')
+  ) {
+    return false
+  }
+  if (artifact.path?.includes('/shards/')) {
+    return false
+  }
+  return true
+}
+
+export function publicArtifacts<T extends ArtifactChipSource>(artifacts: T[]): T[] {
+  return artifacts.filter(isPublicArtifact)
 }
 
 function formatChipLabel(format: BacktestArtifactFormat): string {
@@ -67,7 +88,7 @@ export function BacktestArtifactChips({
           variant="outlined"
           color={chipColor(artifact.role)}
           label={`${artifact.label} · ${formatChipLabel(artifact.format)}`}
-          title={`${ROLE_LABELS[artifact.role]} · ${artifact.kind}`}
+          title={resolveArtifactDescription(artifact)}
         />
       ))}
       {hiddenCount > 0 && (
@@ -78,5 +99,5 @@ export function BacktestArtifactChips({
 }
 
 export function sidecarArtifacts<T extends ArtifactChipSource>(artifacts: T[]): T[] {
-  return artifacts.filter((artifact) => artifact.role === 'sidecar')
+  return publicArtifacts(artifacts).filter((artifact) => artifact.role === 'sidecar')
 }

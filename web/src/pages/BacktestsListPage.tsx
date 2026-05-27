@@ -1,4 +1,5 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
+import ReplayIcon from '@mui/icons-material/Replay'
 import {
   Alert,
   Box,
@@ -21,10 +22,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
-import { deleteBacktest, fetchBacktests } from '../api/backtests'
+import { deleteBacktest, fetchBacktests, retryBacktest } from '../api/backtests'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
+import { canRetryBacktest } from '../utils/backtestConfigPrefill'
 
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -73,6 +75,7 @@ export function BacktestsListPage() {
   const [deleteTarget, setDeleteTarget] = useState<BacktestListItem | null>(null)
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
 
   const visibleColumns = useMemo(
     () =>
@@ -178,6 +181,21 @@ export function BacktestsListPage() {
       window.clearInterval(timer)
     }
   }, [hasActiveJobs, loadPage, page, pageSize, refreshIntervalMs])
+
+  async function handleRetry(item: BacktestListItem) {
+    setRetryingId(item.id)
+    setError(null)
+    try {
+      const response = await retryBacktest(item.id)
+      navigate(`/backtests/${response.backtest_id}`, {
+        state: { retriedFrom: item.id },
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry backtest')
+    } finally {
+      setRetryingId(null)
+    }
+  }
 
   async function confirmDelete() {
     if (!deleteTarget) {
@@ -330,16 +348,18 @@ export function BacktestsListPage() {
               <TableBody>
                 {items.map((item) => {
                   const isDeleting = deletingId === item.id
+                  const isRetrying = retryingId === item.id
                   const isSelected = selectedIds.has(item.id)
+                  const showRetry = canRetryBacktest(item)
 
                   return (
                     <TableRow
                       key={item.id}
                       hover
                       selected={isSelected}
-                      sx={{ cursor: isDeleting ? 'default' : 'pointer' }}
+                      sx={{ cursor: isDeleting || isRetrying ? 'default' : 'pointer' }}
                       onClick={() => {
-                        if (!isDeleting) {
+                        if (!isDeleting && !isRetrying) {
                           navigate(`/backtests/${item.id}`)
                         }
                       }}
@@ -363,22 +383,45 @@ export function BacktestsListPage() {
                         </TableCell>
                       ))}
                       <TableCell align="right">
-                        <Tooltip title="Delete backtest">
-                          <span>
-                            <IconButton
-                              aria-label="Delete backtest"
-                              color="error"
-                              disabled={isDeleting}
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                setDeleteTarget(item)
-                              }}
-                              size="small"
-                            >
-                              {isDeleting ? <CircularProgress size={18} /> : <DeleteOutlineIcon />}
-                            </IconButton>
-                          </span>
-                        </Tooltip>
+                        <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
+                          {showRetry && (
+                            <Tooltip title="Retry with same configuration">
+                              <span>
+                                <IconButton
+                                  aria-label="Retry backtest"
+                                  disabled={isDeleting || isRetrying}
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    void handleRetry(item)
+                                  }}
+                                  size="small"
+                                >
+                                  {isRetrying ? (
+                                    <CircularProgress size={18} />
+                                  ) : (
+                                    <ReplayIcon fontSize="small" />
+                                  )}
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )}
+                          <Tooltip title="Delete backtest">
+                            <span>
+                              <IconButton
+                                aria-label="Delete backtest"
+                                color="error"
+                                disabled={isDeleting || isRetrying}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setDeleteTarget(item)
+                                }}
+                                size="small"
+                              >
+                                {isDeleting ? <CircularProgress size={18} /> : <DeleteOutlineIcon />}
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   )

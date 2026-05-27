@@ -9,12 +9,18 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from app.backtests.artifacts import (
+    default_artifact_paths,
+    hydrate_report_from_artifacts,
+    resolve_results_root,
+)
 from app.config.models import DataCacheConfig
+from app.output.models import FeatureSnapshotRecord, OutcomeLabelRecord
 from app.risk.data.bars import BarStore, bar_index_at_or_before
 from app.risk.data.report_loader import load_candidates_from_reports
 from app.risk.features.assemble import build_feature_snapshot
 from app.risk.labels.path_labels import label_long_candidate
-from app.risk.models import EnrichedCandidate, OutcomeLabel, RiskDatasetConfig, RiskDatasetManifest
+from app.risk.models import EnrichedCandidate, RiskDatasetConfig, RiskDatasetManifest
 
 
 def load_risk_dataset_config(path: Path | None) -> RiskDatasetConfig:
@@ -57,11 +63,11 @@ def _candidate_row(candidate: EnrichedCandidate) -> dict[str, Any]:
     return row
 
 
-def _label_row(label: OutcomeLabel) -> dict[str, Any]:
+def _label_row(label: OutcomeLabelRecord) -> dict[str, Any]:
     return label.model_dump(mode="json")
 
 
-def _feature_row(snapshot) -> dict[str, Any]:
+def _feature_row(snapshot: FeatureSnapshotRecord) -> dict[str, Any]:
     base = snapshot.model_dump(mode="json")
     metadata_features = base.pop("metadata_features", {})
     for key, value in metadata_features.items():
@@ -69,21 +75,20 @@ def _feature_row(snapshot) -> dict[str, Any]:
     return base
 
 
-def build_labels(
+def build_labels_from_frame(
     candidates: list[EnrichedCandidate],
     *,
-    bar_store: BarStore,
+    frame: pd.DataFrame,
     config: RiskDatasetConfig,
     feature_atr_by_candidate: dict[str, float | None] | None = None,
-) -> list[OutcomeLabel]:
-    labels: list[OutcomeLabel] = []
+) -> list[OutcomeLabelRecord]:
+    labels: list[OutcomeLabelRecord] = []
     atr_map = feature_atr_by_candidate or {}
     for candidate in candidates:
-        frame = bar_store.get_symbol_frame(candidate)
         decision_idx = bar_index_at_or_before(frame, candidate.timestamp)
         if decision_idx is None:
             labels.append(
-                OutcomeLabel(
+                OutcomeLabelRecord(
                     candidate_id=candidate.candidate_id,
                     label_version=config.label_version,
                     entry_price=candidate.entry_price,
@@ -128,16 +133,56 @@ def build_labels(
     return labels
 
 
+def build_features_from_frame(
+    candidates: list[EnrichedCandidate],
+    *,
+    frame: pd.DataFrame,
+    config: RiskDatasetConfig,
+    benchmark_frame: pd.DataFrame | None = None,
+) -> list[FeatureSnapshotRecord]:
+    snapshots: list[FeatureSnapshotRecord] = []
+    for candidate in candidates:
+        snapshots.append(
+            build_feature_snapshot(
+                candidate,
+                frame=frame,
+                config=config,
+                benchmark_frame=benchmark_frame,
+            )
+        )
+    return snapshots
+
+
+def build_labels(
+    candidates: list[EnrichedCandidate],
+    *,
+    bar_store: BarStore,
+    config: RiskDatasetConfig,
+    feature_atr_by_candidate: dict[str, float | None] | None = None,
+) -> list[OutcomeLabelRecord]:
+    labels: list[OutcomeLabelRecord] = []
+    atr_map = feature_atr_by_candidate or {}
+    for candidate in candidates:
+        frame = bar_store.get_symbol_frame(candidate)
+        labels.extend(
+            build_labels_from_frame(
+                [candidate],
+                frame=frame,
+                config=config,
+                feature_atr_by_candidate={candidate.candidate_id: atr_map.get(candidate.candidate_id)},
+            )
+        )
+    return labels
+
+
 def build_features(
     candidates: list[EnrichedCandidate],
     *,
     bar_store: BarStore,
     config: RiskDatasetConfig,
     benchmark_frames: dict[tuple[str, str, str | None], pd.DataFrame],
-) -> list:
-    from app.risk.models import FeatureSnapshot
-
-    snapshots: list[FeatureSnapshot] = []
+) -> list[FeatureSnapshotRecord]:
+    snapshots: list[FeatureSnapshotRecord] = []
     for candidate in candidates:
         frame = bar_store.get_symbol_frame(candidate)
         benchmark = bar_store.get_benchmark_frame(
@@ -145,15 +190,65 @@ def build_features(
             default_symbol=config.default_benchmark_symbol,
             benchmark_frames=benchmark_frames,
         )
-        snapshots.append(
-            build_feature_snapshot(
-                candidate,
+        snapshots.extend(
+            build_features_from_frame(
+                [candidate],
                 frame=frame,
                 config=config,
                 benchmark_frame=benchmark,
             )
         )
     return snapshots
+
+
+def _load_sidecar_frames(report_path: Path) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    paths = default_artifact_paths(resolve_results_root(report_path), report_path.stem)
+    labels_path = Path(paths.labels_parquet_path) if paths.labels_parquet_path else None
+    features_path = Path(paths.features_parquet_path) if paths.features_parquet_path else None
+    if labels_path and features_path and labels_path.exists() and features_path.exists():
+        return pd.read_parquet(labels_path), pd.read_parquet(features_path)
+    if paths.manifest_path and Path(paths.manifest_path).exists():
+        from app.backtests.artifacts import _concat_shard_parquet_rows
+
+        labels_rows = _concat_shard_parquet_rows(Path(paths.manifest_path), "labels")
+        features_rows = _concat_shard_parquet_rows(Path(paths.manifest_path), "features")
+        if labels_rows and features_rows:
+            return pd.DataFrame(labels_rows), pd.DataFrame(features_rows)
+    return None
+
+
+def _load_joined_dataset_from_sidecars(
+    report_paths: list[Path],
+) -> pd.DataFrame | None:
+    frames: list[pd.DataFrame] = []
+    for report_path in report_paths:
+        sidecars = _load_sidecar_frames(report_path)
+        if sidecars is None:
+            return None
+        label_df, feature_df = sidecars
+        paths = default_artifact_paths(resolve_results_root(report_path), report_path.stem)
+        candidates, _ = load_candidates_from_reports([report_path])
+        if not candidates:
+            continue
+        candidate_df = pd.DataFrame([_candidate_row(c) for c in candidates])
+        label_join_cols = [
+            col
+            for col in label_df.columns
+            if (col not in candidate_df.columns or col == "candidate_id") and col not in {"label_version", "run_id"}
+        ]
+        feature_join_cols = [
+            col
+            for col in feature_df.columns
+            if (col not in candidate_df.columns or col == "candidate_id")
+            and col not in {"feature_version", "run_id", "metadata_features_json"}
+        ]
+        joined = candidate_df.merge(label_df[label_join_cols], on="candidate_id", how="inner")
+        joined = joined.merge(feature_df[feature_join_cols], on="candidate_id", how="inner")
+        frames.append(joined)
+
+    if not frames:
+        return None
+    return pd.concat(frames, ignore_index=True)
 
 
 def build_risk_dataset(
@@ -167,6 +262,38 @@ def build_risk_dataset(
     effective_config = config or load_risk_dataset_config(config_path)
     if cache_dir:
         effective_config = effective_config.model_copy(update={"cache_directory": cache_dir})
+
+    joined_from_sidecars = _load_joined_dataset_from_sidecars(report_paths)
+    if joined_from_sidecars is not None:
+        candidates, duplicates = load_candidates_from_reports(
+            report_paths,
+            default_benchmark=effective_config.default_benchmark_symbol,
+        )
+        joined = joined_from_sidecars.copy()
+        joined.insert(0, "dataset_version", effective_config.dataset_version)
+        joined.insert(1, "label_version", effective_config.label_version)
+        joined.insert(2, "feature_version", effective_config.feature_version)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        joined.to_parquet(output_path, index=False)
+        manifest_path = output_path.with_suffix(".manifest.json")
+        manifest = RiskDatasetManifest(
+            generated_at=datetime.now(UTC),
+            dataset_version=effective_config.dataset_version,
+            label_version=effective_config.label_version,
+            feature_version=effective_config.feature_version,
+            config_hash=_config_hash(effective_config),
+            source_report_paths=[str(path.resolve()) for path in report_paths],
+            total_candidates=len(candidates),
+            labeled_rows=len(joined),
+            feature_rows=len(joined),
+            joined_rows=len(joined),
+            dropped_label_rows=0,
+            dropped_feature_rows=0,
+            duplicate_candidate_ids=duplicates,
+            output_path=str(output_path.resolve()),
+        )
+        manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+        return manifest
 
     candidates, duplicates = load_candidates_from_reports(
         report_paths,

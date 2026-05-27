@@ -19,7 +19,8 @@
     "lightweight-charts": "^5.2.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-router-dom": "^7.9.6"
+    "react-router-dom": "^7.9.6",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

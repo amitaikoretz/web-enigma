@@ -1,4 +1,5 @@
 import type { BacktestCreateRequest, BacktestFeed } from '../types/backtests'
+import type { BacktestListItem } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 
 export interface BacktestWizardPrefill {
@@ -40,16 +41,23 @@ function parseAnalyzers(value: unknown): BacktestCreateRequest['analyzers'] | un
   if (!isRecord(value)) {
     return undefined
   }
-  const { include_equity_curve, include_trade_log, include_order_log, include_candidate_log } = value
+  const { include_equity_curve, include_trade_log, include_order_log, include_candidate_log, include_risk_auxiliary } = value
   if (
     typeof include_equity_curve !== 'boolean' ||
     typeof include_trade_log !== 'boolean' ||
     typeof include_order_log !== 'boolean' ||
-    typeof include_candidate_log !== 'boolean'
+    typeof include_candidate_log !== 'boolean' ||
+    typeof include_risk_auxiliary !== 'boolean'
   ) {
     return undefined
   }
-  return { include_equity_curve, include_trade_log, include_order_log, include_candidate_log }
+  return {
+    include_equity_curve,
+    include_trade_log,
+    include_order_log,
+    include_candidate_log: include_risk_auxiliary ? true : include_candidate_log,
+    include_risk_auxiliary,
+  }
 }
 
 function parseExecution(value: unknown): BacktestCreateRequest['execution'] | undefined {
@@ -164,4 +172,32 @@ export function hasPrefillableInputConfig(inputConfig: Record<string, unknown> |
   }
   const runs = inputConfig.runs
   return Array.isArray(runs) && runs.length > 0
+}
+
+function isTerminalBacktestStatus(status: BacktestListItem['status']): boolean {
+  return status === 'completed' || status === 'failed'
+}
+
+export function isRetryEligibleFailure(metadata: BacktestListItem): boolean {
+  if (!isTerminalBacktestStatus(metadata.status)) {
+    return false
+  }
+  if (metadata.status === 'failed') {
+    return true
+  }
+  return metadata.report_status === 'partial_failure' || metadata.report_status === 'failure'
+}
+
+export function canRetryBacktest(metadata: BacktestListItem): boolean {
+  return isRetryEligibleFailure(metadata)
+}
+
+export function canEditAndRetryBacktest(
+  metadata: BacktestListItem,
+  reportInputConfig: Record<string, unknown> | undefined,
+): boolean {
+  if (hasPrefillableInputConfig(reportInputConfig)) {
+    return true
+  }
+  return isTerminalBacktestStatus(metadata.status) && metadata.selection !== null
 }

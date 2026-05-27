@@ -47,6 +47,7 @@ export interface AnalyzerSettings {
   include_trade_log: boolean
   include_order_log: boolean
   include_candidate_log: boolean
+  include_risk_auxiliary: boolean
 }
 
 export interface ExecutionSettings {
@@ -57,6 +58,7 @@ export type BacktestResultsColumnId =
   | 'created'
   | 'status'
   | 'report'
+  | 'artifacts'
   | 'date_range'
   | 'universe'
   | 'runs'

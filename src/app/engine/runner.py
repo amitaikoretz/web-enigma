@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -27,7 +27,17 @@ from app.engine.metrics import (
     compute_trade_diagnostics,
     enrich_trade_records,
 )
-from app.output.models import BacktestReport, EquityPoint, RunError, RunResult, RunSummary
+from app.output.models import (
+    BacktestReport,
+    EquityPoint,
+    FeatureSnapshotRecord,
+    OutcomeLabelRecord,
+    RunError,
+    RunResult,
+    RunSummary,
+)
+from app.risk.build.run_auxiliary import build_risk_auxiliary_for_run
+from app.risk.models import RiskDatasetConfig, RunRiskAuxiliaryRows
 from app.strategies.implementations import build_portable_strategy_adapter
 from app.strategies.registry import get_strategy_definition
 
@@ -37,6 +47,16 @@ class RunExecutionOptions:
     cache_enabled: bool | None = None
     cache_dir: str | None = None
     cache_refresh: bool = False
+    risk_dataset_config: RiskDatasetConfig | None = None
+    on_run_bar_progress: Callable[[int, int, int, int], None] | None = None
+
+
+@dataclass
+class BacktestExecutionResult:
+    report: BacktestReport
+    risk_auxiliary_by_run: dict[str, tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass(frozen=True)
@@ -166,7 +186,7 @@ def _strategy_symbol(run: BacktestRunConfig) -> str | None:
 
 
 def run_backtests(config: BacktestConfig, config_raw: dict[str, Any]) -> BacktestReport:
-    return run_backtests_with_hooks(config, config_raw)
+    return run_backtests_with_hooks(config, config_raw).report
 
 
 def run_backtests_with_hooks(
@@ -178,8 +198,9 @@ def run_backtests_with_hooks(
     on_run_error: Callable[[RunResult, int, int], None] | None = None,
     on_run_cache_status: Callable[[BacktestRunConfig, str], None] | None = None,
     execution_options: RunExecutionOptions | None = None,
-) -> BacktestReport:
+) -> BacktestExecutionResult:
     results: list[RunResult] = []
+    risk_auxiliary_by_run: dict[str, tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]] = {}
     total = sum(len(_run_strategy_entries(run)) for run in config.runs)
 
     effective_cache = config.global_config.data_cache.model_copy(deep=True)
@@ -197,12 +218,16 @@ def run_backtests_with_hooks(
             if on_run_start:
                 on_run_start(run, idx, total)
             try:
-                result, cache_status = _run_single(
+                result, cache_status, risk_auxiliary = _run_single(
                     run=run,
                     strategy_entry=strategy_entry,
                     config=config,
                     cache_config=effective_cache,
                     cache_refresh=options.cache_refresh,
+                    risk_dataset_config=options.risk_dataset_config,
+                    run_idx=idx,
+                    total_runs=total,
+                    on_run_bar_progress=options.on_run_bar_progress,
                 )
             except Exception as exc:  # noqa: BLE001
                 result = RunResult(
@@ -213,9 +238,12 @@ def run_backtests_with_hooks(
                     data_source=run.data.type,
                     error=RunError(type=exc.__class__.__name__, message=str(exc)),
                 )
+                risk_auxiliary = RunRiskAuxiliaryRows()
                 if on_run_error:
                     on_run_error(result, idx, total)
             else:
+                if risk_auxiliary.labels or risk_auxiliary.features:
+                    risk_auxiliary_by_run[result.run_id] = (risk_auxiliary.labels, risk_auxiliary.features)
                 if on_run_cache_status and cache_status and run.data.type in {"yahoo", "alpaca"}:
                     on_run_cache_status(run, cache_status)
                 if on_run_complete:
@@ -236,18 +264,21 @@ def run_backtests_with_hooks(
 
     aggregates = compute_report_aggregates(results)
 
-    return BacktestReport(
-        generated_at=datetime.now(timezone.utc),
-        app_version=__version__,
-        config_sha256=digest,
-        input_config_path=config_path,
-        input_config=config_raw,
-        total_runs=len(results),
-        successful_runs=successful,
-        failed_runs=failed,
-        status=status,
-        results=results,
-        aggregates=aggregates,
+    return BacktestExecutionResult(
+        report=BacktestReport(
+            generated_at=datetime.now(timezone.utc),
+            app_version=__version__,
+            config_sha256=digest,
+            input_config_path=config_path,
+            input_config=config_raw,
+            total_runs=len(results),
+            successful_runs=successful,
+            failed_runs=failed,
+            status=status,
+            results=results,
+            aggregates=aggregates,
+        ),
+        risk_auxiliary_by_run=risk_auxiliary_by_run,
     )
 
 
@@ -257,8 +288,14 @@ def _run_single(
     config: BacktestConfig,
     cache_config: DataCacheConfig,
     cache_refresh: bool,
-) -> tuple[RunResult, str | None]:
+    risk_dataset_config: RiskDatasetConfig | None = None,
+    *,
+    run_idx: int | None = None,
+    total_runs: int | None = None,
+    on_run_bar_progress: Callable[[int, int, int, int], None] | None = None,
+) -> tuple[RunResult, str | None, RunRiskAuxiliaryRows]:
     data_feed_result = _build_data_feed(run, cache_config, cache_refresh)
+    bar_progress_total = len(data_feed_result.feed)
 
     broker = run.broker or config.global_config.default_broker
     strategy_def = get_strategy_definition(strategy_entry.name)
@@ -266,6 +303,13 @@ def _run_single(
     benchmark_feed = None
     if benchmark_symbol:
         benchmark_feed = _load_benchmark_feed(run, benchmark_symbol, cache_config, cache_refresh)
+
+    bar_progress_callback = None
+    if on_run_bar_progress is not None and run_idx is not None and total_runs is not None:
+
+        def bar_progress_callback(bar_idx: int) -> None:
+            on_run_bar_progress(run_idx, total_runs, bar_idx, bar_progress_total)
+
     strategy_cls = build_portable_strategy_adapter(
         strategy_name=strategy_entry.name,
         strategy_factory=strategy_def.factory,
@@ -274,6 +318,7 @@ def _run_single(
         benchmark_feed=benchmark_feed,
         include_candidate_log=run.analyzers.include_candidate_log,
         fill_model=run.execution.fill_model,
+        bar_progress_callback=bar_progress_callback,
     )
 
     bt = Backtest(
@@ -343,6 +388,7 @@ def _run_single(
         "trades": trade_data,
         "execution": {"fill_model": run.execution.fill_model},
         "include_candidate_log": run.analyzers.include_candidate_log,
+        "include_risk_auxiliary": run.analyzers.include_risk_auxiliary,
         "resolution": run.data.interval if hasattr(run.data, "interval") else None,
         "trade_diagnostics": trade_diagnostics.model_dump(),
         "filter_diagnostics": filter_diagnostics.model_dump(),
@@ -373,7 +419,7 @@ def _run_single(
         risk_metrics=risk_metrics,
     )
 
-    return RunResult(
+    result = RunResult(
         run_id=_result_run_id(run, strategy_entry.name),
         name=run.name,
         status="success",
@@ -387,4 +433,16 @@ def _run_single(
         rejections=rejections,
         candidates=candidates if run.analyzers.include_candidate_log else [],
         equity_curve=equity_curve if run.analyzers.include_equity_curve else [],
-    ), data_feed_result.cache_status
+    )
+
+    risk_auxiliary = RunRiskAuxiliaryRows()
+    if run.analyzers.include_risk_auxiliary and candidates:
+        risk_auxiliary = build_risk_auxiliary_for_run(
+            result=result,
+            run=run,
+            symbol_frame=data_feed_result.feed,
+            benchmark_frame=benchmark_feed,
+            config=risk_dataset_config,
+        )
+
+    return result, data_feed_result.cache_status, risk_auxiliary

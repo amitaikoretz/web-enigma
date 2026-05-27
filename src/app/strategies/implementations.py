@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, datetime, time
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -835,6 +835,7 @@ class PortableBacktestingStrategy(Strategy):
     benchmark_feed: Any = None
     include_candidate_log = False
     fill_model = "close"
+    _bar_progress_callback: Callable[[int], None] | None = None
 
     def init(self) -> None:
         self.core: StrategyCore = self.strategy_factory(dict(self.strategy_params))
@@ -1057,6 +1058,10 @@ class PortableBacktestingStrategy(Strategy):
         self._record_entry_events()
         self._record_closed_trade_events()
 
+        callback = self.__class__.__dict__.get("_bar_progress_callback")
+        if callback is not None:
+            callback(len(self._bars_history))
+
 
 def build_portable_strategy_adapter(
     *,
@@ -1067,17 +1072,21 @@ def build_portable_strategy_adapter(
     benchmark_feed: Any = None,
     include_candidate_log: bool = False,
     fill_model: str = "close",
+    bar_progress_callback: Callable[[int], None] | None = None,
 ) -> type[PortableBacktestingStrategy]:
+    attrs: dict[str, Any] = {
+        "strategy_name": strategy_name,
+        "strategy_factory": strategy_factory,
+        "strategy_params": dict(strategy_params),
+        "strategy_symbol": symbol,
+        "benchmark_feed": benchmark_feed,
+        "include_candidate_log": include_candidate_log,
+        "fill_model": fill_model,
+    }
+    if bar_progress_callback is not None:
+        attrs["_bar_progress_callback"] = bar_progress_callback
     return type(
         f"{strategy_name.title().replace('_', '')}BacktestingAdapter",
         (PortableBacktestingStrategy,),
-        {
-            "strategy_name": strategy_name,
-            "strategy_factory": strategy_factory,
-            "strategy_params": dict(strategy_params),
-            "strategy_symbol": symbol,
-            "benchmark_feed": benchmark_feed,
-            "include_candidate_log": include_candidate_log,
-            "fill_model": fill_model,
-        },
+        attrs,
     )

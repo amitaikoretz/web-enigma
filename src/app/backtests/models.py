@@ -96,6 +96,7 @@ class BacktestSelectionSummary(BaseModel):
 class BacktestArtifactSummaryItem(BaseModel):
     kind: str
     label: str
+    description: str = ""
     format: BacktestArtifactFormat
     role: BacktestArtifactRole
 
@@ -132,6 +133,7 @@ class BacktestCreateResponse(BaseModel):
     status: BacktestJobStatus
     status_url: str
     detail_url: str
+    source_backtest_id: str | None = None
 
 
 class BacktestArgoLaunchRequest(BaseModel):
@@ -174,6 +176,7 @@ BacktestArtifactRole = Literal["primary", "sidecar", "manifest", "shard"]
 class BacktestArtifactEntry(BaseModel):
     kind: str
     label: str
+    description: str = ""
     format: BacktestArtifactFormat
     role: BacktestArtifactRole
     path: str

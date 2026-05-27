@@ -102,14 +102,11 @@ else
 fi
 
 section '4. Argo workflow submission'
+printf '   Workflows are submitted via Argo Server HTTP (ARGO_SERVER_URL):\n'
 if [[ -n "${ARGO_SERVER_URL:-}" ]]; then
-  printf '   Using Argo Server HTTP:\n'
   status_ok "ARGO_SERVER_URL=${ARGO_SERVER_URL}"
 else
-  printf '   Using kubeconfig (default for Rancher Desktop k3s):\n'
-  status_ok 'workflows submitted via kubectl → local cluster'
-  printf '     %sTip:%s make api-serve ARGO_SERVER_URL=http://localhost:%s after make api-port-forwards\n' \
-    "$DIM" "$RESET" "$ARGO_SERVER_PORT"
+  status_fail "ARGO_SERVER_URL is not set — run make api-port-forwards, then make api-serve"
 fi
 
 rule

@@ -221,6 +221,7 @@ export interface BacktestListItem {
 export interface BacktestArtifactSummaryItem {
   kind: string
   label: string
+  description?: string
   format: BacktestArtifactFormat
   role: BacktestArtifactRole
 }
@@ -237,6 +238,7 @@ export interface BacktestCreateResponse {
   status: BacktestJobStatus
   status_url: string
   detail_url: string
+  source_backtest_id?: string | null
 }
 
 export interface BacktestArgoLaunchRequest {
@@ -272,6 +274,7 @@ export type BacktestArtifactRole = 'primary' | 'sidecar' | 'manifest' | 'shard'
 export interface BacktestArtifactEntry {
   kind: string
   label: string
+  description?: string
   format: BacktestArtifactFormat
   role: BacktestArtifactRole
   path: string
@@ -306,6 +309,7 @@ export interface BacktestCreateRequest {
     include_trade_log: boolean
     include_order_log: boolean
     include_candidate_log: boolean
+    include_risk_auxiliary: boolean
   }
   execution?: {
     fill_model: 'close' | 'next_bar'

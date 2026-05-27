@@ -5,10 +5,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event
 
+import yaml
+
 from fastapi.testclient import TestClient
 
 from app.backtests.models import BacktestCreateRequest
 from app.backtests.service import BacktestArtifactStore, build_backtest_config
+from app.engine.runner import BacktestExecutionResult
 from app.output.models import BacktestReport, CandidateRecord, OrderRecord, RunResult, RunSummary, TradeRecord
 from tests.conftest import build_backtest_client
 
@@ -89,16 +92,18 @@ def _fake_runner(config, config_raw, on_run_complete=None, on_run_error=None, **
             on_run_complete(result, index, total)
         results.append(result)
 
-    return BacktestReport(
-        generated_at=datetime.now(timezone.utc),
-        app_version="0.1.0",
-        config_sha256="abc123",
-        input_config=config_raw,
-        total_runs=total,
-        successful_runs=total,
-        failed_runs=0,
-        status="success",
-        results=results,
+    return BacktestExecutionResult(
+        report=BacktestReport(
+            generated_at=datetime.now(timezone.utc),
+            app_version="0.1.0",
+            config_sha256="abc123",
+            input_config=config_raw,
+            total_runs=total,
+            successful_runs=total,
+            failed_runs=0,
+            status="success",
+            results=results,
+        )
     )
 
 
@@ -139,6 +144,8 @@ def test_artifact_store_uses_path_agnostic_ids(tmp_path) -> None:
     assert paths.orders_parquet_path.endswith("job123.orders.parquet")
     assert paths.trades_parquet_path.endswith("job123.trades.parquet")
     assert paths.rejections_parquet_path.endswith("job123.rejections.parquet")
+    assert paths.labels_parquet_path.endswith("job123.labels.parquet")
+    assert paths.features_parquet_path.endswith("job123.features.parquet")
 
 
 def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
@@ -229,16 +236,18 @@ def test_get_detail_hydrates_candidates_from_parquet(tmp_path, monkeypatch):
                 on_run_complete(result, index, total)
             results.append(result)
 
-        return BacktestReport(
-            generated_at=datetime.now(timezone.utc),
-            app_version="0.1.0",
-            config_sha256="abc123",
-            input_config=config_raw,
-            total_runs=total,
-            successful_runs=total,
-            failed_runs=0,
-            status="success",
-            results=results,
+        return BacktestExecutionResult(
+            report=BacktestReport(
+                generated_at=datetime.now(timezone.utc),
+                app_version="0.1.0",
+                config_sha256="abc123",
+                input_config=config_raw,
+                total_runs=total,
+                successful_runs=total,
+                failed_runs=0,
+                status="success",
+                results=results,
+            )
         )
 
     monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", candidate_runner)
@@ -383,6 +392,10 @@ def test_argo_status_progress_from_shard_reports(tmp_path, monkeypatch):
     class FakeArgoSubmitter:
         is_configured = True
 
+        def get_workflow(self, workflow_name: str) -> dict | None:
+            del workflow_name
+            return {"status": {"phase": "Running", "progress": "0/1", "nodes": {}}}
+
         def get_workflow_phase(self, workflow_name: str) -> str | None:
             del workflow_name
             return "Running"
@@ -451,6 +464,10 @@ def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):
 
     class FakeArgoSubmitter:
         is_configured = True
+
+        def get_workflow(self, workflow_name: str) -> dict | None:
+            del workflow_name
+            return {"status": {"phase": "Succeeded", "progress": "1/1", "nodes": {}}}
 
         def get_workflow_phase(self, workflow_name: str) -> str | None:
             del workflow_name
@@ -523,6 +540,10 @@ def test_reconciler_completes_when_db_path_outside_output_dir(tmp_path, monkeypa
 
     class FakeArgoSubmitter:
         is_configured = True
+
+        def get_workflow(self, workflow_name: str) -> dict | None:
+            del workflow_name
+            return {"status": {"phase": "Succeeded", "progress": "1/1", "nodes": {}}}
 
         def get_workflow_phase(self, workflow_name: str) -> str | None:
             del workflow_name
@@ -878,3 +899,114 @@ def test_delete_backtest_returns_404_for_unknown_id(tmp_path):
     response = client.delete("/backtests/missing-job")
 
     assert response.status_code == 404
+
+
+def test_build_backtest_config_risk_auxiliary_enables_candidate_log() -> None:
+    config = build_backtest_config(
+        payload=BacktestCreateRequest.model_validate(
+            {
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-03",
+                "resolution": "1d",
+                "symbols": ["AAPL"],
+                "strategies": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+                "analyzers": {
+                    "include_equity_curve": False,
+                    "include_trade_log": True,
+                    "include_order_log": True,
+                    "include_candidate_log": False,
+                    "include_risk_auxiliary": True,
+                },
+            }
+        ),
+        backtest_id="job123",
+    )
+
+    assert config.runs[0].analyzers.include_risk_auxiliary is True
+    assert config.runs[0].analyzers.include_candidate_log is True
+
+
+def _write_backtest_config(tmp_path: Path, backtest_id: str, config_raw: dict[str, object]) -> Path:
+    config_path = tmp_path / "api-results" / backtest_id / f"{backtest_id}.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(yaml.safe_dump(config_raw), encoding="utf-8")
+    return config_path
+
+
+def _sample_retry_config(source_id: str) -> dict[str, object]:
+    return {
+        "runs": [
+            {
+                "run_id": f"{source_id}:001:AAPL:buy_and_hold",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-10",
+                "data": {
+                    "type": "alpaca",
+                    "symbol": "AAPL",
+                    "interval": "1d",
+                    "feed": "iex",
+                },
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ]
+    }
+
+
+def test_rewrite_run_ids_replaces_backtest_prefix() -> None:
+    from app.backtests.service import _rewrite_run_ids
+
+    source_id = "source123"
+    rewritten = _rewrite_run_ids(_sample_retry_config(source_id), "new456")
+
+    assert rewritten["runs"][0]["run_id"] == "new456:001:AAPL:buy_and_hold"
+
+
+def test_retry_backtest_creates_new_job_from_saved_config(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+    source_id = "failed123"
+    _write_backtest_config(tmp_path, source_id, _sample_retry_config(source_id))
+
+    response = client.post(f"/backtests/{source_id}/retry")
+
+    assert response.status_code == 202
+    body = response.json()
+    new_id = body["backtest_id"]
+    assert new_id != source_id
+    assert body["source_backtest_id"] == source_id
+
+    new_config = yaml.safe_load((tmp_path / "api-results" / new_id / f"{new_id}.yaml").read_text(encoding="utf-8"))
+    assert new_config["runs"][0]["run_id"] == f"{new_id}:001:AAPL:buy_and_hold"
+
+    status_body = _wait_for_terminal_status(client, new_id)
+    assert status_body["status"] == "completed"
+
+
+def test_retry_backtest_rejects_missing_config(tmp_path) -> None:
+    client = _build_client(tmp_path)
+
+    response = client.post("/backtests/missing-id/retry")
+
+    assert response.status_code == 404
+
+
+def test_retry_backtest_rejects_active_source_job(tmp_path, monkeypatch) -> None:
+    started = Event()
+
+    def slow_runner(*_args, **_kwargs):
+        started.set()
+        started.wait(timeout=5.0)
+        return _fake_runner(*_args, **_kwargs)
+
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", slow_runner)
+    client = _build_client(tmp_path)
+
+    create_response = client.post("/backtests", json=_wizard_payload())
+    source_id = create_response.json()["backtest_id"]
+    assert started.wait(timeout=5.0)
+
+    response = client.post(f"/backtests/{source_id}/retry")
+
+    assert response.status_code == 409
+    started.set()

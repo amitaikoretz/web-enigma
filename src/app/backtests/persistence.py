@@ -21,6 +21,8 @@ class BacktestArtifactPaths:
     orders_parquet_path: str | None = None
     trades_parquet_path: str | None = None
     rejections_parquet_path: str | None = None
+    labels_parquet_path: str | None = None
+    features_parquet_path: str | None = None
     manifest_path: str | None = None
 
 
@@ -47,6 +49,8 @@ def _paths_from_row(row: BacktestJob) -> BacktestArtifactPaths:
         orders_parquet_path=row.orders_parquet_path,
         trades_parquet_path=row.trades_parquet_path,
         rejections_parquet_path=row.rejections_parquet_path,
+        labels_parquet_path=row.labels_parquet_path,
+        features_parquet_path=row.features_parquet_path,
         manifest_path=row.manifest_path,
     )
 
@@ -128,6 +132,8 @@ class SqlAlchemyBacktestJobRepository:
                 orders_parquet_path=resolved_paths.orders_parquet_path,
                 trades_parquet_path=resolved_paths.trades_parquet_path,
                 rejections_parquet_path=resolved_paths.rejections_parquet_path,
+                labels_parquet_path=resolved_paths.labels_parquet_path,
+                features_parquet_path=resolved_paths.features_parquet_path,
                 manifest_path=resolved_paths.manifest_path,
             )
             session.add(row)
@@ -155,6 +161,8 @@ class SqlAlchemyBacktestJobRepository:
             row.orders_parquet_path = paths.orders_parquet_path or row.orders_parquet_path
             row.trades_parquet_path = paths.trades_parquet_path or row.trades_parquet_path
             row.rejections_parquet_path = paths.rejections_parquet_path or row.rejections_parquet_path
+            row.labels_parquet_path = paths.labels_parquet_path or row.labels_parquet_path
+            row.features_parquet_path = paths.features_parquet_path or row.features_parquet_path
             row.manifest_path = paths.manifest_path or row.manifest_path
             session.commit()
 

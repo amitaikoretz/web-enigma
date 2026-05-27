@@ -192,6 +192,7 @@ def test_get_settings_returns_defaults_when_file_missing(tmp_path):
     assert body["backtest_defaults"]["feed"] == "iex"
     assert body["backtest_defaults"]["analyzers"]["include_equity_curve"] is False
     assert body["backtest_defaults"]["analyzers"]["include_candidate_log"] is False
+    assert body["backtest_defaults"]["analyzers"]["include_risk_auxiliary"] is False
     assert body["live_defaults"]["include_candidate_log"] is False
     assert body["platform_behavior"]["preferred_landing_page"] == "backtests"
 
@@ -1172,6 +1173,10 @@ class _FakeArgoSubmitter:
         }
         return f"backtest-{backtest_id[:8]}", "backtest-workflows"
 
+    def get_workflow(self, workflow_name: str) -> dict | None:
+        del workflow_name
+        return {"status": {"phase": "Running", "progress": "0/1", "nodes": {}}}
+
     def get_workflow_phase(self, workflow_name: str) -> str | None:
         del workflow_name
         return "Running"
@@ -1376,6 +1381,52 @@ def test_get_detail_loads_report_from_db_paths(tmp_path):
     assert detail["report"] is not None
     assert detail["report"]["total_runs"] == 1
     assert detail["output_path"] == str(report_path.resolve())
+
+
+def test_get_detail_falls_back_to_output_dir_when_db_path_missing(tmp_path):
+    client = _build_client(tmp_path)
+    jobs = client.app.state.deps.backtest_jobs
+    backtest_id = "argo-fallback-path-test"
+    report = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="0.1.0",
+        config_sha256="abc123",
+        input_config={"backtest_id": backtest_id},
+        total_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        status="success",
+        results=[],
+    )
+    jobs.repository.save_report(backtest_id, report)
+    local_report_path = jobs.repository.report_path(backtest_id)
+
+    from app.backtests.persistence import BacktestArtifactPaths
+
+    jobs.job_repository.create(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="completed",
+            report_status="success",
+            total_runs=1,
+            completed_runs=1,
+            successful_runs=1,
+            failed_runs=0,
+            execution_backend="argo",
+            workflow_name="backtest-argo-fallback-path-test",
+            workflow_namespace="backtest-workflows",
+        ),
+        paths=BacktestArtifactPaths(
+            report_json_path=f"/data/backtest-results/{backtest_id}/{backtest_id}.json",
+        ),
+    )
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+    assert detail["report"] is not None
+    assert detail["report"]["total_runs"] == 1
+    assert detail["output_path"] == str(local_report_path.resolve())
 
 
 def test_launch_argo_backtest_returns_503_when_unconfigured(tmp_path):
