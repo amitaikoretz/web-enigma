@@ -22,6 +22,7 @@ import {
 import { useMemo, useState } from 'react'
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 
+import { ApiHealthIndicator } from './components/ApiHealthIndicator'
 import { ChartPage } from './components/ChartPage'
 import { useSettings } from './settings/useSettings'
 import { navActiveBackground, ThemeAtmosphere } from './theme/atmosphere'
@@ -145,23 +146,27 @@ function App() {
         }}
       >
         <Toolbar sx={{ justifyContent: 'space-between', gap: 2 }}>
-          <Stack spacing={0.25}>
-            <Typography variant="h6" component="h1">
-              Kairos
-            </Typography>
+          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+              <Typography variant="h6" component="h1">
+                Kairos
+              </Typography>
+              <ApiHealthIndicator />
+            </Stack>
             <Typography variant="caption" color="text.secondary">
               Backtesting workspace
             </Typography>
           </Stack>
 
-          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, flex: 1, justifyContent: 'center' }}>
             <NavButtons />
           </Box>
 
           <IconButton
             color="inherit"
-            sx={{ display: { xs: 'inline-flex', md: 'none' } }}
+            sx={{ display: { xs: 'inline-flex', md: 'none' }, flexShrink: 0 }}
             onClick={() => setMobileNavOpen(true)}
+            aria-label="Open navigation menu"
           >
             <MenuIcon />
           </IconButton>

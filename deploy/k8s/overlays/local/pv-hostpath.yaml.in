@@ -1,0 +1,75 @@
+# Render with: envsubst < pv-hostpath.yaml.in | kubectl apply -f -
+# HOST_BACKTEST_RESULTS and HOST_BACKTEST_CACHE must be absolute host paths visible
+# inside the Rancher Desktop / k3s node (default: repo data/ directories).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: backtest-results-host
+  labels:
+    app.kubernetes.io/name: backtest-results
+    app.kubernetes.io/component: backtest
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: backtest-hostpath
+  hostPath:
+    path: ${HOST_BACKTEST_RESULTS}
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: backtest-cache-host
+  labels:
+    app.kubernetes.io/name: backtest-cache
+    app.kubernetes.io/component: backtest
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: backtest-hostpath
+  hostPath:
+    path: ${HOST_BACKTEST_CACHE}
+    type: DirectoryOrCreate
+---
+# Separate PVs for backtest-workflows (RWO allows one claim per PV; same host dirs as backtest).
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: backtest-results-workflows-host
+  labels:
+    app.kubernetes.io/name: backtest-results
+    app.kubernetes.io/component: backtest-workflows
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: backtest-hostpath
+  hostPath:
+    path: ${HOST_BACKTEST_RESULTS}
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: backtest-cache-workflows-host
+  labels:
+    app.kubernetes.io/name: backtest-cache
+    app.kubernetes.io/component: backtest-workflows
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: backtest-hostpath
+  hostPath:
+    path: ${HOST_BACKTEST_CACHE}
+    type: DirectoryOrCreate

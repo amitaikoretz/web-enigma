@@ -37,6 +37,7 @@ export const defaultPlatformSettings: PlatformSettings = {
       'created',
       'status',
       'report',
+      'artifacts',
       'date_range',
       'universe',
       'runs',

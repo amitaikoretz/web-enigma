@@ -93,6 +93,13 @@ class BacktestSelectionSummary(BaseModel):
     strategies: list[str]
 
 
+class BacktestArtifactSummaryItem(BaseModel):
+    kind: str
+    label: str
+    format: BacktestArtifactFormat
+    role: BacktestArtifactRole
+
+
 class BacktestListItem(BaseModel):
     id: str
     created_at: datetime
@@ -110,6 +117,7 @@ class BacktestListItem(BaseModel):
     workflow_namespace: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    stored_artifacts: list[BacktestArtifactSummaryItem] = Field(default_factory=list)
 
 
 class BacktestListPageResponse(BaseModel):
@@ -159,7 +167,21 @@ class BacktestStatusResponse(BacktestListItem):
     is_terminal: bool
 
 
+BacktestArtifactFormat = Literal["json", "yaml", "parquet", "other"]
+BacktestArtifactRole = Literal["primary", "sidecar", "manifest", "shard"]
+
+
+class BacktestArtifactEntry(BaseModel):
+    kind: str
+    label: str
+    format: BacktestArtifactFormat
+    role: BacktestArtifactRole
+    path: str
+    size_bytes: int | None = None
+
+
 class BacktestDetailResponse(BaseModel):
     metadata: BacktestListItem
     output_path: str | None = None
     report: BacktestReport | None = None
+    artifacts: list[BacktestArtifactEntry] = Field(default_factory=list)

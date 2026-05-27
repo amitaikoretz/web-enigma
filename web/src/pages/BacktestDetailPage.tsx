@@ -1,4 +1,5 @@
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import ReplayIcon from '@mui/icons-material/Replay'
 import {
   Alert,
@@ -6,18 +7,25 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Link,
+  IconButton,
   Paper,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
-import { Link as RouterLink, useParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 
-import { backtestReportUrl, fetchBacktestDetail, fetchBacktestStatus } from '../api/backtests'
+import {
+  deleteBacktest,
+  fetchBacktestDetail,
+  fetchBacktestStatus,
+} from '../api/backtests'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BacktestProgressPanel } from '../components/BacktestProgressPanel'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
+import { BacktestArtifactInventory } from '../components/BacktestArtifactInventory'
+import { BacktestArtifactChips, sidecarArtifacts } from '../components/BacktestArtifactChips'
 import { BacktestConfigInspector } from '../components/BacktestConfigInspector'
 import { BacktestRunDetailPanel } from '../components/BacktestRunDetailPanel'
 import { BacktestRunsComparisonTable } from '../components/BacktestRunsComparisonTable'
@@ -31,6 +39,7 @@ import {
   findStrategyAggregate,
   resolveReportAggregates,
 } from '../utils/backtestAggregates'
+import { summarizeCandidateActivity } from '../utils/backtestDiagnostics'
 import { formatInTimezone } from '../utils/datetime'
 import { hasPrefillableInputConfig } from '../utils/backtestConfigPrefill'
 
@@ -54,6 +63,7 @@ function listItemToStatus(item: BacktestListItem): BacktestStatusResponse {
 
 export function BacktestDetailPage() {
   const { platformSettings, appearance } = useSettings()
+  const navigate = useNavigate()
   const { backtestId = '' } = useParams()
   const [detail, setDetail] = useState<BacktestDetailResponse | null>(null)
   const [metadata, setMetadata] = useState<BacktestStatusResponse | null>(null)
@@ -61,6 +71,8 @@ export function BacktestDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ComparisonViewMode>('symbol')
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const refreshIntervalMs =
     platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
@@ -156,10 +168,24 @@ export function BacktestDetailPage() {
 
   const report = detail?.report ?? null
   const canRerun = hasPrefillableInputConfig(report?.input_config)
+  const candidateSummary = useMemo(
+    () => (report ? summarizeCandidateActivity(report.results) : null),
+    [report],
+  )
   const resolvedAggregates = useMemo(
     () => (report ? resolveReportAggregates(report) : null),
     [report],
   )
+
+  useEffect(() => {
+    if (!report || selectedRowId || viewMode !== 'symbol') {
+      return
+    }
+    const firstRun = report.results.find((result) => result.status === 'success') ?? report.results[0]
+    if (firstRun) {
+      setSelectedRowId(firstRun.run_id)
+    }
+  }, [report, selectedRowId, viewMode])
 
   const selectedRun =
     report && selectedRowId && viewMode === 'symbol'
@@ -169,6 +195,24 @@ export function BacktestDetailPage() {
     resolvedAggregates && selectedRowId && viewMode === 'strategy'
       ? findStrategyAggregate(resolvedAggregates.aggregates, selectedRowId)
       : undefined
+
+  async function confirmDelete() {
+    if (!metadata) {
+      return
+    }
+
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteBacktest(metadata.id)
+      navigate('/backtests')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete backtest')
+      setDeleteDialogOpen(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   if (loading && !metadata) {
     return (
@@ -234,6 +278,22 @@ export function BacktestDetailPage() {
             {metadata.execution_backend === 'argo' && (
               <Chip size="small" label="Argo" color="info" variant="outlined" />
             )}
+            <Tooltip title="Delete backtest">
+              <span>
+                <IconButton
+                  aria-label="Delete backtest"
+                  disabled={deleting}
+                  onClick={() => setDeleteDialogOpen(true)}
+                  size="small"
+                  sx={{
+                    color: 'text.disabled',
+                    '&:hover': { color: 'error.main', bgcolor: 'action.hover' },
+                  }}
+                >
+                  {deleting ? <CircularProgress size={18} /> : <DeleteOutlineIcon fontSize="small" />}
+                </IconButton>
+              </span>
+            </Tooltip>
           </Stack>
         </Stack>
       </Stack>
@@ -275,6 +335,8 @@ export function BacktestDetailPage() {
         </Stack>
       </Paper>
 
+      <BacktestArtifactInventory artifacts={detail?.artifacts ?? metadata.stored_artifacts ?? []} />
+
       {report ? (
         <>
           <Paper sx={{ p: 3 }}>
@@ -295,7 +357,7 @@ export function BacktestDetailPage() {
                 <Metric
                   label="Output JSON"
                   value={
-                    detail?.output_path ? (
+                    detail?.output_path || report ? (
                       <Link
                         href={backtestReportUrl(metadata.id)}
                         target="_blank"
@@ -310,6 +372,34 @@ export function BacktestDetailPage() {
                   }
                 />
               </Stack>
+              {(detail?.artifacts?.length ?? 0) > 0 && (
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2">Sidecar data on disk</Typography>
+                  <BacktestArtifactChips artifacts={sidecarArtifacts(detail?.artifacts ?? [])} />
+                </Stack>
+              )}
+              {candidateSummary && (
+                <Stack spacing={1}>
+                  <Typography variant="subtitle2">Candidate logging</Typography>
+                  {candidateSummary.enabledRuns > 0 ? (
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                      <Metric
+                        label="Runs with logging"
+                        value={`${candidateSummary.enabledRuns}/${report.results.length}`}
+                      />
+                      <Metric label="Total candidates" value={String(candidateSummary.totalCandidates)} />
+                      <Metric label="Traded" value={String(candidateSummary.tradedCandidates)} />
+                      <Metric label="Rejected" value={String(candidateSummary.rejectedCandidates)} />
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      Not enabled for this backtest. Enable <strong>Include candidate log</strong> in Settings
+                      or the wizard to record entry candidates. Select a run below and open the Candidates tab
+                      for per-run details.
+                    </Typography>
+                  )}
+                </Stack>
+              )}
             </Stack>
           </Paper>
 
@@ -367,6 +457,54 @@ export function BacktestDetailPage() {
           </Stack>
         </Paper>
       )}
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title="Delete backtest?"
+        description={
+          <Stack spacing={1.5}>
+            <Typography color="text.secondary">
+              This permanently removes the backtest job, its JSON report, and YAML config. This
+              action cannot be undone.
+            </Typography>
+            <Box
+              sx={{
+                px: 1.5,
+                py: 1.25,
+                borderRadius: 1,
+                border: 1,
+                borderColor: 'divider',
+                bgcolor: 'action.hover',
+              }}
+            >
+              <Typography variant="body2" color="text.secondary">
+                {metadata.selection
+                  ? `${metadata.selection.start_date} → ${metadata.selection.end_date}`
+                  : 'Selection summary unavailable'}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {metadata.selection
+                  ? `${metadata.selection.symbols?.length ?? 0} symbols · ${metadata.selection.strategies?.length ?? 0} strategies`
+                  : '—'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                {metadata.id}
+              </Typography>
+            </Box>
+          </Stack>
+        }
+        confirmLabel="Delete backtest"
+        cancelLabel="Keep backtest"
+        loading={deleting}
+        onCancel={() => {
+          if (!deleting) {
+            setDeleteDialogOpen(false)
+          }
+        }}
+        onConfirm={() => {
+          void confirmDelete()
+        }}
+      />
     </Stack>
   )
 }

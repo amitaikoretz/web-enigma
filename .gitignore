@@ -2,6 +2,10 @@
 __pycache__/*
 **/__pycache__/
 .cache/
+data/backtest-results/*
+!data/backtest-results/.gitkeep
+data/backtest-cache/*
+!data/backtest-cache/.gitkeep
 web/node_modules/
 web/dist/
 logs/

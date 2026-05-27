@@ -342,6 +342,7 @@ def _run_single(
         "drawdown": {"max": {"drawdown": drawdown}},
         "trades": trade_data,
         "execution": {"fill_model": run.execution.fill_model},
+        "include_candidate_log": run.analyzers.include_candidate_log,
         "resolution": run.data.interval if hasattr(run.data, "interval") else None,
         "trade_diagnostics": trade_diagnostics.model_dump(),
         "filter_diagnostics": filter_diagnostics.model_dump(),

@@ -8,6 +8,8 @@ metadata:
 spec:
   entrypoint: backtest-batch
   serviceAccountName: backtest-workflow
+  ttlStrategy:
+    secondsAfterCompletion: 604800
   arguments:
     parameters:
       - name: api-base-url
@@ -113,6 +115,8 @@ spec:
           - "{{inputs.parameters.split-by}}"
           - --backtest-id
           - "{{inputs.parameters.backtest-id}}"
+          - --launch-curl
+          - /tmp/launch-curl.txt
         envFrom:
           - secretRef:
               name: app-secrets
@@ -121,6 +125,11 @@ spec:
             mountPath: /workspace
           - name: backtest-results
             mountPath: /data/backtest-results
+      outputs:
+        parameters:
+          - name: launch-curl
+            valueFrom:
+              path: /tmp/launch-curl.txt
 
     - name: plan-shards
       inputs:

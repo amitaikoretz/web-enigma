@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from app.api.deps import ApiDependencies, get_deps
 from app.backtests.models import BacktestArgoLaunchRequest, BacktestArgoLaunchResponse, ArgoSplitBy
-from app.backtests.service import ArgoNotConfiguredError, BacktestAlreadyExistsError
+from app.backtests.service import ArgoNotConfiguredError, ArgoResultsNotSharedError, BacktestAlreadyExistsError
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -18,6 +18,8 @@ def launch_argo_backtest(
     try:
         return deps.backtest_jobs.submit_argo(payload)
     except ArgoNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArgoResultsNotSharedError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except BacktestAlreadyExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -40,6 +42,8 @@ def relaunch_argo_backtest(
     try:
         return deps.backtest_jobs.relaunch_argo(backtest_id, split_by=split_by)
     except ArgoNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArgoResultsNotSharedError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

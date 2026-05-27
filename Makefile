@@ -20,6 +20,9 @@ API_HOST ?= 127.0.0.1
 API_PORT ?= 8000
 ARGO_NAMESPACE ?= backtest-workflows
 ARGO_WORKFLOW_SERVICE_ACCOUNT ?= backtest-workflow
+# Host paths mounted into k3s via hostPath PVs (Mac-visible when under ~/… on Rancher Desktop).
+HOST_BACKTEST_RESULTS ?= $(abspath $(CURDIR)/data/backtest-results)
+HOST_BACKTEST_CACHE ?= $(abspath $(CURDIR)/data/backtest-cache)
 # Local ports (host side of make api-port-forwards).
 POSTGRES_LOCAL_PORT ?= 54321
 REDIS_LOCAL_PORT ?= 63791
@@ -38,7 +41,8 @@ ARGO_SERVER_SERVICE_NAME ?=
 
 API_DATABASE_URL ?= postgresql+psycopg://postgres:postgres@localhost:$(POSTGRES_LOCAL_PORT)/backtest
 API_REDIS_URL ?= redis://localhost:$(REDIS_LOCAL_PORT)/0
-API_RESULTS_DIR ?= /tmp/backtest-api-results
+API_RESULTS_DIR ?= $(HOST_BACKTEST_RESULTS)
+API_CACHE_DIR ?= $(HOST_BACKTEST_CACHE)
 
 ifeq ($(K8S_BUILD),nerdctl)
   K8S_CLI := nerdctl --namespace k8s.io
@@ -48,7 +52,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help api-serve api-port-forwards api-port-forwards-stop k8s-local-images build-k8s-app build-k8s-web pull-k8s-deps k3s-deploy k8s-restart-workloads k8s-workflows-deploy k8s-workflows-deploy-local test-argo-inline bootstrap-backtest-workflows-namespace sync-app-secrets
+.PHONY: help api-serve api-port-forwards api-port-forwards-stop k8s-local-images build-k8s-app build-k8s-web pull-k8s-deps k3s-deploy k3s-apply-host-volumes k3s-recreate-host-volumes k8s-restart-workloads k8s-workflows-deploy k8s-workflows-deploy-local test-argo-inline bootstrap-backtest-workflows-namespace sync-app-secrets open-results
 
 help: ## List available targets (default)
 	@printf '\n'
@@ -61,6 +65,7 @@ help: ## List available targets (default)
 	@printf '  Variables: K8S_BUILD=%s  K8S_CONTEXT=%s  K8S_NAMESPACE=%s  K8S_LOCAL_OVERLAY=%s\n' \
 		'$(K8S_BUILD)' '$(K8S_CONTEXT)' '$(K8S_NAMESPACE)' '$(K8S_LOCAL_OVERLAY)'
 	@printf '             APP_IMAGE=%s  WEB_IMAGE=%s\n' '$(APP_IMAGE)' '$(WEB_IMAGE)'
+	@printf '             HOST_BACKTEST_RESULTS=%s\n' '$(HOST_BACKTEST_RESULTS)'
 	@printf '             api-serve: API_HOST=%s  API_PORT=%s  ARGO_SERVER_URL=%s\n' \
 		'$(API_HOST)' '$(API_PORT)' '$(or $(ARGO_SERVER_URL),<kubeconfig>)'
 	@printf '             api-port-forwards: SESSION=%s  POSTGRES_LOCAL_PORT=%s  REDIS_LOCAL_PORT=%s  ARGO_SERVER_PORT=%s\n\n' \
@@ -90,9 +95,36 @@ k8s-restart-workloads: ## Rollout restart api, controller, web, and worker in K8
 	$(KUBECTL) -n $(K8S_NAMESPACE) rollout status deployment/web --timeout=180s
 	$(KUBECTL) -n $(K8S_NAMESPACE) rollout status statefulset/worker --timeout=240s
 
-k3s-deploy: ## Apply local kustomize overlay and restart workloads
+k3s-apply-host-volumes: ## Apply hostPath PVs bound to Mac-visible directories (HOST_BACKTEST_*)
+	@mkdir -p "$(HOST_BACKTEST_RESULTS)" "$(HOST_BACKTEST_CACHE)"
+	@export HOST_BACKTEST_RESULTS="$(HOST_BACKTEST_RESULTS)" HOST_BACKTEST_CACHE="$(HOST_BACKTEST_CACHE)"; \
+		envsubst < deploy/k8s/overlays/local/pv-hostpath.yaml.in | $(KUBECTL) apply -f -
+	@printf 'Host results (Mac + cluster): %s\n' "$(HOST_BACKTEST_RESULTS)"
+	@printf 'Host cache (Mac + cluster):   %s\n' "$(HOST_BACKTEST_CACHE)"
+
+k3s-recreate-host-volumes: ## Delete old PVCs and redeploy hostPath volumes (copies nothing; use before first migrate)
+	@printf 'WARNING: deletes backtest-results and backtest-cache PVCs in %s and backtest-workflows. Scale down API first if needed.\n' "$(K8S_NAMESPACE)"
+	-$(KUBECTL) -n $(K8S_NAMESPACE) scale deployment/api --replicas=0
+	-$(KUBECTL) -n $(K8S_NAMESPACE) scale statefulset/worker --replicas=0
+	-$(KUBECTL) -n $(K8S_NAMESPACE) delete pvc backtest-results backtest-cache --ignore-not-found
+	-$(KUBECTL) -n backtest-workflows delete pvc backtest-results backtest-cache --ignore-not-found
+	$(MAKE) k3s-apply-host-volumes
 	$(KUBECTL) apply -k $(K8S_LOCAL_OVERLAY)
+	$(KUBECTL) apply -k deploy/k8s/overlays/local-workflows
+	$(KUBECTL) -n $(K8S_NAMESPACE) scale deployment/api --replicas=1
+	$(KUBECTL) -n $(K8S_NAMESPACE) scale statefulset/worker --replicas=1
 	$(MAKE) k8s-restart-workloads
+
+k3s-deploy: ## Apply local kustomize overlay, hostPath PVs, workflow namespace, and sync ALPACA_* from local env into app-secrets
+	$(MAKE) k3s-apply-host-volumes
+	$(KUBECTL) apply -k $(K8S_LOCAL_OVERLAY)
+	$(KUBECTL) apply -k deploy/k8s/overlays/local-workflows
+	$(MAKE) sync-app-secrets
+	$(MAKE) k8s-restart-workloads
+
+open-results: ## Open HOST_BACKTEST_RESULTS in Finder (macOS)
+	@mkdir -p "$(HOST_BACKTEST_RESULTS)"
+	@open "$(HOST_BACKTEST_RESULTS)"
 
 k8s-workflows-deploy: ## Apply Argo workflow manifests under deploy/k8s/workflows
 	$(KUBECTL) apply -k deploy/k8s/workflows
@@ -149,6 +181,7 @@ api-serve: ## Run the Python API on the host (Argo Workflows in local k3s/docker
 	export ARGO_NAMESPACE="$${ARGO_NAMESPACE:-$(ARGO_NAMESPACE)}"; \
 	export ARGO_WORKFLOW_SERVICE_ACCOUNT="$${ARGO_WORKFLOW_SERVICE_ACCOUNT:-$(ARGO_WORKFLOW_SERVICE_ACCOUNT)}"; \
 	export BACKTEST_RESULTS_DIR="$${BACKTEST_RESULTS_DIR:-$(API_RESULTS_DIR)}"; \
+	export BACKTEST_CACHE_DIR="$${BACKTEST_CACHE_DIR:-$(API_CACHE_DIR)}"; \
 	export API_HOST="$(API_HOST)"; \
 	export API_PORT="$(API_PORT)"; \
 	export K8S_CONTEXT="$(K8S_CONTEXT)"; \

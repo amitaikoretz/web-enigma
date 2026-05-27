@@ -43,8 +43,8 @@ The first workflow step, `print-payload`, logs a copy-pasteable `curl` command f
 ```bash
 argo submit -n backtest-workflows --from workflowtemplate/backtest-batch \
   -p api-base-url=http://localhost:8000 \
-  -p config-path=/data/backtest-results/my-experiment.yaml \
-  -p output-path=/data/backtest-results/my-experiment.json \
+  -p config-path=/data/backtest-results/my-experiment/my-experiment.yaml \
+  -p output-path=/data/backtest-results/my-experiment/my-experiment.json \
   -p split-by=symbol \
   -p backtest-id=my-experiment
 ```
@@ -71,6 +71,20 @@ kubectl get secret app-secrets -n backtest -o yaml \
   | sed 's/namespace: backtest/namespace: backtest-workflows/' \
   | kubectl apply -f -
 ```
+
+## Database access
+
+Workflow pods mount the same `app-secrets` as the main stack, including `DATABASE_URL` with host `postgres`. That short name only resolves inside the **`backtest`** namespace where the Postgres Deployment runs.
+
+This bundle adds an **ExternalName** Service `postgres` in **`backtest-workflows`** that points at `postgres.backtest.svc.cluster.local`, so steps such as `merge-reports` (which update job metadata in Postgres) can connect without changing the secret.
+
+Verify after deploy:
+
+```bash
+kubectl get svc postgres -n backtest-workflows
+```
+
+**Staging / production:** If `DATABASE_URL` uses a managed host (not `@postgres:`), behavior is unchanged. If Postgres lives in another in-cluster namespace, patch `spec.externalName` on `service-postgres-external.yaml` via a workflows overlay.
 
 ## API configuration
 

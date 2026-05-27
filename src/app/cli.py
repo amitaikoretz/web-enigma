@@ -274,11 +274,18 @@ def _cmd_merge(manifest_path: str, output_path: str, backtest_id: str | None) ->
     except (ValueError, FileNotFoundError) as exc:
         print(f"Merge failed: {exc}")
         return 2
-    persist_backtest_report(report, output)
+    written_paths = persist_backtest_report(report, output, manifest_path=manifest)
     if backtest_id:
         from app.backtests.argo_reconciler import update_metadata_from_report
+        from app.backtests.artifacts import resolve_results_root
 
-        update_metadata_from_report(backtest_id, report, output_dir=output.parent)
+        update_metadata_from_report(
+            backtest_id,
+            report,
+            output_dir=resolve_results_root(output, backtest_id),
+            write_artifacts=False,
+            artifact_paths=written_paths,
+        )
     console.print(
         f"Merged {report.total_runs} runs: "
         f"{report.successful_runs} success, {report.failed_runs} failed. "
@@ -294,6 +301,7 @@ def _cmd_print_argo_payload(
     config_b64: str | None,
     split_by: str | None,
     backtest_id: str | None,
+    launch_curl_path: str | None = None,
 ) -> int:
     config_text: str | None = None
     resolved_config_path = config_path.strip() if config_path else None
@@ -330,7 +338,10 @@ def _cmd_print_argo_payload(
         print(f"Payload build failed: {exc}")
         return 2
 
-    print(format_argo_launch_curl(api_base_url, payload))
+    curl = format_argo_launch_curl(api_base_url, payload)
+    print(curl)
+    if launch_curl_path:
+        Path(launch_curl_path).write_text(curl, encoding="utf-8")
     return 0
 
 
@@ -401,20 +412,20 @@ def run_command(
     cache_dir: str | None = typer.Option(None, "--cache-dir", help="Local parquet cache directory"),
     cache_refresh: bool = typer.Option(False, "--cache-refresh", help="Force refresh cache entries"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable data cache for this run"),
-) -> None:
-    raise typer.Exit(code=_cmd_run(config, output, cache_dir, cache_refresh, no_cache))
+) -> int:
+    return _cmd_run(config, output, cache_dir, cache_refresh, no_cache)
 
 
 @app.command("alpaca-run", help="Evaluate latest completed Alpaca bars and submit paper/live orders")
 def alpaca_run_command(
     config: str = typer.Option(..., "--config", help="Alpaca trading YAML config path"),
-) -> None:
-    raise typer.Exit(code=_cmd_alpaca_run(config))
+) -> int:
+    return _cmd_alpaca_run(config)
 
 
 @app.command("list-strategies", help="List available built-in strategies")
-def list_strategies_command() -> None:
-    raise typer.Exit(code=_cmd_list_strategies())
+def list_strategies_command() -> int:
+    return _cmd_list_strategies()
 
 
 @app.command("report-html", help="Convert backtest JSON output into a Material Design HTML report")
@@ -422,19 +433,19 @@ def report_html_command(
     input_json: str = typer.Option(..., "--input", help="Backtest JSON input path"),
     output_html: str = typer.Option(..., "--output", help="HTML output path"),
     title: str = typer.Option("Backtest Report", "--title", help="Report page title"),
-) -> None:
+) -> int:
     input_path = Path(input_json)
     output_path = Path(output_html)
     if not input_path.exists():
         print(f"Input file not found: {input_path}")
-        raise typer.Exit(code=2)
+        return 2
     try:
         generate_html_report(input_path, output_path, title=title)
     except ValueError as exc:
         print(f"Invalid backtest JSON: {exc}")
-        raise typer.Exit(code=2)
+        return 2
     console.print(f"HTML report created: {output_path}")
-    raise typer.Exit(code=0)
+    return 0
 
 
 @app.command("plan-shards", help="Split a backtest config into parallel shard YAML files")
@@ -452,8 +463,8 @@ def plan_shards_command(
         "--split-by",
         help="Shard grouping: run, symbol, strategy, or symbol_strategy",
     ),
-) -> None:
-    raise typer.Exit(code=_cmd_plan_shards(config, work_dir, manifest, shards_param, split_by))
+) -> int:
+    return _cmd_plan_shards(config, work_dir, manifest, shards_param, split_by)
 
 
 @app.command("merge", help="Merge shard backtest JSON reports into one report")
@@ -465,8 +476,8 @@ def merge_command(
         "--backtest-id",
         help="When set, update job metadata in the output directory parent",
     ),
-) -> None:
-    raise typer.Exit(code=_cmd_merge(manifest, output, backtest_id))
+) -> int:
+    return _cmd_merge(manifest, output, backtest_id)
 
 
 @app.command("build-risk-dataset", help="Build labeled feature dataset from backtest report JSON(s)")
@@ -475,8 +486,8 @@ def build_risk_dataset_command(
     output: str = typer.Option(..., "--output", help="Parquet output path"),
     config: str | None = typer.Option(None, "--config", help="Risk dataset YAML config path"),
     cache_dir: str | None = typer.Option(None, "--cache-dir", help="Override parquet cache directory"),
-) -> None:
-    raise typer.Exit(code=_cmd_build_risk_dataset(input_json, output, config, cache_dir))
+) -> int:
+    return _cmd_build_risk_dataset(input_json, output, config, cache_dir)
 
 
 @app.command(
@@ -506,16 +517,20 @@ def print_argo_payload_command(
     ),
     split_by: str | None = typer.Option(None, "--split-by", help="Argo shard grouping"),
     backtest_id: str | None = typer.Option(None, "--backtest-id", help="Backtest job id"),
-) -> None:
-    raise typer.Exit(
-        code=_cmd_print_argo_payload(
-            api_base_url,
-            config_path,
-            config_text_file,
-            config_b64,
-            split_by,
-            backtest_id,
-        )
+    launch_curl: str | None = typer.Option(
+        None,
+        "--launch-curl",
+        help="Write the curl command to this path (for Argo output parameters)",
+    ),
+) -> int:
+    return _cmd_print_argo_payload(
+        api_base_url,
+        config_path,
+        config_text_file,
+        config_b64,
+        split_by,
+        backtest_id,
+        launch_curl,
     )
 
 
@@ -523,8 +538,8 @@ def print_argo_payload_command(
 def argo_reconciler_command(
     output_dir: str = typer.Option(..., "--output-dir", help="Backtest results directory"),
     once: bool = typer.Option(False, "--once", help="Run one reconciliation pass and exit"),
-) -> None:
-    raise typer.Exit(code=_cmd_argo_reconciler(output_dir, once))
+) -> int:
+    return _cmd_argo_reconciler(output_dir, once)
 
 
 def _cmd_import_metadata(output_dir: str) -> int:
@@ -562,8 +577,8 @@ def _cmd_import_metadata(output_dir: str) -> int:
 @app.command("import-metadata", help="Import legacy .meta.json files into the backtest_jobs table")
 def import_metadata_command(
     output_dir: str = typer.Option(..., "--output-dir", help="Backtest results directory"),
-) -> None:
-    raise typer.Exit(code=_cmd_import_metadata(output_dir))
+) -> int:
+    return _cmd_import_metadata(output_dir)
 
 
 @app.command("serve", help="Run the FastAPI market data service")
@@ -571,16 +586,16 @@ def serve_command(
     host: str = typer.Option("0.0.0.0", "--host", help="Bind host"),
     port: int = typer.Option(8000, "--port", min=1, max=65535, help="Bind port"),
     log_dir: Path = typer.Option(DEFAULT_LOG_DIR, "--log-dir", help="Directory for timestamped API log files"),
-) -> None:
-    raise typer.Exit(code=_cmd_serve(host, port, log_dir))
+) -> int:
+    return _cmd_serve(host, port, log_dir)
 
 
 @app.command("live-controller", help="Run the live trading contracts controller")
 def live_controller_command(
     config: str = typer.Option(..., "--config", help="Live trading YAML config path"),
     once: bool = typer.Option(False, "--once", help="Run one sync iteration and exit"),
-) -> None:
-    raise typer.Exit(code=_cmd_live_controller(config, once))
+) -> int:
+    return _cmd_live_controller(config, once)
 
 
 @app.command("live-worker", help="Run a live trading worker shard")
@@ -588,27 +603,27 @@ def live_worker_command(
     config: str = typer.Option(..., "--config", help="Live trading YAML config path"),
     shard_id: int = typer.Option(..., "--shard-id", min=0, help="Shard id for this worker"),
     once: bool = typer.Option(False, "--once", help="Run one worker iteration and exit"),
-) -> None:
-    raise typer.Exit(code=_cmd_live_worker(config, shard_id, once))
+) -> int:
+    return _cmd_live_worker(config, shard_id, once)
 
 
 @app.command("live-reconciler", help="Run the live trading reconciler")
 def live_reconciler_command(
     config: str = typer.Option(..., "--config", help="Live trading YAML config path"),
     once: bool = typer.Option(False, "--once", help="Run one reconciliation pass and exit"),
-) -> None:
-    raise typer.Exit(code=_cmd_live_reconciler(config, once))
+) -> int:
+    return _cmd_live_reconciler(config, once)
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        app(args=argv, standalone_mode=False)
-        return 0
+        code = app(args=argv, standalone_mode=False)
     except click.ClickException as exc:
         exc.show()
         return exc.exit_code
     except click.exceptions.Exit as exc:
         return exc.exit_code
+    return 0 if code is None else int(code)
 
 
 if __name__ == "__main__":

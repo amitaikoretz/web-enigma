@@ -5,7 +5,11 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
-from app.backtests.artifacts import default_artifact_paths, hydrate_report_from_artifacts
+from app.backtests.artifacts import (
+    default_artifact_paths,
+    hydrate_report_from_artifacts,
+    resolve_results_root,
+)
 from app.output.models import BacktestReport
 
 
@@ -672,7 +676,7 @@ def _render_html(view: dict[str, Any], title: str) -> str:
 
 def generate_html_report(input_json: Path, output_html: Path, title: str = "Backtest Report") -> None:
     report = BacktestReport.model_validate_json(input_json.read_text(encoding="utf-8"))
-    paths = default_artifact_paths(input_json.parent, input_json.stem)
+    paths = default_artifact_paths(resolve_results_root(input_json), input_json.stem)
     report = hydrate_report_from_artifacts(report, paths=paths)
     view = _build_view_model(report)
     html = _render_html(view, title)

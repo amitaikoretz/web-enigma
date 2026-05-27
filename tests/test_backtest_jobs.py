@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import Event
 
 from fastapi.testclient import TestClient
 
 from app.backtests.models import BacktestCreateRequest
 from app.backtests.service import BacktestArtifactStore, build_backtest_config
-from app.output.models import BacktestReport, OrderRecord, RunResult, RunSummary, TradeRecord
+from app.output.models import BacktestReport, CandidateRecord, OrderRecord, RunResult, RunSummary, TradeRecord
 from tests.conftest import build_backtest_client
 
 
@@ -134,7 +135,7 @@ def test_artifact_store_uses_path_agnostic_ids(tmp_path) -> None:
     assert store.report_path("job123").name == "job123.json"
     assert store.config_path("job123").name == "job123.yaml"
     paths = store.artifact_paths("job123")
-    assert paths.candidates_parquet_path.endswith("job123.candidates.parquet")
+    assert "/job123/job123.candidates.parquet" in paths.candidates_parquet_path.replace("\\", "/")
     assert paths.orders_parquet_path.endswith("job123.orders.parquet")
     assert paths.trades_parquet_path.endswith("job123.trades.parquet")
     assert paths.rejections_parquet_path.endswith("job123.rejections.parquet")
@@ -168,6 +169,102 @@ def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
     assert detail_body["report"]["results"][0]["symbol"] == "AAPL"
     assert len(detail_body["report"]["results"][0]["orders"]) == 1
     assert len(detail_body["report"]["results"][0]["trades"]) == 1
+    assert len(detail_body["artifacts"]) >= 3
+    artifact_kinds = {entry["kind"] for entry in detail_body["artifacts"]}
+    assert "report_json" in artifact_kinds
+    assert "orders_parquet" in artifact_kinds
+    assert "trades_parquet" in artifact_kinds
+
+
+def test_list_backtests_includes_stored_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+    _wait_for_terminal_status(client, backtest_id)
+
+    listed = client.get("/backtests").json()["items"]
+    item = next(entry for entry in listed if entry["id"] == backtest_id)
+    kinds = {entry["kind"] for entry in item["stored_artifacts"]}
+    assert "report_json" in kinds
+    assert "orders_parquet" in kinds
+    assert "trades_parquet" in kinds
+
+
+def test_get_detail_hydrates_candidates_from_parquet(tmp_path, monkeypatch):
+    def candidate_runner(config, config_raw, on_run_complete=None, on_run_error=None, **_kwargs):
+        results = []
+        total = len(config.runs)
+        for index, run in enumerate(config.runs, start=1):
+            result = RunResult(
+                run_id=run.run_id,
+                name=run.name,
+                status="success",
+                strategy=run.strategy or "",
+                symbol=run.data.symbol if hasattr(run.data, "symbol") else None,
+                data_source=run.data.type,
+                summary=RunSummary(start_value=10000.0, end_value=10500.0, return_pct=5.0),
+                analyzers={
+                    "include_candidate_log": True,
+                    "candidate_diagnostics": {
+                        "total_candidates": 1,
+                        "traded_candidates": 1,
+                        "rejected_candidates": 0,
+                    },
+                },
+                candidates=[
+                    CandidateRecord(
+                        candidate_id="cand-1",
+                        strategy_id=run.strategy or "",
+                        symbol=run.data.symbol if hasattr(run.data, "symbol") else "UNKNOWN",
+                        timestamp="2024-01-02T00:00:00+00:00",
+                        entry_price=100.0,
+                        planned_stop_pct=0.02,
+                        planned_horizon_bars=10,
+                        was_traded=True,
+                    )
+                ],
+            )
+            if on_run_complete is not None:
+                on_run_complete(result, index, total)
+            results.append(result)
+
+        return BacktestReport(
+            generated_at=datetime.now(timezone.utc),
+            app_version="0.1.0",
+            config_sha256="abc123",
+            input_config=config_raw,
+            total_runs=total,
+            successful_runs=total,
+            failed_runs=0,
+            status="success",
+            results=results,
+        )
+
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", candidate_runner)
+    client = _build_client(tmp_path)
+
+    response = client.post(
+        "/backtests",
+        json={
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-10",
+            "resolution": "1d",
+            "symbols": ["aapl"],
+            "strategies": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "analyzers": {"include_candidate_log": True},
+        },
+    )
+    assert response.status_code == 202
+    backtest_id = response.json()["backtest_id"]
+    _wait_for_terminal_status(client, backtest_id)
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+    result = detail["report"]["results"][0]
+    assert result["analyzers"]["include_candidate_log"] is True
+    assert result["analyzers"]["candidate_diagnostics"]["total_candidates"] == 1
+    assert len(result["candidates"]) == 1
+    assert result["candidates"][0]["candidate_id"] == "cand-1"
 
 
 def test_create_backtest_uses_saved_settings_defaults_for_optional_fields(tmp_path, monkeypatch):
@@ -350,6 +447,7 @@ def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):
     from datetime import UTC, datetime
 
     from app.backtests.models import BacktestListItem
+    from app.backtests.persistence import BacktestArtifactPaths
 
     class FakeArgoSubmitter:
         is_configured = True
@@ -391,12 +489,168 @@ def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):
             results=[],
         ),
     )
+    job_repository.update_paths(
+        backtest_id,
+        BacktestArtifactPaths(report_json_path=str(repository.report_path(backtest_id).resolve())),
+    )
 
     body = client.get(f"/backtests/{backtest_id}/status").json()
 
     assert body["status"] == "completed"
     assert body["is_terminal"] is True
     assert body["progress_pct"] == 100.0
+
+
+def test_run_job_writes_db_paths(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+    jobs = client.app.state.deps.backtest_jobs
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+    _wait_for_terminal_status(client, backtest_id)
+
+    paths = jobs.job_repository.get_paths(backtest_id)
+    assert paths is not None
+    assert paths.report_json_path is not None
+    assert Path(paths.report_json_path).is_file()
+
+
+def test_reconciler_completes_when_db_path_outside_output_dir(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from app.backtests.models import BacktestListItem
+    from app.backtests.persistence import BacktestArtifactPaths
+
+    class FakeArgoSubmitter:
+        is_configured = True
+
+        def get_workflow_phase(self, workflow_name: str) -> str | None:
+            del workflow_name
+            return "Succeeded"
+
+    client = _build_client(tmp_path)
+    jobs = client.app.state.deps.backtest_jobs
+    jobs.argo_submitter = FakeArgoSubmitter()
+    job_repository = jobs.job_repository
+    backtest_id = "argo-external-path-test"
+    external_dir = tmp_path / "workflow-results"
+    external_dir.mkdir()
+    report_path = external_dir / f"{backtest_id}.json"
+    report_path.write_text(
+        BacktestReport(
+            generated_at=datetime.now(UTC),
+            app_version="0.1.0",
+            config_sha256="abc",
+            input_config={},
+            total_runs=1,
+            successful_runs=1,
+            failed_runs=0,
+            status="success",
+            results=[],
+        ).model_dump_json(),
+        encoding="utf-8",
+    )
+    job_repository.create(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="running",
+            total_runs=1,
+            execution_backend="argo",
+            workflow_name="backtest-external-path-test",
+            workflow_namespace="backtest-workflows",
+        ),
+        paths=BacktestArtifactPaths(report_json_path=str(report_path.resolve())),
+    )
+
+    body = client.get(f"/backtests/{backtest_id}/status").json()
+
+    assert body["status"] == "completed"
+    assert body["is_terminal"] is True
+
+
+def test_merge_updates_db_paths_without_http(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.backtests.models import BacktestListItem
+    from app.backtests.persistence import SqlAlchemyBacktestJobRepository
+    from app.backtests.sharding import plan_shards, write_shard_manifest
+    from app.cli import _cmd_merge
+    from app.db.base import Base
+    from app.output.models import BacktestReport, RunResult, RunSummary
+    from tests.test_backtest_sharding import _sample_config_raw
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    test_session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    monkeypatch.setattr("app.backtests.argo_reconciler.get_session_factory", lambda: test_session_factory)
+
+    job_repository = SqlAlchemyBacktestJobRepository(test_session_factory)
+    backtest_id = "merge-db-path-test"
+    job_repository.create(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="running",
+            total_runs=1,
+            execution_backend="argo",
+            workflow_name="backtest-merge-db-path-test",
+            workflow_namespace="backtest-workflows",
+        ),
+    )
+
+    raw = _sample_config_raw()
+    work_dir = tmp_path / "work"
+    plan = plan_shards(raw, split_by="run", work_dir=work_dir)
+    for shard in plan.shards:
+        report = BacktestReport(
+            generated_at=datetime.now(UTC),
+            app_version="test",
+            config_sha256="abc",
+            input_config=raw,
+            total_runs=1,
+            successful_runs=1,
+            failed_runs=0,
+            status="success",
+            results=[
+                RunResult(
+                    run_id=shard.shard_id,
+                    status="success",
+                    strategy="sma_cross",
+                    symbol="AAPL",
+                    data_source="csv",
+                    summary=RunSummary(start_value=10000, end_value=10050, return_pct=0.5),
+                )
+            ],
+        )
+        Path(shard.output_path).write_text(report.model_dump_json(), encoding="utf-8")
+    manifest_path = work_dir / "manifest.json"
+    write_shard_manifest(plan, manifest_path)
+    output_path = tmp_path / "shared-results" / f"{backtest_id}.json"
+    output_path.parent.mkdir(parents=True)
+
+    exit_code = _cmd_merge(str(manifest_path), str(output_path), backtest_id)
+
+    assert exit_code == 0
+    assert output_path.is_file()
+    paths = job_repository.get_paths(backtest_id)
+    assert paths is not None
+    assert paths.report_json_path == str(output_path.resolve())
+    metadata = job_repository.get(backtest_id)
+    assert metadata is not None
+    assert metadata.status == "completed"
+    assert metadata.report_status == "success"
 
 
 def test_list_backtests_returns_newest_first(tmp_path, monkeypatch):

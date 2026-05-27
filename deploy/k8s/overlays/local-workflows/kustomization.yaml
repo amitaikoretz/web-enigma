@@ -5,19 +5,4 @@ resources:
   - ../../workflows
 
 patches:
-  - target:
-      kind: PersistentVolumeClaim
-      name: backtest-results
-    patch: |-
-      - op: replace
-        path: /spec/accessModes
-        value:
-          - ReadWriteOnce
-  - target:
-      kind: PersistentVolumeClaim
-      name: backtest-cache
-    patch: |-
-      - op: replace
-        path: /spec/accessModes
-        value:
-          - ReadWriteOnce
+  - path: patch-pvc-hostpath.yaml

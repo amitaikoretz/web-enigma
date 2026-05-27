@@ -68,7 +68,7 @@ interface BacktestRunDetailPanelProps {
 
 export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailPanelProps) {
   const { platformSettings, appearance } = useSettings()
-  const [tab, setTab] = useState<'overview' | 'chart' | 'diagnostics' | 'trades'>('overview')
+  const [tab, setTab] = useState<'overview' | 'chart' | 'diagnostics' | 'candidates' | 'trades'>('overview')
   const summary = result.summary
   const resolved = resolveRunDiagnostics(result)
   const tradeDiagnostics = resolved.tradeDiagnostics
@@ -76,8 +76,10 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
   const riskMetrics = resolved.riskMetrics
   const candidateDiagnostics = resolved.candidateDiagnostics
   const includeCandidateLog = resolved.includeCandidateLog
+  const candidateRecordsMissing = resolved.candidateRecordsMissing
   const distributions = tradeDiagnostics?.distributions ?? null
   const candidates = result.candidates ?? []
+  const candidateCount = candidateDiagnostics?.total_candidates ?? candidates.length
 
   const sortedTrades = [...result.trades].sort((left, right) => {
     const leftValue = left.datetime ? dayjs(left.datetime).valueOf() : Number.NEGATIVE_INFINITY
@@ -121,6 +123,10 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
             disabled={result.status !== 'success' || !result.symbol || !selection}
           />
           <Tab value="diagnostics" label="Diagnostics" />
+          <Tab
+            value="candidates"
+            label={includeCandidateLog ? `Candidates (${candidateCount})` : 'Candidates'}
+          />
           <Tab value="trades" label={`Trades (${result.trades.length})`} />
         </Tabs>
 
@@ -151,8 +157,7 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
           </BacktestAnalysisSection>
         )}
 
-        {tab === 'diagnostics' &&
-          (tradeDiagnostics || filterDiagnostics || riskMetrics || includeCandidateLog || candidateDiagnostics) && (
+        {tab === 'diagnostics' && (tradeDiagnostics || filterDiagnostics || riskMetrics) && (
           <BacktestAnalysisSection
             title="Strategy diagnostics"
             description="Trade economics, distributions, filters, and risk context."
@@ -175,66 +180,95 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
                 )}
                 {filterDiagnostics && <FilterDiagnosticsPanel diagnostics={filterDiagnostics} />}
                 {riskMetrics && <RiskMetricsPanel metrics={riskMetrics} />}
-                {(includeCandidateLog || candidateDiagnostics) && (
-                  <Box sx={{ gridColumn: { lg: '1 / -1' } }}>
-                    <Stack spacing={1.5}>
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                        <Typography variant="subtitle1">Candidate log</Typography>
-                        <Chip
-                          size="small"
-                          label={includeCandidateLog ? 'enabled' : 'disabled'}
-                          color={includeCandidateLog ? 'primary' : 'default'}
-                        />
-                      </Stack>
-                      {candidateDiagnostics ? (
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
-                          <Metric label="Total candidates" value={String(candidateDiagnostics.total_candidates)} />
-                          <Metric label="Traded" value={String(candidateDiagnostics.traded_candidates)} />
-                          <Metric label="Rejected" value={String(candidateDiagnostics.rejected_candidates)} />
-                        </Stack>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary">
-                          Candidate logging was enabled but no candidates were recorded for this run.
-                        </Typography>
-                      )}
-                      {candidates.length > 0 && (
-                        <DiagnosticsTableShell title={`Candidate records (${candidates.length})`}>
-                          <Table size="small">
-                            <TableHead>
-                              <TableRow>
-                                <TableCell>When</TableCell>
-                                <TableCell>Symbol</TableCell>
-                                <TableCell align="right">Signal</TableCell>
-                                <TableCell>Traded</TableCell>
-                                <TableCell>Reject reason</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {candidates.map((candidate) => (
-                                <TableRow key={candidate.candidate_id} hover>
-                                  <TableCell>
-                                    {formatTimestampOrDash(
-                                      candidate.timestamp,
-                                      platformSettings.platform_behavior.timezone,
-                                      appearance.time_display_format,
-                                    )}
-                                  </TableCell>
-                                  <TableCell>{candidate.symbol}</TableCell>
-                                  <TableCell align="right">
-                                    {formatNumber(candidate.signal_score, 2)}
-                                  </TableCell>
-                                  <TableCell>{candidate.was_traded ? 'yes' : 'no'}</TableCell>
-                                  <TableCell>{candidate.reject_reason ?? '—'}</TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </DiagnosticsTableShell>
-                      )}
-                    </Stack>
-                  </Box>
-                )}
               </DiagnosticsLayout>
+            </Stack>
+          </BacktestAnalysisSection>
+        )}
+
+        {tab === 'candidates' && (
+          <BacktestAnalysisSection
+            title="Entry candidates"
+            description="Signals evaluated for entry, including rejected opportunities when candidate logging is enabled."
+          >
+            <Stack spacing={1.5}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Typography variant="subtitle1">Candidate log</Typography>
+                <Chip
+                  size="small"
+                  label={includeCandidateLog ? 'enabled' : 'disabled'}
+                  color={includeCandidateLog ? 'primary' : 'default'}
+                />
+              </Stack>
+              {!includeCandidateLog ? (
+                <Alert severity="info">
+                  Candidate logging was not enabled for this run. Turn on{' '}
+                  <strong>Include candidate log</strong> in Settings → Backtest defaults or in the backtest
+                  wizard before submitting to record entry candidates.
+                </Alert>
+              ) : (
+                <>
+                  {candidateRecordsMissing && (
+                    <Alert severity="warning">
+                      This run recorded {candidateDiagnostics?.total_candidates ?? 0} candidates, but the
+                      detailed records could not be loaded. Re-open this backtest detail page or re-run the
+                      backtest if the issue persists.
+                    </Alert>
+                  )}
+                  {candidateDiagnostics ? (
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
+                      <Metric label="Total candidates" value={String(candidateDiagnostics.total_candidates)} />
+                      <Metric label="Traded" value={String(candidateDiagnostics.traded_candidates)} />
+                      <Metric label="Rejected" value={String(candidateDiagnostics.rejected_candidates)} />
+                    </Stack>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      Candidate logging was enabled but no candidates were recorded for this run.
+                    </Typography>
+                  )}
+                  {candidates.length > 0 ? (
+                    <DiagnosticsTableShell title={`Candidate records (${candidates.length})`}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>When</TableCell>
+                            <TableCell>Symbol</TableCell>
+                            <TableCell align="right">Signal</TableCell>
+                            <TableCell>Traded</TableCell>
+                            <TableCell>Reject reason</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {candidates.map((candidate) => (
+                            <TableRow key={candidate.candidate_id} hover>
+                              <TableCell>
+                                {formatTimestampOrDash(
+                                  candidate.timestamp,
+                                  platformSettings.platform_behavior.timezone,
+                                  appearance.time_display_format,
+                                )}
+                              </TableCell>
+                              <TableCell>{candidate.symbol}</TableCell>
+                              <TableCell align="right">
+                                {formatNumber(candidate.signal_score, 2)}
+                              </TableCell>
+                              <TableCell>{candidate.was_traded ? 'yes' : 'no'}</TableCell>
+                              <TableCell>{candidate.reject_reason ?? '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </DiagnosticsTableShell>
+                  ) : (
+                    !candidateRecordsMissing &&
+                    candidateDiagnostics &&
+                    candidateDiagnostics.total_candidates === 0 && (
+                      <Typography variant="body2" color="text.secondary">
+                        No entry candidates were emitted for this run.
+                      </Typography>
+                    )
+                  )}
+                </>
+              )}
             </Stack>
           </BacktestAnalysisSection>
         )}
