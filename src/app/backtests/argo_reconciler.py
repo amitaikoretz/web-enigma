@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.backtests.argo import ArgoWorkflowSubmitter, load_argo_workflow_config
+from app.backtests.argo import ArgoWorkflowSubmitter, _phase_from_workflow_resource, load_argo_workflow_config
 from app.backtests.models import BacktestListItem
 from app.backtests.persistence import (
     BacktestArtifactPaths,
@@ -88,6 +88,7 @@ def _reconcile_item(
     artifact_store: BacktestArtifactStore,
     job_repository: SqlAlchemyBacktestJobRepository,
     submitter: ArgoWorkflowSubmitter,
+    workflow: dict | None = None,
 ) -> tuple[BacktestListItem, bool]:
     if item.execution_backend != "argo" or not item.workflow_name:
         return item, False
@@ -95,7 +96,10 @@ def _reconcile_item(
     if item.status in {"completed", "failed"} and item.report_status is not None:
         return item, False
 
-    phase = submitter.get_workflow_phase(item.workflow_name)
+    resolved_workflow = workflow
+    if resolved_workflow is None:
+        resolved_workflow = submitter.get_workflow(item.workflow_name)
+    phase = _phase_from_workflow_resource(resolved_workflow) if resolved_workflow else None
     report_exists = _report_exists(item, artifact_store, job_repository)
     mapped_status = _map_workflow_phase(phase, report_exists=report_exists)
     if mapped_status is None:
@@ -137,6 +141,7 @@ def reconcile_backtest(
     artifact_store: BacktestArtifactStore,
     job_repository: SqlAlchemyBacktestJobRepository,
     submitter: ArgoWorkflowSubmitter | None = None,
+    workflow: dict | None = None,
 ) -> BacktestListItem | None:
     metadata = job_repository.get(backtest_id)
     if metadata is None:
@@ -154,7 +159,13 @@ def reconcile_backtest(
     if not resolved_submitter.is_configured:
         return metadata
 
-    updated, _changed = _reconcile_item(metadata, artifact_store, job_repository, resolved_submitter)
+    updated, _changed = _reconcile_item(
+        metadata,
+        artifact_store,
+        job_repository,
+        resolved_submitter,
+        workflow=workflow,
+    )
     return updated
 
 

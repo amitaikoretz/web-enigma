@@ -31,9 +31,8 @@ ARGO_SERVER_PORT ?= 27461
 POSTGRES_SERVICE_PORT ?= 5432
 REDIS_SERVICE_PORT ?= 6379
 ARGO_SERVER_SERVICE_PORT ?= 2746
-# Leave empty to submit workflows via kubeconfig (default for Rancher Desktop k3s).
-# Set to http://localhost:$(ARGO_SERVER_PORT) when using make api-port-forwards.
-ARGO_SERVER_URL ?=
+# Host-run API talks to Argo only via HTTP (see make api-port-forwards).
+ARGO_SERVER_URL ?= http://localhost:$(ARGO_SERVER_PORT)
 API_PORT_FORWARDS_SESSION ?= bt-port-forwards
 # Leave empty to auto-detect (namespace: argo or argo-workflows; service: argo-server or argo-workflows-server).
 ARGO_K8S_NAMESPACE ?=
@@ -67,7 +66,7 @@ help: ## List available targets (default)
 	@printf '             APP_IMAGE=%s  WEB_IMAGE=%s\n' '$(APP_IMAGE)' '$(WEB_IMAGE)'
 	@printf '             HOST_BACKTEST_RESULTS=%s\n' '$(HOST_BACKTEST_RESULTS)'
 	@printf '             api-serve: API_HOST=%s  API_PORT=%s  ARGO_SERVER_URL=%s\n' \
-		'$(API_HOST)' '$(API_PORT)' '$(or $(ARGO_SERVER_URL),<kubeconfig>)'
+		'$(API_HOST)' '$(API_PORT)' '$(ARGO_SERVER_URL)'
 	@printf '             api-port-forwards: SESSION=%s  POSTGRES_LOCAL_PORT=%s  REDIS_LOCAL_PORT=%s  ARGO_SERVER_PORT=%s\n\n' \
 		'$(API_PORT_FORWARDS_SESSION)' '$(POSTGRES_LOCAL_PORT)' '$(REDIS_LOCAL_PORT)' '$(ARGO_SERVER_PORT)'
 
@@ -169,9 +168,7 @@ api-port-forwards-stop: ## Stop the tmux session started by api-port-forwards
 
 api-serve: ## Run the Python API on the host (Argo Workflows in local k3s/docker)
 	@set -e; \
-	set -a; \
-	[ -f .env ] && . ./.env; \
-	set +a; \
+	. ./scripts/source_env_preserve_exports.sh ./.env; \
 	export PYTHONPATH="$${PYTHONPATH:-$(CURDIR)/src}"; \
 	export DATABASE_URL="$${DATABASE_URL:-$(API_DATABASE_URL)}"; \
 	case "$$DATABASE_URL" in *@postgres:*) export DATABASE_URL="$(API_DATABASE_URL)";; esac; \
@@ -190,7 +187,7 @@ api-serve: ## Run the Python API on the host (Argo Workflows in local k3s/docker
 	export POSTGRES_LOCAL_PORT="$(POSTGRES_LOCAL_PORT)"; \
 	export REDIS_LOCAL_PORT="$(REDIS_LOCAL_PORT)"; \
 	export ARGO_SERVER_PORT="$(ARGO_SERVER_PORT)"; \
-	if [ -n "$(ARGO_SERVER_URL)" ]; then export ARGO_SERVER_URL="$(ARGO_SERVER_URL)"; fi; \
+	export ARGO_SERVER_URL="$${ARGO_SERVER_URL:-$(ARGO_SERVER_URL)}"; \
 	chmod +x scripts/print_api_serve_prerequisites.sh; \
 	./scripts/print_api_serve_prerequisites.sh; \
 	if command -v backtest >/dev/null 2>&1; then \

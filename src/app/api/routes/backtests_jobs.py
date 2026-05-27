@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
+from pydantic import ValidationError
 
 from app.api.deps import ApiDependencies, get_deps
 from app.backtests import (
@@ -14,7 +15,11 @@ from app.backtests import (
     BacktestListPageResponse,
     BacktestStatusResponse,
 )
-from app.backtests.service import ArgoNotConfiguredError, ArgoResultsNotSharedError
+from app.backtests.service import (
+    ArgoNotConfiguredError,
+    ArgoResultsNotSharedError,
+    BacktestJobActiveError,
+)
 
 router = APIRouter(prefix="/backtests", tags=["backtests"])
 
@@ -84,6 +89,29 @@ def get_backtest_report(
         media_type="application/json",
         filename=f"{backtest_id}.json",
     )
+
+
+@router.post(
+    "/{backtest_id}/retry",
+    response_model=BacktestCreateResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def retry_backtest(
+    backtest_id: str,
+    deps: ApiDependencies = Depends(get_deps),
+) -> BacktestCreateResponse:
+    try:
+        return deps.backtest_jobs.retry_backtest(backtest_id)
+    except BacktestJobActiveError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ArgoNotConfiguredError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ArgoResultsNotSharedError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/{backtest_id}/config")

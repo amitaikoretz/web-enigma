@@ -151,7 +151,7 @@ Open `http://localhost:5173`.
 Platform settings control where wizard backtests run:
 
 - **Local (in-process)** — default for compose and bare-metal dev; jobs run in the API process thread pool.
-- **Argo Workflows** — when Argo is configured (in-cluster Kubernetes API or `ARGO_SERVER_URL` for a remote Argo server); wizard jobs submit an inline backtest workflow (plan → run shards → merge). Use **Settings → Platform Behavior** to switch backends and choose the Argo shard strategy (`run`, `symbol`, `strategy`, or `symbol + strategy`).
+- **Argo Workflows** — when `ARGO_SERVER_URL` is set (local dev: port-forward from `make api-port-forwards`; in-cluster: Argo server service URL). Wizard jobs submit an inline backtest workflow (plan → run shards → merge). Use **Settings → Platform Behavior** to switch backends and choose the Argo shard strategy (`run`, `symbol`, `strategy`, or `symbol + strategy`).
 
 For local API development against a remote Argo server:
 

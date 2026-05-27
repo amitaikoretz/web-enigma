@@ -29,6 +29,7 @@ export const defaultPlatformSettings: PlatformSettings = {
       include_trade_log: true,
       include_order_log: true,
       include_candidate_log: false,
+      include_risk_auxiliary: false,
     },
     execution: {
       fill_model: 'close',

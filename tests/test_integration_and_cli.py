@@ -272,8 +272,8 @@ def test_cli_run_writes_output(tmp_path: Path):
     assert "orders" not in result
     assert "trades" not in result
     assert "rejections" not in result
-    assert (tmp_path / "result.orders.parquet").exists()
-    assert (tmp_path / "result.trades.parquet").exists()
+    assert (tmp_path / "result" / "result.orders.parquet").exists()
+    assert (tmp_path / "result" / "result.trades.parquet").exists()
 
 
 def test_cli_report_html_from_json(tmp_path: Path):

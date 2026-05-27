@@ -65,6 +65,66 @@ class CandidateDiagnostics(BaseModel):
     rejected_candidates: int = 0
 
 
+LabelQualityFlag = Literal["OK", "MISSING_BARS", "BAD_PRICE", "AMBIGUOUS_INTRABAR"]
+OutcomeExitReason = Literal["STOP", "TARGET", "TIME", "DATA_ERROR"]
+FeatureQualityFlag = Literal["OK", "INSUFFICIENT_HISTORY"]
+
+
+class OutcomeLabelRecord(BaseModel):
+    candidate_id: str
+    label_version: str
+    entry_price: float
+    horizon_bars: int
+    stop_pct: float
+    target_pct: float | None = None
+    mae_pct: float
+    mae_abs_pct: float
+    mae_atr: float | None = None
+    mfe_pct: float
+    final_return_pct: float
+    realized_R: float
+    hit_stop: bool
+    hit_target: bool
+    hit_stop_before_target: bool
+    bars_to_stop: int | None = None
+    bars_to_target: int | None = None
+    bars_held: int
+    exit_reason: OutcomeExitReason
+    label_quality_flag: LabelQualityFlag
+
+
+class FeatureSnapshotRecord(BaseModel):
+    candidate_id: str
+    feature_version: str
+    feature_timestamp: str
+    feature_quality_flag: FeatureQualityFlag = "OK"
+    return_5: float | None = None
+    return_10: float | None = None
+    return_20: float | None = None
+    trend_slope_20: float | None = None
+    trend_slope_50: float | None = None
+    sma_20_distance: float | None = None
+    sma_50_distance: float | None = None
+    rsi_14: float | None = None
+    return_zscore_20: float | None = None
+    gap_pct: float | None = None
+    consecutive_up_bars: int | None = None
+    volume_zscore_20: float | None = None
+    relative_volume_20: float | None = None
+    atr_14_pct: float | None = None
+    realized_vol_10: float | None = None
+    realized_vol_20: float | None = None
+    vol_percentile_60: float | None = None
+    atr_expansion_10_50: float | None = None
+    dollar_volume_20: float | None = None
+    volume_percentile_60: float | None = None
+    index_return_20: float | None = None
+    index_trend_slope_50: float | None = None
+    correlation_to_index_60: float | None = None
+    beta_to_index_60: float | None = None
+    metadata_features: dict[str, Any] = Field(default_factory=dict)
+
+
 class EquityPoint(BaseModel):
     datetime: str
     value: float

@@ -63,6 +63,10 @@ class BacktestAlreadyExistsError(RuntimeError):
     pass
 
 
+class BacktestJobActiveError(RuntimeError):
+    pass
+
+
 class ArgoResultsNotSharedError(RuntimeError):
     pass
 
@@ -244,46 +248,85 @@ def build_backtest_config(payload: BacktestCreateRequest, backtest_id: str) -> B
     return BacktestConfig.model_validate(build_backtest_config_raw(payload, backtest_id))
 
 
+def _run_symbol_from_config(run: dict[str, Any]) -> str:
+    data = run.get("data")
+    if isinstance(data, dict):
+        symbol = data.get("symbol")
+        if isinstance(symbol, str) and symbol:
+            return symbol
+    return "UNKNOWN"
+
+
+def _run_strategy_from_config(run: dict[str, Any]) -> str:
+    strategy = run.get("strategy")
+    if isinstance(strategy, str) and strategy:
+        return strategy
+    return "unknown"
+
+
+def _rewrite_run_ids(config_raw: dict[str, Any], new_backtest_id: str) -> dict[str, Any]:
+    cloned = json.loads(json.dumps(config_raw))
+    runs = cloned.get("runs")
+    if not isinstance(runs, list):
+        raise ValueError("Config must contain a runs array")
+    for run_index, run in enumerate(runs, start=1):
+        if not isinstance(run, dict):
+            continue
+        symbol = _run_symbol_from_config(run)
+        strategy = _run_strategy_from_config(run)
+        run["run_id"] = f"{new_backtest_id}:{run_index:03d}:{symbol}:{strategy}"
+    return cloned
+
+
 def _is_terminal_status(status: str) -> bool:
     return status in {"completed", "failed"}
 
 
-def _progress_pct(completed_runs: int, total_runs: int, status: str) -> float:
+def _progress_pct(
+    completed_runs: int,
+    total_runs: int,
+    status: str,
+    *,
+    fallback_pct: float | None = None,
+) -> float:
     if total_runs == 0:
         return 0.0
     if status == "completed":
         return 100.0
-    return min(100.0, (completed_runs / total_runs) * 100.0)
+    progress = min(100.0, (completed_runs / total_runs) * 100.0)
+    if fallback_pct is not None:
+        progress = max(progress, min(100.0, fallback_pct))
+    return progress
 
 
-def compute_completed_runs(metadata: BacktestListItem, repository: BacktestArtifactStore) -> int:
-    if metadata.status in {"completed", "failed"}:
-        return metadata.completed_runs
-    if metadata.execution_backend != "argo":
-        return metadata.completed_runs
+def compute_completed_runs(
+    metadata: BacktestListItem,
+    repository: BacktestArtifactStore,
+    *,
+    workflow: dict | None = None,
+) -> int:
+    from app.backtests.argo_progress_status import blend_completed_runs
 
-    manifest_path = repository.output_dir / metadata.id / "manifest.json"
-    if not manifest_path.exists():
-        return metadata.completed_runs
-
-    from app.backtests.sharding import load_shard_manifest
-
-    plan = load_shard_manifest(manifest_path)
-    completed = 0
-    for shard in plan.shards:
-        shard_path = Path(shard.output_path)
-        if not shard_path.exists():
-            continue
-        try:
-            shard_report = BacktestReport.model_validate_json(shard_path.read_text(encoding="utf-8"))
-            completed += shard_report.total_runs
-        except (ValueError, OSError):
-            continue
-    return min(completed, metadata.total_runs)
+    completed_runs, _fallback_pct = blend_completed_runs(
+        metadata,
+        repository.output_dir,
+        workflow=workflow,
+    )
+    return completed_runs
 
 
-def build_status_response(metadata: BacktestListItem, completed_runs: int) -> BacktestStatusResponse:
-    progress = _progress_pct(completed_runs, metadata.total_runs, metadata.status)
+def build_status_response(
+    metadata: BacktestListItem,
+    completed_runs: int,
+    *,
+    fallback_pct: float | None = None,
+) -> BacktestStatusResponse:
+    progress = _progress_pct(
+        completed_runs,
+        metadata.total_runs,
+        metadata.status,
+        fallback_pct=fallback_pct,
+    )
     payload = metadata.model_dump()
     payload["completed_runs"] = completed_runs
     payload["progress_pct"] = progress
@@ -300,6 +343,7 @@ def finalize_job_from_report(
     metadata: BacktestListItem | None = None,
     write_artifacts: bool = True,
     artifact_paths: BacktestArtifactPaths | None = None,
+    risk_auxiliary_by_run: dict | None = None,
 ) -> BacktestListItem:
     current = metadata.model_copy(deep=True) if metadata is not None else BacktestListItem(
         id=backtest_id,
@@ -323,7 +367,18 @@ def finalize_job_from_report(
     if write_artifacts:
         artifact_store.save_report(backtest_id, report)
         paths = default_artifact_paths(artifact_store.output_dir, backtest_id)
-        written = write_report_artifacts(report, paths=paths)
+        label_rows: list[dict] = []
+        feature_rows: list[dict] = []
+        if risk_auxiliary_by_run:
+            from app.backtests.artifacts import flatten_risk_auxiliary_for_report
+
+            label_rows, feature_rows = flatten_risk_auxiliary_for_report(report, risk_auxiliary_by_run)
+        written = write_report_artifacts(
+            report,
+            paths=paths,
+            label_rows=label_rows,
+            feature_rows=feature_rows,
+        )
     else:
         written = artifact_paths or BacktestArtifactPaths()
 
@@ -342,6 +397,8 @@ def finalize_job_from_report(
                 written.orders_parquet_path,
                 written.trades_parquet_path,
                 written.rejections_parquet_path,
+                written.labels_parquet_path,
+                written.features_parquet_path,
                 written.manifest_path,
             )
         ):
@@ -408,6 +465,8 @@ class BacktestArtifactStore:
             resolved_paths.orders_parquet_path,
             resolved_paths.trades_parquet_path,
             resolved_paths.rejections_parquet_path,
+            resolved_paths.labels_parquet_path,
+            resolved_paths.features_parquet_path,
             resolved_paths.manifest_path,
             str(self.report_path(backtest_id)),
             str(self.config_path(backtest_id)),
@@ -422,6 +481,8 @@ class BacktestArtifactStore:
             self.output_dir / f"{backtest_id}.orders.parquet",
             self.output_dir / f"{backtest_id}.trades.parquet",
             self.output_dir / f"{backtest_id}.rejections.parquet",
+            self.output_dir / f"{backtest_id}.labels.parquet",
+            self.output_dir / f"{backtest_id}.features.parquet",
         ]
         work_dir = backtest_artifact_dir(self.output_dir, backtest_id)
         deleted = False
@@ -474,24 +535,62 @@ class BacktestJobService:
         return self.settings_service.load()
 
     def submit(self, payload: BacktestCreateRequest) -> BacktestCreateResponse:
-        platform_settings = self._platform_settings()
         backtest_id = uuid.uuid4().hex
-        config = build_backtest_config(payload, backtest_id)
         config_raw = build_backtest_config_raw(payload, backtest_id)
+        return self._submit_from_config_raw(
+            config_raw,
+            backtest_id,
+            selection=_build_selection_summary(payload),
+        )
+
+    def retry_backtest(self, source_backtest_id: str) -> BacktestCreateResponse:
+        config_path = self.repository.config_path(source_backtest_id)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Backtest config '{source_backtest_id}' not found")
+
+        source = self.job_repository.get(source_backtest_id)
+        if source is not None and source.status in {"pending", "running"}:
+            raise BacktestJobActiveError(f"Backtest '{source_backtest_id}' is still active")
+
+        config_raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        if not isinstance(config_raw, dict):
+            raise ValueError("Config root must be an object")
+
+        new_id = uuid.uuid4().hex
+        config_raw = _rewrite_run_ids(config_raw, new_id)
+        BacktestConfig.model_validate(config_raw)
+        return self._submit_from_config_raw(
+            config_raw,
+            new_id,
+            source_backtest_id=source_backtest_id,
+        )
+
+    def _submit_from_config_raw(
+        self,
+        config_raw: dict[str, Any],
+        backtest_id: str,
+        *,
+        selection: BacktestSelectionSummary | None = None,
+        source_backtest_id: str | None = None,
+    ) -> BacktestCreateResponse:
+        platform_settings = self._platform_settings()
+        config = BacktestConfig.model_validate(config_raw)
         created_at = _utc_now()
+        execution_backend = platform_settings.platform_behavior.backtest_execution_backend
         metadata = BacktestListItem(
             id=backtest_id,
             created_at=created_at,
             updated_at=created_at,
             status="pending",
             total_runs=len(config.runs),
-            selection=_build_selection_summary(payload),
+            selection=selection or _selection_from_config_raw(config_raw),
+            execution_backend=execution_backend,
         )
         paths = default_artifact_paths(self.repository.output_dir, backtest_id)
         self.job_repository.create(metadata, paths=paths)
         self.repository.save_config_yaml(backtest_id, config_raw)
 
-        if platform_settings.platform_behavior.backtest_execution_backend == "argo":
+        if execution_backend == "argo":
             split_by = platform_settings.platform_behavior.argo_split_by
             response = self._launch_argo_workflow(
                 backtest_id=backtest_id,
@@ -505,6 +604,7 @@ class BacktestJobService:
                 status=response.status,
                 status_url=response.status_url,
                 detail_url=response.detail_url,
+                source_backtest_id=source_backtest_id,
             )
 
         worker = threading.Thread(
@@ -520,11 +620,14 @@ class BacktestJobService:
             status="pending",
             status_url=f"/backtests/{backtest_id}/status",
             detail_url=f"/backtests/{backtest_id}",
+            source_backtest_id=source_backtest_id,
         )
 
     def submit_argo(self, payload: BacktestArgoLaunchRequest) -> BacktestArgoLaunchResponse:
         if not self.argo_submitter.is_configured:
-            raise ArgoNotConfiguredError("Argo Workflows is not configured in this environment")
+            raise ArgoNotConfiguredError(
+                "Argo Workflows is not configured: set ARGO_SERVER_URL to the Argo server HTTP endpoint"
+            )
 
         platform_settings = self._platform_settings()
         backtest_id = payload.backtest_id or uuid.uuid4().hex
@@ -646,7 +749,9 @@ class BacktestJobService:
         config_raw: dict[str, Any],
     ) -> BacktestArgoLaunchResponse:
         if not self.argo_submitter.is_configured:
-            raise ArgoNotConfiguredError("Argo Workflows is not configured in this environment")
+            raise ArgoNotConfiguredError(
+                "Argo Workflows is not configured: set ARGO_SERVER_URL to the Argo server HTTP endpoint"
+            )
 
         self._ensure_argo_results_visible()
         workflow_config_path, workflow_output_path = self._workflow_volume_paths(backtest_id)
@@ -684,21 +789,48 @@ class BacktestJobService:
             output_path=workflow_output_path,
         )
 
+    def _fetch_argo_workflow(self, metadata: BacktestListItem) -> dict | None:
+        if (
+            metadata.execution_backend != "argo"
+            or not metadata.workflow_name
+            or _is_terminal_status(metadata.status)
+            or not self.argo_submitter.is_configured
+        ):
+            return None
+        return self.argo_submitter.get_workflow(metadata.workflow_name)
+
+    def _resolve_running_progress(
+        self,
+        metadata: BacktestListItem,
+        *,
+        workflow: dict | None = None,
+    ) -> tuple[int, float | None]:
+        from app.backtests.argo_progress_status import blend_completed_runs
+
+        return blend_completed_runs(
+            metadata,
+            self.repository.output_dir,
+            workflow=workflow,
+        )
+
     def _refresh_list_item(self, item: BacktestListItem) -> BacktestListItem:
         refreshed = item
+        workflow = None
         if item.status in {"pending", "running"}:
             if item.execution_backend == "argo" and item.workflow_name:
                 from app.backtests.argo_reconciler import reconcile_backtest
 
+                workflow = self._fetch_argo_workflow(item)
                 updated = reconcile_backtest(
                     item.id,
                     self.repository,
                     self.job_repository,
                     self.argo_submitter,
+                    workflow=workflow,
                 )
                 if updated is not None:
                     refreshed = updated
-            completed_runs = compute_completed_runs(refreshed, self.repository)
+            completed_runs, _fallback_pct = self._resolve_running_progress(refreshed, workflow=workflow)
             if completed_runs != refreshed.completed_runs:
                 refreshed = refreshed.model_copy(deep=True)
                 refreshed.completed_runs = completed_runs
@@ -742,6 +874,7 @@ class BacktestJobService:
         if metadata is None:
             return None
 
+        workflow = None
         if (
             metadata.execution_backend == "argo"
             and metadata.workflow_name
@@ -749,18 +882,23 @@ class BacktestJobService:
         ):
             from app.backtests.argo_reconciler import reconcile_backtest
 
+            workflow = self._fetch_argo_workflow(metadata)
             updated = reconcile_backtest(
                 backtest_id,
                 self.repository,
                 self.job_repository,
                 self.argo_submitter,
+                workflow=workflow,
             )
             if updated is not None:
                 metadata = updated
 
-        completed_runs = compute_completed_runs(metadata, self.repository)
+        completed_runs, fallback_pct = self._resolve_running_progress(metadata, workflow=workflow)
         metadata = self._attach_stored_artifacts(metadata)
-        return build_status_response(metadata, completed_runs)
+        if completed_runs != metadata.completed_runs:
+            metadata = metadata.model_copy(deep=True)
+            metadata.completed_runs = completed_runs
+        return build_status_response(metadata, completed_runs, fallback_pct=fallback_pct)
 
     def resolve_report_file_path(self, backtest_id: str) -> Path | None:
         paths = self.job_repository.get_paths(backtest_id)
@@ -781,11 +919,14 @@ class BacktestJobService:
         if metadata is None:
             return None
         paths = self.job_repository.get_paths(backtest_id)
-        report_json_path = paths.report_json_path if paths else None
-        report = self.repository.load_report(backtest_id, report_json_path=report_json_path)
+        report_path = self.resolve_report_file_path(backtest_id)
+        report = (
+            self.repository.load_report(backtest_id, report_json_path=str(report_path))
+            if report_path is not None
+            else None
+        )
         if report is not None and paths is not None:
             report = hydrate_report_from_artifacts(report, paths=paths)
-        report_path = self.resolve_report_file_path(backtest_id)
         artifacts = inventory_backtest_artifacts(
             backtest_id,
             self.repository.output_dir,
@@ -821,7 +962,7 @@ class BacktestJobService:
 
         try:
             configure_strategy_logging()
-            report = run_backtests_with_hooks(
+            execution = run_backtests_with_hooks(
                 config,
                 config_raw,
                 on_run_complete=lambda result, _idx, _total: mark_progress(result),
@@ -834,10 +975,11 @@ class BacktestJobService:
             self.repository.save_config_yaml(current.id, config_raw)
             finalize_job_from_report(
                 backtest_id=current.id,
-                report=report,
+                report=execution.report,
                 artifact_store=self.repository,
                 job_repository=self.job_repository,
                 metadata=current,
+                risk_auxiliary_by_run=execution.risk_auxiliary_by_run,
             )
         except Exception as exc:  # noqa: BLE001
             current = _mark_terminal(current, status="failed")

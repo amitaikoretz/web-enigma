@@ -1,4 +1,5 @@
 import { readApiError } from './errors'
+import { parse as parseYaml } from 'yaml'
 import type {
   BacktestArgoLaunchRequest,
   BacktestArgoLaunchResponse,
@@ -40,6 +41,26 @@ function normalizeBacktestListPage(
     page: typeof record.page === 'number' ? record.page : page,
     page_size: typeof record.page_size === 'number' ? record.page_size : pageSize,
   }
+}
+
+export async function retryBacktest(backtestId: string): Promise<BacktestCreateResponse> {
+  const response = await fetch(`/api/backtests/${backtestId}/retry`, {
+    method: 'POST',
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to retry backtest'))
+  }
+
+  return response.json() as Promise<BacktestCreateResponse>
+}
+
+export async function fetchBacktestConfigYaml(backtestId: string): Promise<string> {
+  const response = await fetch(backtestConfigUrl(backtestId))
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to load backtest configuration'))
+  }
+  return response.text()
 }
 
 export async function createBacktest(
@@ -86,6 +107,20 @@ export async function fetchBacktests(
   }
   const body: unknown = await response.json()
   return normalizeBacktestListPage(body, params)
+}
+
+export async function fetchBacktestInputConfig(backtestId: string): Promise<Record<string, unknown>> {
+  const detail = await fetchBacktestDetail(backtestId)
+  if (detail.report?.input_config) {
+    return detail.report.input_config
+  }
+
+  const yamlText = await fetchBacktestConfigYaml(backtestId)
+  const parsed = parseYaml(yamlText)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('Backtest configuration is not available yet.')
+  }
+  return parsed as Record<string, unknown>
 }
 
 export async function fetchBacktestDetail(backtestId: string): Promise<BacktestDetailResponse> {

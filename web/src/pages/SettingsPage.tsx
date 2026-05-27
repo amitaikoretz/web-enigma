@@ -501,6 +501,9 @@ export function SettingsPage() {
                           analyzers: {
                             ...draft.backtest_defaults.analyzers,
                             include_candidate_log: checked,
+                            include_risk_auxiliary: checked
+                              ? draft.backtest_defaults.analyzers.include_risk_auxiliary
+                              : false,
                           },
                         },
                       })
@@ -509,10 +512,35 @@ export function SettingsPage() {
                 }
                 label="Include candidate log"
               />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={draft.backtest_defaults.analyzers.include_risk_auxiliary}
+                    disabled={!draft.backtest_defaults.analyzers.include_candidate_log}
+                    onChange={(_event, checked) =>
+                      handleDraftChange({
+                        ...draft,
+                        backtest_defaults: {
+                          ...draft.backtest_defaults,
+                          analyzers: {
+                            ...draft.backtest_defaults.analyzers,
+                            include_candidate_log: checked
+                              ? true
+                              : draft.backtest_defaults.analyzers.include_candidate_log,
+                            include_risk_auxiliary: checked,
+                          },
+                        },
+                      })
+                    }
+                  />
+                }
+                label="Build risk labels and features"
+              />
             </Stack>
             <Typography variant="body2" color="text.secondary">
               Candidate logging records entry candidates (traded and rejected) for risk-model dataset
-              building. It increases backtest output size.
+              building. Risk auxiliary writes outcome-label and feature-snapshot parquet sidecars during
+              the backtest run.
             </Typography>
 
             <BacktestResultsColumnSettings

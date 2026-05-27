@@ -9,9 +9,16 @@ import {
   Typography,
 } from '@mui/material'
 
-import type { BacktestArtifactEntry, BacktestArtifactRole } from '../types/backtests'
-import { BacktestArtifactChips } from './BacktestArtifactChips'
+import type {
+  BacktestArtifactEntry,
+  BacktestArtifactRole,
+  BacktestArtifactSummaryItem,
+} from '../types/backtests'
+import { resolveArtifactDescription } from '../utils/artifactDescriptions'
+import { publicArtifacts } from './BacktestArtifactChips'
 import { CollapsibleSection } from './CollapsibleSection'
+
+type ArtifactInventoryItem = BacktestArtifactEntry | BacktestArtifactSummaryItem
 
 const ROLE_LABELS: Record<BacktestArtifactRole, string> = {
   primary: 'Primary outputs',
@@ -20,10 +27,10 @@ const ROLE_LABELS: Record<BacktestArtifactRole, string> = {
   shard: 'Shard files',
 }
 
-const ROLE_ORDER: BacktestArtifactRole[] = ['primary', 'manifest', 'sidecar', 'shard']
+const ROLE_ORDER: BacktestArtifactRole[] = ['primary', 'sidecar']
 
-function formatBytes(sizeBytes: number | null): string {
-  if (sizeBytes === null) {
+function formatBytes(sizeBytes: number | null | undefined): string {
+  if (sizeBytes === null || sizeBytes === undefined) {
     return '—'
   }
   if (sizeBytes < 1024) {
@@ -42,8 +49,10 @@ function formatChipLabel(format: BacktestArtifactEntry['format']): string {
   return format.toUpperCase()
 }
 
-function groupArtifacts(artifacts: BacktestArtifactEntry[]): Array<[BacktestArtifactRole, BacktestArtifactEntry[]]> {
-  const grouped = new Map<BacktestArtifactRole, BacktestArtifactEntry[]>()
+function groupArtifacts(
+  artifacts: ArtifactInventoryItem[],
+): Array<[BacktestArtifactRole, ArtifactInventoryItem[]]> {
+  const grouped = new Map<BacktestArtifactRole, ArtifactInventoryItem[]>()
   for (const artifact of artifacts) {
     const bucket = grouped.get(artifact.role) ?? []
     bucket.push(artifact)
@@ -56,7 +65,7 @@ function groupArtifacts(artifacts: BacktestArtifactEntry[]): Array<[BacktestArti
 }
 
 interface BacktestArtifactInventoryProps {
-  artifacts: BacktestArtifactEntry[]
+  artifacts: ArtifactInventoryItem[]
   defaultExpanded?: boolean
 }
 
@@ -64,7 +73,8 @@ export function BacktestArtifactInventory({
   artifacts,
   defaultExpanded = true,
 }: BacktestArtifactInventoryProps) {
-  const groups = groupArtifacts(artifacts)
+  const visibleArtifacts = publicArtifacts(artifacts)
+  const groups = groupArtifacts(visibleArtifacts)
 
   return (
     <CollapsibleSection title="Auxiliary data files" defaultExpanded={defaultExpanded}>
@@ -73,8 +83,6 @@ export function BacktestArtifactInventory({
           Extra JSON and Parquet files written for this backtest. The report JSON is a slim summary;
           detailed run data lives in sidecar files when present.
         </Typography>
-
-        {artifacts.length > 0 && <BacktestArtifactChips artifacts={artifacts} />}
 
         {groups.length === 0 ? (
           <Typography variant="body2" color="text.secondary">
@@ -87,7 +95,8 @@ export function BacktestArtifactInventory({
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>Data</TableCell>
+                    <TableCell>File</TableCell>
+                    <TableCell>Contents</TableCell>
                     <TableCell>Format</TableCell>
                     <TableCell align="right">Size</TableCell>
                     <TableCell>Path</TableCell>
@@ -95,12 +104,22 @@ export function BacktestArtifactInventory({
                 </TableHead>
                 <TableBody>
                   {items.map((artifact) => (
-                    <TableRow key={artifact.path} hover>
+                    <TableRow
+                      key={'path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`}
+                      hover
+                    >
                       <TableCell>{artifact.label}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {resolveArtifactDescription(artifact)}
+                        </Typography>
+                      </TableCell>
                       <TableCell>
                         <Chip size="small" label={formatChipLabel(artifact.format)} variant="outlined" />
                       </TableCell>
-                      <TableCell align="right">{formatBytes(artifact.size_bytes)}</TableCell>
+                      <TableCell align="right">
+                        {formatBytes('size_bytes' in artifact ? artifact.size_bytes : null)}
+                      </TableCell>
                       <TableCell>
                         <Typography
                           component="code"
@@ -112,7 +131,7 @@ export function BacktestArtifactInventory({
                             wordBreak: 'break-all',
                           }}
                         >
-                          {artifact.path}
+                          {'path' in artifact ? artifact.path : '—'}
                         </Typography>
                       </TableCell>
                     </TableRow>

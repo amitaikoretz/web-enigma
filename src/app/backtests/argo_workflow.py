@@ -188,6 +188,11 @@ def _run_shard_template() -> dict[str, Any]:
     )
     return {
         "name": "run-shard",
+        "metadata": {
+            "annotations": {
+                "workflows.argoproj.io/progress": "0/100",
+            },
+        },
         "inputs": {
             "parameters": [
                 {"name": "shard-id"},

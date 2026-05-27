@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -151,6 +151,34 @@ def test_is_configured_true_for_http_mode_without_kubernetes() -> None:
     assert submitter.is_configured is True
 
 
+def test_is_configured_false_without_server_url() -> None:
+    submitter = ArgoWorkflowSubmitter(
+        ArgoWorkflowConfig(
+            namespace="backtest",
+            enabled=True,
+        )
+    )
+
+    assert submitter.is_configured is False
+
+
+def test_submit_requires_server_url() -> None:
+    submitter = ArgoWorkflowSubmitter(
+        ArgoWorkflowConfig(
+            namespace="backtest",
+            enabled=True,
+        )
+    )
+
+    with pytest.raises(RuntimeError, match="ARGO_SERVER_URL is not configured"):
+        submitter.submit(
+            config_path="/data/config.yaml",
+            output_path="/data/output.json",
+            split_by="symbol",
+            backtest_id="abc123",
+        )
+
+
 def test_submit_via_http_posts_workflow_to_argo_server() -> None:
     config = ArgoWorkflowConfig(
         namespace="backtest",
@@ -232,6 +260,25 @@ def test_get_workflow_phase_via_http() -> None:
     assert submitter.get_workflow_phase("backtest-abc") == "Succeeded"
 
 
+def test_get_workflow_via_http() -> None:
+    submitter = ArgoWorkflowSubmitter(
+        ArgoWorkflowConfig(
+            namespace="backtest",
+            enabled=True,
+            server_url="https://argo.example:2746",
+        )
+    )
+    mock_client = MagicMock()
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    payload = {"status": {"phase": "Running", "progress": "50/100", "nodes": {}}}
+    mock_response.json.return_value = payload
+    mock_client.request.return_value = mock_response
+    submitter._http_client = mock_client
+
+    assert submitter.get_workflow("backtest-abc") == payload
+
+
 def test_list_workflows_for_backtest_via_http() -> None:
     submitter = ArgoWorkflowSubmitter(
         ArgoWorkflowConfig(
@@ -278,60 +325,3 @@ def test_submit_via_http_raises_helpful_message_for_tls_scheme_mismatch() -> Non
             split_by="symbol",
             backtest_id="abc123",
         )
-
-
-@patch("app.backtests.argo.ArgoWorkflowSubmitter._custom_objects_api")
-def test_submit_via_kubernetes_when_server_url_not_set(mock_custom_objects_api: MagicMock) -> None:
-    api = MagicMock()
-    mock_custom_objects_api.return_value = api
-    submitter = ArgoWorkflowSubmitter(
-        ArgoWorkflowConfig(
-            namespace="backtest",
-            enabled=True,
-        )
-    )
-
-    workflow_name, namespace = submitter.submit(
-        config_path="/data/config.yaml",
-        output_path="/data/output.json",
-        split_by="symbol",
-        backtest_id="abc123def456",
-    )
-
-    assert namespace == "backtest"
-    assert workflow_name.startswith("backtest-abc123def456-")
-    api.create_namespaced_custom_object.assert_called_once()
-    body = api.create_namespaced_custom_object.call_args.kwargs["body"]
-    assert body["metadata"]["name"] == workflow_name
-    assert body["spec"]["entrypoint"] == "backtest-batch"
-    assert "workflowTemplateRef" not in body["spec"]
-
-
-def test_ensure_kubernetes_bearer_token_uses_bearer_token_key(
-    tmp_path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    token_dir = tmp_path / "token"
-    token_dir.mkdir()
-    token_file = token_dir / "token"
-    token_file.write_text("test-sa-token", encoding="utf-8")
-    ca_file = token_dir / "ca.crt"
-    ca_file.write_text("fake-ca", encoding="utf-8")
-
-    monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.43.0.1")
-    monkeypatch.setenv("KUBERNETES_SERVICE_PORT_HTTPS", "443")
-    monkeypatch.setattr(
-        "app.backtests.argo.os.path.exists",
-        lambda path: str(path).endswith("token") or str(path).endswith("ca.crt"),
-    )
-
-    submitter = ArgoWorkflowSubmitter(ArgoWorkflowConfig(namespace="backtest-workflows", enabled=True))
-    with patch("builtins.open", side_effect=[token_file.open(), ca_file.open()]):
-        submitter._ensure_kubernetes_bearer_token()
-
-    from kubernetes import client
-
-    configuration = client.Configuration.get_default_copy()
-    assert configuration.api_key == {"BearerToken": "test-sa-token", "authorization": "test-sa-token"}
-    assert configuration.api_key_prefix == {"BearerToken": "Bearer", "authorization": "Bearer"}
-    assert configuration.get_api_key_with_prefix("BearerToken") == "Bearer test-sa-token"

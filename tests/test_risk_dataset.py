@@ -145,3 +145,62 @@ def test_end_to_end_backtest_json_to_dataset(tmp_path: Path):
     df = pd.read_parquet(output_path)
     assert not df.empty
     assert "label_quality_flag" in df.columns
+
+
+def test_end_to_end_backtest_with_risk_auxiliary_sidecars(tmp_path: Path, monkeypatch):
+    raw = {
+        "runs": [
+            {
+                "run_id": "csv_candidates",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "strategy": "breakout_channel",
+                "strategy_params": {
+                    "lookback": 3,
+                    "stake": 1.0,
+                    "stop_loss_pct": 0.01,
+                    "take_profit_pct": 0.02,
+                    "max_hold_bars": 5,
+                },
+                "analyzers": {
+                    "include_candidate_log": True,
+                    "include_risk_auxiliary": True,
+                },
+            }
+        ]
+    }
+    config = BacktestConfig.model_validate(raw)
+    from app.engine.runner import run_backtests_with_hooks
+    from app.backtests.artifacts import persist_backtest_report
+
+    execution = run_backtests_with_hooks(config, raw)
+    assert execution.report.results[0].candidates
+    assert execution.risk_auxiliary_by_run
+
+    report_path = tmp_path / "job.json"
+    written = persist_backtest_report(
+        execution.report,
+        report_path,
+        risk_auxiliary_by_run=execution.risk_auxiliary_by_run,
+    )
+    assert written.labels_parquet_path is not None
+    assert written.features_parquet_path is not None
+    assert Path(written.labels_parquet_path).exists()
+    assert Path(written.features_parquet_path).exists()
+
+    def _forbidden_prepare(*args, **kwargs):
+        raise AssertionError("BarStore.prepare should not run when sidecars exist")
+
+    monkeypatch.setattr("app.risk.data.bars.BarStore.prepare", _forbidden_prepare)
+
+    output_path = tmp_path / "dataset.parquet"
+    manifest = build_risk_dataset(
+        [report_path],
+        output_path=output_path,
+        config=RiskDatasetConfig(min_history_bars=5, lookback_bars=5, include_index_features=False),
+    )
+    assert manifest.joined_rows >= 1
+    df = pd.read_parquet(output_path)
+    assert "hit_stop_before_target" in df.columns
+    assert "return_20" in df.columns

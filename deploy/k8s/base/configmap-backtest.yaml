@@ -9,4 +9,5 @@ data:
   BACKTEST_RESULTS_DIR: "/data/backtest-results"
   BACKTEST_CACHE_DIR: "/data/cache"
   ARGO_NAMESPACE: "backtest-workflows"
+  ARGO_SERVER_URL: "http://argo-workflows-server.argo.svc.cluster.local:2746"
   ARGO_WORKFLOW_SERVICE_ACCOUNT: "backtest-workflow"

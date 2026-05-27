@@ -8,24 +8,27 @@ import {
   Chip,
   CircularProgress,
   IconButton,
+  Link,
   Paper,
   Stack,
   Tooltip,
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
+import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import {
+  backtestReportUrl,
   deleteBacktest,
   fetchBacktestDetail,
   fetchBacktestStatus,
+  retryBacktest,
 } from '../api/backtests'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BacktestProgressPanel } from '../components/BacktestProgressPanel'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
 import { BacktestArtifactInventory } from '../components/BacktestArtifactInventory'
-import { BacktestArtifactChips, sidecarArtifacts } from '../components/BacktestArtifactChips'
+import { BacktestArtifactChips, publicArtifacts, sidecarArtifacts } from '../components/BacktestArtifactChips'
 import { BacktestConfigInspector } from '../components/BacktestConfigInspector'
 import { BacktestRunDetailPanel } from '../components/BacktestRunDetailPanel'
 import { BacktestRunsComparisonTable } from '../components/BacktestRunsComparisonTable'
@@ -41,7 +44,7 @@ import {
 } from '../utils/backtestAggregates'
 import { summarizeCandidateActivity } from '../utils/backtestDiagnostics'
 import { formatInTimezone } from '../utils/datetime'
-import { hasPrefillableInputConfig } from '../utils/backtestConfigPrefill'
+import { canEditAndRetryBacktest, canRetryBacktest } from '../utils/backtestConfigPrefill'
 
 function formatTimestamp(
   value: string,
@@ -64,7 +67,10 @@ function listItemToStatus(item: BacktestListItem): BacktestStatusResponse {
 export function BacktestDetailPage() {
   const { platformSettings, appearance } = useSettings()
   const navigate = useNavigate()
+  const location = useLocation()
   const { backtestId = '' } = useParams()
+  const retriedFromId =
+    (location.state as { retriedFrom?: string } | null)?.retriedFrom ?? null
   const [detail, setDetail] = useState<BacktestDetailResponse | null>(null)
   const [metadata, setMetadata] = useState<BacktestStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -73,6 +79,7 @@ export function BacktestDetailPage() {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const refreshIntervalMs =
     platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
@@ -167,7 +174,8 @@ export function BacktestDetailPage() {
   }, [backtestId, refreshIntervalMs])
 
   const report = detail?.report ?? null
-  const canRerun = hasPrefillableInputConfig(report?.input_config)
+  const canRetry = metadata ? canRetryBacktest(metadata) : false
+  const canEditAndRetry = metadata ? canEditAndRetryBacktest(metadata, report?.input_config) : false
   const candidateSummary = useMemo(
     () => (report ? summarizeCandidateActivity(report.results) : null),
     [report],
@@ -214,6 +222,25 @@ export function BacktestDetailPage() {
     }
   }
 
+  async function handleRetry() {
+    if (!metadata) {
+      return
+    }
+
+    setRetrying(true)
+    setError(null)
+    try {
+      const response = await retryBacktest(metadata.id)
+      navigate(`/backtests/${response.backtest_id}`, {
+        state: { retriedFrom: metadata.id },
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry backtest')
+    } finally {
+      setRetrying(false)
+    }
+  }
+
   if (loading && !metadata) {
     return (
       <Stack sx={{ py: 10, alignItems: 'center' }} spacing={1}>
@@ -254,9 +281,25 @@ export function BacktestDetailPage() {
             </Typography>
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            {canRetry && (
+              <Tooltip title="Launch a new backtest with the same configuration">
+                <span>
+                  <Button
+                    variant="contained"
+                    startIcon={retrying ? <CircularProgress size={18} color="inherit" /> : <ReplayIcon />}
+                    disabled={retrying}
+                    onClick={() => {
+                      void handleRetry()
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
             <Tooltip
               title={
-                canRerun
+                canEditAndRetry
                   ? 'Open the wizard with this backtest configuration'
                   : 'Available after the backtest completes and its configuration is saved.'
               }
@@ -267,9 +310,9 @@ export function BacktestDetailPage() {
                   to={`/backtests/new?from=${metadata.id}`}
                   variant="outlined"
                   startIcon={<ReplayIcon />}
-                  disabled={!canRerun}
+                  disabled={!canEditAndRetry}
                 >
-                  Re-run backtest
+                  Edit and retry
                 </Button>
               </span>
             </Tooltip>
@@ -299,6 +342,16 @@ export function BacktestDetailPage() {
       </Stack>
 
       {error && <Alert severity="error">{error}</Alert>}
+
+      {retriedFromId && (
+        <Alert severity="info">
+          Retried from{' '}
+          <Link component={RouterLink} to={`/backtests/${retriedFromId}`}>
+            {retriedFromId}
+          </Link>
+          .
+        </Alert>
+      )}
 
       {metadata.workflow_name && (
         <Alert severity="info">
@@ -335,7 +388,9 @@ export function BacktestDetailPage() {
         </Stack>
       </Paper>
 
-      <BacktestArtifactInventory artifacts={detail?.artifacts ?? metadata.stored_artifacts ?? []} />
+      <BacktestArtifactInventory
+        artifacts={publicArtifacts(detail?.artifacts ?? metadata.stored_artifacts ?? [])}
+      />
 
       {report ? (
         <>
@@ -372,7 +427,7 @@ export function BacktestDetailPage() {
                   }
                 />
               </Stack>
-              {(detail?.artifacts?.length ?? 0) > 0 && (
+              {sidecarArtifacts(detail?.artifacts ?? []).length > 0 && (
                 <Stack spacing={1}>
                   <Typography variant="subtitle2">Sidecar data on disk</Typography>
                   <BacktestArtifactChips artifacts={sidecarArtifacts(detail?.artifacts ?? [])} />

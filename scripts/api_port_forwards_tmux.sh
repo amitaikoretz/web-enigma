@@ -129,7 +129,7 @@ printf '\n  %sSession:%s  %s\n' "$BOLD" "$RESET" "$SESSION"
 printf '  %sAttach:%s  tmux attach -t %s\n' "$BOLD" "$RESET" "$SESSION"
 printf '  %sStop:%s    make api-port-forwards-stop\n' "$BOLD" "$RESET"
 if [[ -n "$ARGO_NS" && -n "$ARGO_SVC" ]]; then
-  printf '  %sArgo URL:%s  http://localhost:%s  (make api-serve ARGO_SERVER_URL=http://localhost:%s)\n' \
+  printf '  %sArgo URL:%s  http://localhost:%s  (make api-serve sets ARGO_SERVER_URL=http://localhost:%s)\n' \
     "$BOLD" "$RESET" "$ARGO_SERVER_PORT" "$ARGO_SERVER_PORT"
 fi
 printf '\n'

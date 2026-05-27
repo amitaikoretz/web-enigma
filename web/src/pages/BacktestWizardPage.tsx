@@ -23,7 +23,7 @@ import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
-import { createBacktest, fetchBacktestDetail } from '../api/backtests'
+import { createBacktest, fetchBacktestInputConfig } from '../api/backtests'
 import { fetchStrategies } from '../api/strategies'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestFeed } from '../types/backtests'
@@ -211,15 +211,10 @@ export function BacktestWizardPage() {
     setLoadingPrefill(true)
     setError(null)
 
-    void fetchBacktestDetail(prefillFromId)
-      .then((detail) => {
+    void fetchBacktestInputConfig(prefillFromId)
+      .then((inputConfig) => {
         if (cancelled) {
           return
-        }
-
-        const inputConfig = detail.report?.input_config
-        if (!inputConfig) {
-          throw new Error('Backtest configuration is not available yet.')
         }
 
         const prefill = parseInputConfigToPrefill(inputConfig)
@@ -640,17 +635,37 @@ export function BacktestWizardPage() {
                       setSubmitAnalyzers((current) => ({
                         ...current,
                         include_candidate_log: checked,
+                        include_risk_auxiliary: checked ? current.include_risk_auxiliary : false,
                       }))
                     }
                   />
                 }
                 label="Include candidate log"
               />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={submitAnalyzers.include_risk_auxiliary}
+                    disabled={!submitAnalyzers.include_candidate_log}
+                    onChange={(_event, checked) =>
+                      setSubmitAnalyzers((current) => ({
+                        ...current,
+                        include_candidate_log: checked ? true : current.include_candidate_log,
+                        include_risk_auxiliary: checked,
+                      }))
+                    }
+                  />
+                }
+                label="Build risk labels and features"
+              />
             </Stack>
             {submitAnalyzers.include_candidate_log && (
               <Alert severity="info">
                 Candidate logging records every entry signal (traded and rejected) and increases
                 backtest output size.
+                {submitAnalyzers.include_risk_auxiliary
+                  ? ' Risk auxiliary adds outcome-label and feature-snapshot parquet sidecars.'
+                  : ''}
               </Alert>
             )}
             <Link

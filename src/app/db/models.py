@@ -248,6 +248,8 @@ class BacktestJob(Base):
     orders_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     trades_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     rejections_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    labels_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    features_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

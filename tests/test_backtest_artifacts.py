@@ -360,6 +360,39 @@ def test_summarize_backtest_artifacts_returns_compact_entries(tmp_path: Path) ->
     assert "orders_parquet" in kinds
     assert "trades_parquet" in kinds
     assert all(hasattr(entry, "kind") and not hasattr(entry, "path") for entry in summary)
+    trades = next(entry for entry in summary if entry.kind == "trades_parquet")
+    assert trades.description
+    assert "Closed trade records" in trades.description
+
+
+def test_inventory_backtest_artifacts_include_descriptions(tmp_path: Path) -> None:
+    report = _sample_report()
+    output_path = tmp_path / "job-1" / "job-1.json"
+    persist_backtest_report(report, output_path)
+    (tmp_path / "job-1" / "job-1.yaml").write_text("runs: []\n", encoding="utf-8")
+
+    inventory = inventory_backtest_artifacts("job-1", tmp_path)
+
+    by_kind = {entry.kind: entry for entry in inventory}
+    assert by_kind["trades_parquet"].description
+    assert "Closed trade records" in by_kind["trades_parquet"].description
+    assert by_kind["orders_parquet"].description
+    assert "Broker orders" in by_kind["orders_parquet"].description
+    assert by_kind["report_parquet"].description
+    assert "headline metrics" in by_kind["report_parquet"].description.lower()
+
+
+def test_inventory_backtest_artifacts_infer_description_from_filename(tmp_path: Path) -> None:
+    work_dir = tmp_path / "job-1"
+    work_dir.mkdir()
+    trades_path = work_dir / "job-1.trades.parquet"
+    trades_path.write_bytes(b"PAR1")
+
+    inventory = inventory_backtest_artifacts("job-1", tmp_path)
+
+    trades = next(entry for entry in inventory if entry.path == str(trades_path.resolve()))
+    assert trades.label == "Trades"
+    assert "Closed trade records" in trades.description
 
 
 def test_inventory_backtest_artifacts_lists_existing_sidecars(tmp_path: Path) -> None:
@@ -377,3 +410,222 @@ def test_inventory_backtest_artifacts_lists_existing_sidecars(tmp_path: Path) ->
     assert "trades_parquet" in kinds
     assert "candidates_parquet" in kinds
     assert all(entry.size_bytes is not None and entry.size_bytes > 0 for entry in inventory)
+
+
+def test_inventory_backtest_artifacts_excludes_shard_and_manifest_files(tmp_path: Path) -> None:
+    from app.backtests.sharding import ShardPlan, ShardSpec, write_shard_manifest
+
+    backtest_id = "argo-artifact-test"
+    work_dir = tmp_path / backtest_id
+    shards_dir = work_dir / "shards"
+    shards_dir.mkdir(parents=True)
+    (work_dir / f"{backtest_id}.json").write_text("{}", encoding="utf-8")
+    (work_dir / f"{backtest_id}.yaml").write_text("runs: []\n", encoding="utf-8")
+    (work_dir / f"{backtest_id}.orders.parquet").write_bytes(b"PAR1")
+    shard_output = shards_dir / "aapl_breakout_channel.json"
+    shard_output.write_text("{}", encoding="utf-8")
+    (shards_dir / "aapl_breakout_channel.orders.parquet").write_bytes(b"PAR1")
+    write_shard_manifest(
+        ShardPlan(
+            config_path=str(work_dir / f"{backtest_id}.yaml"),
+            split_by="run",
+            shards=[
+                ShardSpec(
+                    shard_id="aapl_breakout_channel",
+                    config_path=str(shard_output.with_suffix(".yaml")),
+                    output_path=str(shard_output.resolve()),
+                )
+            ],
+        ),
+        work_dir / "manifest.json",
+    )
+
+    inventory = inventory_backtest_artifacts(
+        backtest_id,
+        tmp_path,
+        paths=BacktestArtifactPaths(
+            report_json_path=str((work_dir / f"{backtest_id}.json").resolve()),
+            manifest_path=str((work_dir / "manifest.json").resolve()),
+        ),
+    )
+
+    roles = {entry.role for entry in inventory}
+    paths = [Path(entry.path) for entry in inventory]
+    assert roles.isdisjoint({"shard", "manifest"})
+    assert all("shards" not in path.parts for path in paths)
+    assert "orders_parquet" in {entry.kind for entry in inventory}
+
+    nested_shard_file = shards_dir / "aapl_breakout_channel" / "aapl_breakout_channel.trades.parquet"
+    nested_shard_file.parent.mkdir(parents=True, exist_ok=True)
+    nested_shard_file.write_bytes(b"PAR1")
+    (shards_dir / "aapl_breakout_channel.yaml").write_text("runs: []\n", encoding="utf-8")
+
+    nested_inventory = inventory_backtest_artifacts(
+        backtest_id,
+        tmp_path,
+        paths=BacktestArtifactPaths(
+            report_json_path=str((work_dir / f"{backtest_id}.json").resolve()),
+            manifest_path=str((work_dir / "manifest.json").resolve()),
+        ),
+    )
+    nested_paths = [Path(entry.path) for entry in nested_inventory]
+    assert all("shards" not in path.parts for path in nested_paths)
+    assert {entry.role for entry in nested_inventory}.isdisjoint({"shard", "manifest"})
+
+
+def test_persist_writes_labels_and_features_sidecars(tmp_path: Path) -> None:
+    from app.backtests.artifacts import flatten_risk_auxiliary_for_report
+    from app.output.models import FeatureSnapshotRecord, OutcomeLabelRecord
+
+    report = _sample_report()
+    labels = [
+        OutcomeLabelRecord(
+            candidate_id="cand-1",
+            label_version="labels_v1",
+            entry_price=100.0,
+            horizon_bars=5,
+            stop_pct=0.01,
+            target_pct=0.02,
+            mae_pct=-0.005,
+            mae_abs_pct=0.005,
+            mae_atr=0.5,
+            mfe_pct=0.01,
+            final_return_pct=0.01,
+            realized_R=1.0,
+            hit_stop=False,
+            hit_target=True,
+            hit_stop_before_target=False,
+            bars_held=3,
+            exit_reason="TARGET",
+            label_quality_flag="OK",
+        )
+    ]
+    features = [
+        FeatureSnapshotRecord(
+            candidate_id="cand-1",
+            feature_version="features_v1",
+            feature_timestamp="2024-01-02T16:40:00+00:00",
+            return_20=0.05,
+            atr_14_pct=0.02,
+        )
+    ]
+    auxiliary = {report.results[0].run_id: (labels, features)}
+    output_path = tmp_path / "job-1" / "job-1.json"
+    written = persist_backtest_report(
+        report,
+        output_path,
+        risk_auxiliary_by_run=auxiliary,
+    )
+
+    assert written.labels_parquet_path is not None
+    assert written.features_parquet_path is not None
+    label_rows, feature_rows = flatten_risk_auxiliary_for_report(report, auxiliary)
+    assert len(label_rows) == 1
+    assert len(feature_rows) == 1
+
+    from app.backtests.artifacts import load_features_from_parquet, load_labels_from_parquet
+
+    loaded_labels = load_labels_from_parquet(Path(written.labels_parquet_path))
+    loaded_features = load_features_from_parquet(Path(written.features_parquet_path))
+    run_id = report.results[0].run_id
+    assert loaded_labels[run_id][0].hit_target is True
+    assert loaded_features[run_id][0].return_20 == 0.05
+
+
+def test_merge_persist_writes_combined_labels_and_features_from_shards(tmp_path: Path) -> None:
+    from app.backtests.sharding import ShardPlan, ShardSpec, write_shard_manifest
+    from app.output.models import FeatureSnapshotRecord, OutcomeLabelRecord
+
+    run_id = "job-1:001:AAPL:breakout_channel"
+    work_dir = tmp_path / "work"
+    shard_output = work_dir / "shards" / "aapl_breakout_channel.json"
+    shard_output.parent.mkdir(parents=True, exist_ok=True)
+    shard_output.write_text("{}", encoding="utf-8")
+
+    labels_path = work_dir / "shards" / "aapl_breakout_channel.labels.parquet"
+    features_path = work_dir / "shards" / "aapl_breakout_channel.features.parquet"
+    pd.DataFrame(
+        [
+            {
+                "run_id": run_id,
+                "candidate_id": "cand-1",
+                "label_version": "labels_v1",
+                "entry_price": 100.0,
+                "horizon_bars": 5,
+                "stop_pct": 0.01,
+                "target_pct": 0.02,
+                "mae_pct": -0.01,
+                "mae_abs_pct": 0.01,
+                "mae_atr": 0.5,
+                "mfe_pct": 0.02,
+                "final_return_pct": 0.02,
+                "realized_R": 2.0,
+                "hit_stop": False,
+                "hit_target": True,
+                "hit_stop_before_target": False,
+                "bars_held": 2,
+                "exit_reason": "TARGET",
+                "label_quality_flag": "OK",
+            }
+        ]
+    ).to_parquet(labels_path, index=False)
+    pd.DataFrame(
+        [
+            {
+                "run_id": run_id,
+                "candidate_id": "cand-1",
+                "feature_version": "features_v1",
+                "feature_timestamp": "2024-01-02T16:40:00+00:00",
+                "return_20": 0.04,
+            }
+        ]
+    ).to_parquet(features_path, index=False)
+
+    manifest_path = work_dir / "manifest.json"
+    write_shard_manifest(
+        ShardPlan(
+            split_by="symbol_strategy",
+            config_path=str(work_dir / "config.yaml"),
+            shards=[
+                ShardSpec(
+                    shard_id="aapl_breakout_channel",
+                    config_path=str(shard_output.with_suffix(".yaml")),
+                    output_path=str(shard_output.resolve()),
+                )
+            ],
+        ),
+        manifest_path,
+    )
+
+    merged = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="0.1.0",
+        config_sha256="abc",
+        input_config={},
+        total_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        status="success",
+        results=[
+            RunResult(
+                run_id=run_id,
+                status="success",
+                strategy="breakout_channel",
+                symbol="AAPL",
+                data_source="alpaca",
+                summary=RunSummary(start_value=10000.0, end_value=10020.0, return_pct=0.2),
+            )
+        ],
+    )
+    output_path = tmp_path / "shared-results" / "job-1.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    written = persist_backtest_report(merged, output_path, manifest_path=manifest_path)
+
+    assert written.labels_parquet_path is not None
+    assert written.features_parquet_path is not None
+    labels = pd.read_parquet(written.labels_parquet_path)
+    features = pd.read_parquet(written.features_parquet_path)
+    assert len(labels) == 1
+    assert len(features) == 1
+    assert labels.iloc[0]["candidate_id"] == "cand-1"
+    assert features.iloc[0]["return_20"] == 0.04

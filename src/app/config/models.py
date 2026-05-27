@@ -20,6 +20,13 @@ class AnalyzerConfig(BaseModel):
     include_trade_log: bool = True
     include_order_log: bool = True
     include_candidate_log: bool = False
+    include_risk_auxiliary: bool = False
+
+    @model_validator(mode="after")
+    def ensure_risk_auxiliary_requires_candidates(self) -> "AnalyzerConfig":
+        if self.include_risk_auxiliary:
+            object.__setattr__(self, "include_candidate_log", True)
+        return self
 
 
 class BacktestExecutionConfig(BaseModel):

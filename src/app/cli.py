@@ -17,6 +17,14 @@ from app.api_logging import DEFAULT_LOG_DIR, build_timestamped_log_file, configu
 from app.strategies.auditor_logging import configure_strategy_logging
 from app.config.models import AlpacaTradingConfig, BacktestConfig, LiveTradingConfig
 from app.backtests.argo_payload import build_argo_launch_payload, format_argo_launch_curl
+from app.backtests.argo_progress import (
+    ARGO_PROGRESS_TOTAL,
+    ThrottledProgressWriter,
+    pct_from_run_and_bar,
+    pct_from_run_index,
+    resolve_progress_file,
+    write_argo_progress,
+)
 from app.backtests.merge import merge_exit_code, merge_from_manifest
 from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_manifest, write_shards_param
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
@@ -51,6 +59,7 @@ def _cmd_run(
     cache_dir: str | None,
     cache_refresh: bool,
     no_cache: bool,
+    progress_file: str | None = None,
 ) -> int:
     config_file = Path(config_path)
     try:
@@ -65,6 +74,11 @@ def _cmd_run(
 
     configure_strategy_logging()
 
+    argo_progress_path = resolve_progress_file(progress_file)
+    progress_writer = ThrottledProgressWriter(argo_progress_path) if argo_progress_path is not None else None
+    if progress_writer is not None:
+        progress_writer.write_immediate(0)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[bold blue]{task.description}"),
@@ -78,12 +92,24 @@ def _cmd_run(
 
         def on_run_start(run, idx: int, total: int) -> None:
             progress.update(task_id, description=f"Running {run.run_id} ({idx}/{total})")
+            if progress_writer is not None:
+                progress_writer.write_immediate(pct_from_run_index(idx - 1, total))
+
+        def on_run_bar_progress(run_idx: int, total_runs: int, bar_idx: int, bar_total: int) -> None:
+            if progress_writer is not None:
+                progress_writer.write(
+                    pct_from_run_and_bar(run_idx, total_runs, bar_idx, bar_total),
+                )
 
         def on_run_complete(result, idx: int, total: int) -> None:
             progress.advance(task_id, 1)
+            if progress_writer is not None:
+                progress_writer.write_immediate(pct_from_run_index(idx, total))
 
         def on_run_error(result, idx: int, total: int) -> None:
             progress.advance(task_id, 1)
+            if progress_writer is not None:
+                progress_writer.write_immediate(pct_from_run_index(idx, total))
             err = result.error.message if result.error else "Unknown error"
             etype = result.error.type if result.error else "Error"
             console.print(f"[red]Run failed immediately[/red] {result.run_id}: {etype}: {err}")
@@ -103,20 +129,27 @@ def _cmd_run(
                 cache_enabled=False if no_cache else None,
                 cache_dir=cache_dir,
                 cache_refresh=cache_refresh,
+                on_run_bar_progress=on_run_bar_progress if progress_writer is not None else None,
             ),
         )
     output = Path(output_path)
-    persist_backtest_report(report, output)
+    persist_backtest_report(
+        report.report,
+        output,
+        risk_auxiliary_by_run=report.risk_auxiliary_by_run,
+    )
+    if progress_writer is not None:
+        progress_writer.write_immediate(ARGO_PROGRESS_TOTAL)
 
     console.print(
-        f"Completed {report.total_runs} runs: "
-        f"{report.successful_runs} success, {report.failed_runs} failed. "
-        f"Status={report.status}. Output={output}"
+        f"Completed {report.report.total_runs} runs: "
+        f"{report.report.successful_runs} success, {report.report.failed_runs} failed. "
+        f"Status={report.report.status}. Output={output}"
     )
 
-    if report.status == "success":
+    if report.report.status == "success":
         return 0
-    if report.status == "partial_failure":
+    if report.report.status == "partial_failure":
         return 10
     return 20
 
@@ -412,8 +445,13 @@ def run_command(
     cache_dir: str | None = typer.Option(None, "--cache-dir", help="Local parquet cache directory"),
     cache_refresh: bool = typer.Option(False, "--cache-refresh", help="Force refresh cache entries"),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable data cache for this run"),
+    progress_file: str | None = typer.Option(
+        None,
+        "--progress-file",
+        help="Write Argo-style N/100 progress (defaults to ARGO_PROGRESS_FILE when set)",
+    ),
 ) -> int:
-    return _cmd_run(config, output, cache_dir, cache_refresh, no_cache)
+    return _cmd_run(config, output, cache_dir, cache_refresh, no_cache, progress_file)
 
 
 @app.command("alpaca-run", help="Evaluate latest completed Alpaca bars and submit paper/live orders")
