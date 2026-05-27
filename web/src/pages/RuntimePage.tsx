@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Paper,
   Stack,
@@ -146,6 +147,13 @@ export function RuntimePage() {
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
             Live controller and worker activity.
           </Typography>
+          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+            <Chip
+              size="small"
+              label={`Live candidate logging: ${platformSettings.live_defaults.include_candidate_log ? 'on' : 'off'}`}
+              color={platformSettings.live_defaults.include_candidate_log ? 'primary' : 'default'}
+            />
+          </Stack>
           {lastUpdatedAt && (
             <Typography color="text.secondary" variant="caption" sx={{ display: 'block', mt: 0.5 }}>
               Last updated{' '}

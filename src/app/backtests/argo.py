@@ -102,6 +102,7 @@ class ArgoWorkflowSubmitter:
                 split_by=split_by,
                 backtest_id=backtest_id,
                 config_yaml=config_yaml,
+                api_base_url=os.environ.get("BACKTEST_API_BASE_URL", "").strip() or None,
             ),
         }
 
@@ -159,11 +160,14 @@ class ArgoWorkflowSubmitter:
         port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
         with open(token_path, encoding="utf-8") as handle:
             token = handle.read().strip()
+        if token.lower().startswith("bearer "):
+            token = token.split(" ", 1)[1]
         configuration = client.Configuration.get_default_copy()
         configuration.host = f"https://{host}:{port}"
         configuration.ssl_ca_cert = ca_path
-        configuration.api_key = {"authorization": token}
-        configuration.api_key_prefix = {"authorization": "Bearer"}
+        # kubernetes>=36 expects api_key["BearerToken"]; older clients use api_key["authorization"].
+        configuration.api_key = {"BearerToken": token, "authorization": token}
+        configuration.api_key_prefix = {"BearerToken": "Bearer", "authorization": "Bearer"}
         client.Configuration.set_default(configuration)
 
     def _custom_objects_api(self) -> Any:

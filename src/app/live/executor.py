@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.config.models import AlpacaExecutionConfig, AlpacaTradingRunConfig
+from app.strategies.candidates import CandidateEvent, record_candidate
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyRuntimeSnapshot
 from app.strategies.auditor_logging import log_auditor_rejection
 from app.strategies.implementations import _benchmark_bars_as_of
@@ -231,7 +232,17 @@ class AlpacaStrategyExecutor:
         self.snapshot = self.state_store.load(run.run_id)
         self.core.load_state(self.snapshot.core_state)
         self.seen_client_order_ids = {order.client_order_id for order in self.trading_client.list_open_orders(run.symbol)}
+        self.candidate_log: list[CandidateEvent] = []
+        self._candidate_log_path = (
+            Path(execution.state_directory) / run.run_id / "candidates.jsonl"
+        )
         self._sync_position_from_broker()
+
+    def _persist_candidate(self, event: CandidateEvent) -> None:
+        self._candidate_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._candidate_log_path.open("a", encoding="utf-8") as handle:
+            handle.write(event.model_dump_json())
+            handle.write("\n")
 
     def _sync_position_from_broker(self) -> None:
         live_position = self.trading_client.get_position(self.run.symbol)
@@ -332,6 +343,18 @@ class AlpacaStrategyExecutor:
         decision = self.core.on_bar(context)
         events: list[ExecutionEvent] = []
 
+        candidate_event = record_candidate(
+            self.candidate_log,
+            decision,
+            enabled=self.execution.include_candidate_log,
+            strategy_id=self.run.strategy,
+            symbol=self.run.symbol,
+            timestamp=latest.iso_timestamp,
+            entry_type="MARKET",
+        )
+        if candidate_event is not None and self.execution.include_candidate_log:
+            self._persist_candidate(candidate_event)
+
         if decision.action == "hold" and decision.auditor_rejection:
             log_auditor_rejection(
                 symbol=self.run.symbol,
@@ -416,13 +439,17 @@ def build_alpaca_executor(
     trading_client: AlpacaTradingClient | None = None,
     bar_source: AlpacaBarSource | None = None,
     state_store: RuntimeStateStore | None = None,
+    include_candidate_log: bool | None = None,
 ) -> AlpacaStrategyExecutor:
+    effective_execution = execution
+    if include_candidate_log is not None:
+        effective_execution = execution.model_copy(update={"include_candidate_log": include_candidate_log})
     return AlpacaStrategyExecutor(
         run=run,
-        execution=execution,
-        trading_client=trading_client or HttpAlpacaTradingClient(execution.mode),
+        execution=effective_execution,
+        trading_client=trading_client or HttpAlpacaTradingClient(effective_execution.mode),
         bar_source=bar_source or HttpAlpacaBarSource(),
-        state_store=state_store or RuntimeStateStore(execution.state_directory),
+        state_store=state_store or RuntimeStateStore(effective_execution.state_directory),
     )
 
 

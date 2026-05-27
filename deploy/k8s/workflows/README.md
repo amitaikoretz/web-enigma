@@ -36,7 +36,18 @@ kubectl auth can-i create workflowtaskresults.argoproj.io \
 
 The workflow service account needs `create`/`patch` on `workflowtaskresults` so Argo's wait sidecar can report task completion. Without it, steps fail with `exit code 64` and a forbidden error on `workflowtaskresults.argoproj.io`.
 
-The `plan-shards` step writes its `withParam` output to `/tmp/shards-param.json` (not on the workspace PVC). Argo's emissary executor cannot collect output parameters from workflow volume mounts reliably.
+The `plan-shards` step writes its `withParam` output to `/tmp/shards-param.json` (not on the workspace PVC). Argo's emissary executor cannot collect output parameters from workflow volume mounts reliably. The step also writes `manifest-path` and `work-dir` to `/tmp/manifest-path.txt` and `/tmp/work-dir.txt` for downstream merge wiring.
+
+The first workflow step, `print-payload`, logs a copy-pasteable `curl` command for `POST /backtests/argo` using the workflow parameters. Override the API target when port-forwarding locally:
+
+```bash
+argo submit -n backtest-workflows --from workflowtemplate/backtest-batch \
+  -p api-base-url=http://localhost:8000 \
+  -p config-path=/data/backtest-results/my-experiment.yaml \
+  -p output-path=/data/backtest-results/my-experiment.json \
+  -p split-by=symbol \
+  -p backtest-id=my-experiment
+```
 
 When launching via the API, the config YAML is embedded in the workflow as a base64 parameter so the plan step does not depend on the API pod's PVC being the same volume as `backtest-workflows`. For manual `argo submit --from workflowtemplate/backtest-batch`, either copy the config onto the workflow namespace `backtest-results` PVC at `config-path`, or pass `-p config-b64=$(base64 -w0 < config.yaml)` (GNU base64; on macOS omit `-w0`).
 

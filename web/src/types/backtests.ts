@@ -43,6 +43,30 @@ export interface FilterDiagnostics {
   signal_to_trade_pct: number | null
 }
 
+export interface CandidateDiagnostics {
+  total_candidates: number
+  traded_candidates: number
+  rejected_candidates: number
+}
+
+export interface CandidateRecord {
+  candidate_id: string
+  strategy_id: string
+  symbol: string
+  timestamp: string
+  side: 'LONG' | 'SHORT'
+  entry_price: number
+  entry_type: 'CLOSE' | 'NEXT_OPEN' | 'MARKET' | 'LIMIT' | 'MID'
+  planned_stop_pct: number
+  planned_target_pct: number | null
+  planned_horizon_bars: number
+  signal_score: number | null
+  signal_reason: string | null
+  metadata: Record<string, unknown>
+  was_traded: boolean
+  reject_reason: string | null
+}
+
 export interface RiskMetrics {
   sortino_ratio: number | null
   calmar_ratio: number | null
@@ -113,6 +137,7 @@ export interface BacktestRunResult {
   orders: BacktestOrderRecord[]
   trades: BacktestTradeRecord[]
   rejections?: BacktestRejectionRecord[]
+  candidates?: CandidateRecord[]
   error: BacktestRunError | null
 }
 
@@ -223,7 +248,10 @@ export interface BacktestDetailResponse {
   report: BacktestReport | null
 }
 
-export type BacktestStatusResponse = BacktestListItem
+export interface BacktestStatusResponse extends BacktestListItem {
+  progress_pct: number
+  is_terminal: boolean
+}
 
 export interface BacktestStrategySelectionInput {
   name: string
@@ -247,6 +275,7 @@ export interface BacktestCreateRequest {
     include_equity_curve: boolean
     include_trade_log: boolean
     include_order_log: boolean
+    include_candidate_log: boolean
   }
   execution?: {
     fill_model: 'close' | 'next_bar'

@@ -71,8 +71,13 @@ class PlatformBehaviorSettings(BaseModel):
     argo_split_by: Literal["run", "symbol", "strategy", "symbol_strategy"] = "symbol_strategy"
 
 
+class LiveDefaults(BaseModel):
+    include_candidate_log: bool = False
+
+
 class PlatformSettings(BaseModel):
     backtest_defaults: BacktestDefaults = Field(default_factory=BacktestDefaults)
+    live_defaults: LiveDefaults = Field(default_factory=LiveDefaults)
     platform_behavior: PlatformBehaviorSettings = Field(default_factory=PlatformBehaviorSettings)
 
 

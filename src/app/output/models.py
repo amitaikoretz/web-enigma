@@ -41,6 +41,30 @@ class RejectionRecord(BaseModel):
     reason: str | None = None
 
 
+class CandidateRecord(BaseModel):
+    candidate_id: str
+    strategy_id: str
+    symbol: str
+    timestamp: str
+    side: Literal["LONG", "SHORT"] = "LONG"
+    entry_price: float
+    entry_type: Literal["CLOSE", "NEXT_OPEN", "MARKET", "LIMIT", "MID"] = "CLOSE"
+    planned_stop_pct: float
+    planned_target_pct: float | None = None
+    planned_horizon_bars: int
+    signal_score: float | None = None
+    signal_reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    was_traded: bool = False
+    reject_reason: str | None = None
+
+
+class CandidateDiagnostics(BaseModel):
+    total_candidates: int = 0
+    traded_candidates: int = 0
+    rejected_candidates: int = 0
+
+
 class EquityPoint(BaseModel):
     datetime: str
     value: float
@@ -123,6 +147,7 @@ class RunResult(BaseModel):
     orders: list[OrderRecord] = Field(default_factory=list)
     trades: list[TradeRecord] = Field(default_factory=list)
     rejections: list[RejectionRecord] = Field(default_factory=list)
+    candidates: list[CandidateRecord] = Field(default_factory=list)
     equity_curve: list[EquityPoint] = Field(default_factory=list)
     error: RunError | None = None
 

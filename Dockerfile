@@ -7,11 +7,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
+
+# Install dependencies before copying app code so src edits don't bust the pip layer.
+RUN mkdir -p src/app \
+    && touch src/app/__init__.py \
+    && pip install --no-cache-dir .
+
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY src ./src
 
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e . --no-deps
 
 ENV PYTHONUNBUFFERED=1
 

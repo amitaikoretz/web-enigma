@@ -9,7 +9,9 @@ import numpy as np
 from backtesting import Strategy
 
 from app.strategies.auditor_logging import log_auditor_rejection
+from app.strategies.candidates import CandidateEvent, record_candidate
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyDecision
+from app.strategies.entry_plans import atr_entry_intent, fixed_pct_entry_intent
 from app.strategies.regime import RegimeClassifier, regime_params_from_strategy
 
 
@@ -538,7 +540,17 @@ class BreakoutChannelCore(BasePortableStrategy):
             return StrategyDecision.hold()
 
         if context.bar.close > prev_highest:
-            return StrategyDecision.buy(float(self.params["stake"]), "breakout")
+            entry_intent = fixed_pct_entry_intent(
+                context,
+                self.params,
+                signal_score=1.0,
+                signal_reason="breakout",
+            )
+            return StrategyDecision.buy(
+                float(self.params["stake"]),
+                "breakout",
+                entry_intent=entry_intent,
+            )
         return StrategyDecision.hold()
 
 
@@ -727,6 +739,14 @@ class VolumeRallyCore(BasePortableStrategy):
             and float(histogram[-1]) > float(histogram[-2])
         )
         adx_ok = float(adx[-1]) >= float(self.params["adx_min"])
+        signal_components = {
+            "volume_ok": volume_ok,
+            "breakout_ok": breakout_ok,
+            "vwap_ok": vwap_ok,
+            "expansion_ok": expansion_ok,
+            "macd_ok": macd_ok,
+            "adx_ok": adx_ok,
+        }
         signal_ok = _volume_rally_entry_signal(
             volume_ok=volume_ok,
             breakout_ok=breakout_ok,
@@ -737,38 +757,74 @@ class VolumeRallyCore(BasePortableStrategy):
             min_confirmations=int(self.params["min_confirmations"]),
         )
 
+        core_entry_trigger = volume_ok and breakout_ok
+        confirmations = sum(1 for value in signal_components.values() if value)
+        entry_intent = None
+        if core_entry_trigger:
+            initial_sl_mult = float(self.params["initial_sl_atr_mult"])
+            sl_mult = initial_sl_mult if initial_sl_mult > 0 else float(self.params["sl_atr_mult"])
+            entry_intent = atr_entry_intent(
+                float(context.bar.close),
+                float(atr[-1]),
+                sl_mult=sl_mult,
+                tp_mult=float(self.params["tp_atr_mult"]),
+                horizon_bars=int(self.params["max_hold_bars"]),
+                signal_score=confirmations / len(signal_components),
+                signal_reason="volume_rally",
+                metadata=signal_components,
+            )
+
         if self._in_cooldown(context):
-            return StrategyDecision.hold("cooldown", auditor_rejection=signal_ok)
+            return StrategyDecision.hold(
+                "cooldown",
+                auditor_rejection=core_entry_trigger,
+                entry_intent=entry_intent,
+            )
 
         session_start = int(self.params["session_start_minutes"])
         session_end = int(self.params["session_end_minutes"])
-        if not _in_session_window(context.bar, session_start, session_end):
-            return StrategyDecision.hold("session_window", auditor_rejection=signal_ok)
+        if core_entry_trigger and not _in_session_window(context.bar, session_start, session_end):
+            return StrategyDecision.hold("session_window", auditor_rejection=True, entry_intent=entry_intent)
 
         max_trades = int(self.params["max_trades_per_session"])
         if max_trades > 0 and self._session_trades_count >= max_trades:
-            return StrategyDecision.hold("session_trade_cap", auditor_rejection=signal_ok)
+            return StrategyDecision.hold(
+                "session_trade_cap",
+                auditor_rejection=core_entry_trigger,
+                entry_intent=entry_intent,
+            )
 
-        if not signal_ok:
+        if not core_entry_trigger:
             return StrategyDecision.hold()
 
+        if not signal_ok:
+            return StrategyDecision.hold(
+                "insufficient_confirmations",
+                auditor_rejection=True,
+                entry_intent=entry_intent,
+            )
+
         if regime.label == "ranging":
-            return StrategyDecision.hold("regime_ranging", auditor_rejection=signal_ok)
+            return StrategyDecision.hold("regime_ranging", auditor_rejection=True, entry_intent=entry_intent)
         if regime.label == "high_vol":
-            return StrategyDecision.hold("regime_high_vol", auditor_rejection=True)
+            return StrategyDecision.hold("regime_high_vol", auditor_rejection=True, entry_intent=entry_intent)
 
         if not _benchmark_regime_ok(context, self.params):
             reason = "benchmark_regime" if context.benchmark_bars else "benchmark_warmup"
-            return StrategyDecision.hold(reason, auditor_rejection=signal_ok)
+            return StrategyDecision.hold(reason, auditor_rejection=True, entry_intent=entry_intent)
 
         min_close_strength = float(self.params["min_close_strength"])
         if min_close_strength > 0 and _close_strength(context.bar) < min_close_strength:
-            return StrategyDecision.hold("weak_close", auditor_rejection=True)
+            return StrategyDecision.hold("weak_close", auditor_rejection=True, entry_intent=entry_intent)
 
         self._entry_atr = float(atr[-1])
         self._breakeven_armed = False
         self._last_entry_regime = regime.label
-        return StrategyDecision.buy(float(self.params["stake"]), "confirmed_breakout")
+        return StrategyDecision.buy(
+            float(self.params["stake"]),
+            "confirmed_breakout",
+            entry_intent=entry_intent,
+        )
 
 
 class PortableBacktestingStrategy(Strategy):
@@ -777,12 +833,15 @@ class PortableBacktestingStrategy(Strategy):
     strategy_params: dict[str, Any] = {}
     strategy_symbol: str | None = None
     benchmark_feed: Any = None
+    include_candidate_log = False
+    fill_model = "close"
 
     def init(self) -> None:
         self.core: StrategyCore = self.strategy_factory(dict(self.strategy_params))
         self.order_log: list[dict[str, Any]] = []
         self.trade_log: list[dict[str, Any]] = []
         self.execution_events: list[ExecutionEvent] = []
+        self.candidate_log: list[CandidateEvent] = []
         self._bars_history: list[Bar] = []
         self._all_benchmark_bars: list[Bar] = _bars_from_dataframe(self.benchmark_feed) if self.benchmark_feed is not None else []
         self._session_dates = [_bar_session_date(ts) for ts in self.data.index]
@@ -962,6 +1021,16 @@ class PortableBacktestingStrategy(Strategy):
             benchmark_bars=benchmark_bars,
         )
         decision = self.core.on_bar(context)
+        entry_type = "CLOSE" if self.fill_model == "close" else "NEXT_OPEN"
+        record_candidate(
+            self.candidate_log,
+            decision,
+            enabled=self.include_candidate_log,
+            strategy_id=self.strategy_name,
+            symbol=self.strategy_symbol or "UNKNOWN",
+            timestamp=context.bar.iso_timestamp,
+            entry_type=entry_type,
+        )
         if decision.action == "hold" and decision.auditor_rejection:
             rejection = {
                 "datetime": context.bar.iso_timestamp,
@@ -996,6 +1065,8 @@ def build_portable_strategy_adapter(
     strategy_params: dict[str, Any],
     symbol: str | None,
     benchmark_feed: Any = None,
+    include_candidate_log: bool = False,
+    fill_model: str = "close",
 ) -> type[PortableBacktestingStrategy]:
     return type(
         f"{strategy_name.title().replace('_', '')}BacktestingAdapter",
@@ -1006,5 +1077,7 @@ def build_portable_strategy_adapter(
             "strategy_params": dict(strategy_params),
             "strategy_symbol": symbol,
             "benchmark_feed": benchmark_feed,
+            "include_candidate_log": include_candidate_log,
+            "fill_model": fill_model,
         },
     )

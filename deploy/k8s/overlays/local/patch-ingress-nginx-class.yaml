@@ -1,0 +1,10 @@
+# Apply when Traefik is disabled and ingress-nginx is installed (Rancher: uncheck Enable Traefik).
+# In kustomization.yaml, add this file under patches: (and remove traefik-only resources if unused).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: null
+spec:
+  ingressClassName: nginx

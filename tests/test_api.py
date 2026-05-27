@@ -192,6 +192,8 @@ def test_get_settings_returns_defaults_when_file_missing(tmp_path):
     body = response.json()
     assert body["backtest_defaults"]["feed"] == "iex"
     assert body["backtest_defaults"]["analyzers"]["include_equity_curve"] is False
+    assert body["backtest_defaults"]["analyzers"]["include_candidate_log"] is False
+    assert body["live_defaults"]["include_candidate_log"] is False
     assert body["platform_behavior"]["preferred_landing_page"] == "backtests"
 
 
@@ -199,6 +201,8 @@ def test_put_settings_persists_round_trip(tmp_path):
     client = _build_client(tmp_path)
     payload = client.get("/settings").json()
     payload["backtest_defaults"]["execution"]["fill_model"] = "next_bar"
+    payload["backtest_defaults"]["analyzers"]["include_candidate_log"] = True
+    payload["live_defaults"]["include_candidate_log"] = True
     payload["platform_behavior"]["timezone"] = "America/New_York"
 
     put_response = client.put("/settings", json=payload)
@@ -207,6 +211,8 @@ def test_put_settings_persists_round_trip(tmp_path):
     assert put_response.status_code == 200
     assert get_response.status_code == 200
     assert get_response.json()["backtest_defaults"]["execution"]["fill_model"] == "next_bar"
+    assert get_response.json()["backtest_defaults"]["analyzers"]["include_candidate_log"] is True
+    assert get_response.json()["live_defaults"]["include_candidate_log"] is True
     assert get_response.json()["platform_behavior"]["timezone"] == "America/New_York"
 
 
@@ -1112,6 +1118,10 @@ class _FakeArgoSubmitter:
         }
         return f"backtest-{backtest_id[:8]}", "backtest"
 
+    def get_workflow_phase(self, workflow_name: str) -> str | None:
+        del workflow_name
+        return "Running"
+
 
 def test_launch_argo_backtest_with_inline_config(tmp_path):
     client = _build_client(tmp_path)
@@ -1149,8 +1159,11 @@ def test_launch_argo_backtest_with_inline_config(tmp_path):
 
     status = client.get(f"/backtests/{body['backtest_id']}/status")
     assert status.status_code == 200
-    assert status.json()["execution_backend"] == "argo"
-    assert status.json()["workflow_name"] == body["workflow_name"]
+    status_body = status.json()
+    assert status_body["execution_backend"] == "argo"
+    assert status_body["workflow_name"] == body["workflow_name"]
+    assert status_body["progress_pct"] == 0.0
+    assert status_body["is_terminal"] is False
 
 
 def test_launch_argo_backtest_with_config_path(tmp_path):

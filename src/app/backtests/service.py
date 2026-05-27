@@ -199,6 +199,53 @@ def build_backtest_config(payload: BacktestCreateRequest, backtest_id: str) -> B
     return BacktestConfig.model_validate(build_backtest_config_raw(payload, backtest_id))
 
 
+def _is_terminal_status(status: str) -> bool:
+    return status in {"completed", "failed"}
+
+
+def _progress_pct(completed_runs: int, total_runs: int, status: str) -> float:
+    if total_runs == 0:
+        return 0.0
+    if status == "completed":
+        return 100.0
+    return min(100.0, (completed_runs / total_runs) * 100.0)
+
+
+def compute_completed_runs(metadata: BacktestListItem, repository: BacktestResultRepository) -> int:
+    if metadata.status in {"completed", "failed"}:
+        return metadata.completed_runs
+    if metadata.execution_backend != "argo":
+        return metadata.completed_runs
+
+    manifest_path = repository.output_dir / metadata.id / "manifest.json"
+    if not manifest_path.exists():
+        return metadata.completed_runs
+
+    from app.backtests.sharding import load_shard_manifest
+
+    plan = load_shard_manifest(manifest_path)
+    completed = 0
+    for shard in plan.shards:
+        shard_path = Path(shard.output_path)
+        if not shard_path.exists():
+            continue
+        try:
+            shard_report = BacktestReport.model_validate_json(shard_path.read_text(encoding="utf-8"))
+            completed += shard_report.total_runs
+        except (ValueError, OSError):
+            continue
+    return min(completed, metadata.total_runs)
+
+
+def build_status_response(metadata: BacktestListItem, completed_runs: int) -> BacktestStatusResponse:
+    progress = _progress_pct(completed_runs, metadata.total_runs, metadata.status)
+    payload = metadata.model_dump()
+    payload["completed_runs"] = completed_runs
+    payload["progress_pct"] = progress
+    payload["is_terminal"] = _is_terminal_status(metadata.status)
+    return BacktestStatusResponse(**payload)
+
+
 class BacktestResultRepository:
     def __init__(self, output_dir: Path):
         self.output_dir = output_dir
@@ -548,13 +595,41 @@ class BacktestJobService:
         )
 
     def list_backtests(self) -> list[BacktestListItem]:
-        return self.repository.list_backtests()
+        items = self.repository.list_backtests()
+        refreshed: list[BacktestListItem] = []
+        for item in items:
+            if item.status in {"pending", "running"}:
+                if item.execution_backend == "argo" and item.workflow_name:
+                    from app.backtests.argo_reconciler import reconcile_backtest
+
+                    updated = reconcile_backtest(item.id, self.repository, self.argo_submitter)
+                    if updated is not None:
+                        item = updated
+                completed_runs = compute_completed_runs(item, self.repository)
+                if completed_runs != item.completed_runs:
+                    item = item.model_copy(deep=True)
+                    item.completed_runs = completed_runs
+            refreshed.append(item)
+        return refreshed
 
     def get_status(self, backtest_id: str) -> BacktestStatusResponse | None:
         metadata = self.repository.get_metadata(backtest_id)
         if metadata is None:
             return None
-        return BacktestStatusResponse(**metadata.model_dump())
+
+        if (
+            metadata.execution_backend == "argo"
+            and metadata.workflow_name
+            and not _is_terminal_status(metadata.status)
+        ):
+            from app.backtests.argo_reconciler import reconcile_backtest
+
+            updated = reconcile_backtest(backtest_id, self.repository, self.argo_submitter)
+            if updated is not None:
+                metadata = updated
+
+        completed_runs = compute_completed_runs(metadata, self.repository)
+        return build_status_response(metadata, completed_runs)
 
     def get_detail(self, backtest_id: str) -> BacktestDetailResponse | None:
         return self.repository.get_detail(backtest_id)

@@ -2,6 +2,7 @@ from .models import (
     AnalyzerDefaults,
     AppearanceDefaults,
     BacktestDefaults,
+    LiveDefaults,
     PlatformBehaviorSettings,
     PlatformSettings,
 )
@@ -11,6 +12,7 @@ __all__ = [
     "AnalyzerDefaults",
     "AppearanceDefaults",
     "BacktestDefaults",
+    "LiveDefaults",
     "PlatformBehaviorSettings",
     "PlatformSettings",
     "PlatformSettingsService",

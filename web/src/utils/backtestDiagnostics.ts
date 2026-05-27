@@ -1,6 +1,7 @@
 import type {
   BacktestRunResult,
   BacktestRunSummary,
+  CandidateDiagnostics,
   FilterDiagnostics,
   HistogramBin,
   RiskMetrics,
@@ -181,16 +182,52 @@ export interface ResolvedRunDiagnostics {
   tradeDiagnostics: TradeDiagnostics | null
   filterDiagnostics: FilterDiagnostics | null
   riskMetrics: RiskMetrics | null
+  candidateDiagnostics: CandidateDiagnostics | null
+  includeCandidateLog: boolean
   isDerived: boolean
+}
+
+function parseCandidateDiagnostics(value: unknown): CandidateDiagnostics | null {
+  if (!isRecord(value)) {
+    return null
+  }
+  const { total_candidates, traded_candidates, rejected_candidates } = value
+  if (
+    typeof total_candidates !== 'number' ||
+    typeof traded_candidates !== 'number' ||
+    typeof rejected_candidates !== 'number'
+  ) {
+    return null
+  }
+  return { total_candidates, traded_candidates, rejected_candidates }
+}
+
+function deriveCandidateDiagnostics(result: BacktestRunResult): CandidateDiagnostics | null {
+  const candidates = result.candidates ?? []
+  if (candidates.length === 0) {
+    return null
+  }
+  const traded = candidates.filter((candidate) => candidate.was_traded).length
+  return {
+    total_candidates: candidates.length,
+    traded_candidates: traded,
+    rejected_candidates: candidates.length - traded,
+  }
 }
 
 export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDiagnostics {
   const summary = result.summary
+  const includeCandidateLog = result.analyzers.include_candidate_log === true
+  const candidateDiagnostics =
+    parseCandidateDiagnostics(result.analyzers.candidate_diagnostics) ??
+    deriveCandidateDiagnostics(result)
   if (!summary) {
     return {
       tradeDiagnostics: null,
       filterDiagnostics: null,
       riskMetrics: null,
+      candidateDiagnostics,
+      includeCandidateLog,
       isDerived: false,
     }
   }
@@ -212,6 +249,8 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
       tradeDiagnostics,
       filterDiagnostics: filterDiagnostics ?? deriveFilterDiagnostics(result),
       riskMetrics,
+      candidateDiagnostics,
+      includeCandidateLog,
       isDerived: false,
     }
   }
@@ -221,6 +260,8 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
       tradeDiagnostics: null,
       filterDiagnostics: filterDiagnostics ?? deriveFilterDiagnostics(result),
       riskMetrics,
+      candidateDiagnostics,
+      includeCandidateLog,
       isDerived: false,
     }
   }
@@ -229,6 +270,8 @@ export function resolveRunDiagnostics(result: BacktestRunResult): ResolvedRunDia
     tradeDiagnostics: deriveTradeDiagnostics(result, summary),
     filterDiagnostics: filterDiagnostics ?? deriveFilterDiagnostics(result),
     riskMetrics,
+    candidateDiagnostics,
+    includeCandidateLog,
     isDerived: true,
   }
 }

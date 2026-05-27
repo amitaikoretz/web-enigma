@@ -41,6 +41,30 @@ docker build -t backtest-app:latest .
 docker build -t backtest-web:latest -f web/Dockerfile web/
 ```
 
+### Rancher Desktop (recommended)
+
+Rancher Desktop k3s reads images from the **containerd `k8s.io` namespace**, not from regular `docker images`. Build and deploy from the repo root:
+
+```bash
+make k8s-local-images    # nerdctl --namespace k8s.io build + pull deps
+make k3s-deploy
+```
+
+If Kubernetes is set to the **Moby (dockerd)** runtime in Rancher Desktop preferences:
+
+```bash
+make K8S_BUILD=docker k8s-local-images
+make k3s-deploy
+```
+
+Without `k8s-local-images`, `api` stays in `Init:ImagePullBackOff` (kubelet tries `docker.io/library/backtest-app:latest`), and `web` stays in `Init:0/1` waiting for the API.
+
+Confirm images exist in k3s:
+
+```bash
+nerdctl --namespace k8s.io images | grep backtest
+```
+
 ### kind / minikube
 
 Load images into the cluster after building:
@@ -56,21 +80,23 @@ Override image names/tags in `overlays/local/kustomization.yaml` or `overlays/st
 
 The local overlay starts Postgres, Redis, API, controller, two worker shards, and the web UI.
 
-1. Set Alpaca credentials in `overlays/local/kustomization.yaml` (`secretGenerator` literals) or create the secret manually after apply.
+1. **Rancher Desktop:** run `make k8s-local-images` before apply (see above).
 
-2. Render and inspect:
+2. Set Alpaca credentials in `overlays/local/kustomization.yaml` (`secretGenerator` literals) or create the secret manually after apply.
+
+3. Render and inspect:
 
 ```bash
 kubectl kustomize deploy/k8s/overlays/local
 ```
 
-3. Deploy:
+4. Deploy (if you skipped `make k3s-deploy`):
 
 ```bash
 kubectl apply -k deploy/k8s/overlays/local
 ```
 
-4. Wait for core services:
+5. Wait for core services:
 
 ```bash
 kubectl -n backtest wait --for=condition=available deployment/postgres --timeout=120s
@@ -79,7 +105,7 @@ kubectl -n backtest wait --for=condition=available deployment/api --timeout=180s
 kubectl -n backtest wait --for=condition=ready pod -l app.kubernetes.io/name=worker --timeout=180s
 ```
 
-5. Port-forward the API (or web):
+6. Port-forward the API (or web):
 
 ```bash
 kubectl -n backtest port-forward svc/api 8000:8000
@@ -93,6 +119,44 @@ kubectl -n backtest port-forward svc/web 8080:80
 ```
 
 Open http://localhost:8080
+
+### Local ingress (Rancher Desktop / k3s)
+
+The local overlay includes an Ingress for Traefik (default on Rancher Desktop k3s). Nginx in the web pod proxies `/api/` to the API Service, so one hostname serves UI and API.
+
+1. Deploy (or re-apply) the local overlay:
+
+```bash
+kubectl apply -k deploy/k8s/overlays/local
+```
+
+2. Confirm the web pod has endpoints (init waits for API health):
+
+```bash
+kubectl -n backtest get endpoints web
+kubectl -n backtest get pods -l app.kubernetes.io/name=web
+```
+
+3. Open one of these URLs (do **not** use bare `http://localhost` — Traefik routes by hostname):
+
+- http://backtest.127.0.0.1.sslip.io (no `/etc/hosts` needed)
+- http://backtest.local (add `127.0.0.1 backtest.local` to `/etc/hosts` if it does not resolve)
+
+Verify:
+
+```bash
+curl -v http://backtest.127.0.0.1.sslip.io/
+kubectl -n backtest get ingress web
+kubectl -n backtest describe ingress web
+```
+
+**Traefik returns `404 page not found`**
+
+- Wrong URL: use a hostname from the Ingress rule, not `http://127.0.0.1/` alone.
+- Ingress ignored: `kubectl get ingressclass` — if only `nginx` exists, Traefik is disabled. Add [`patch-ingress-nginx-class.yaml`](overlays/local/patch-ingress-nginx-class.yaml) under `patches:` in `kustomization.yaml`, re-apply, then use the [NGINX ingress port-forward flow](https://docs.rancherdesktop.io/how-to-guides/setup-NGINX-Ingress-Controller/) or your controller’s external IP.
+- Empty backend: `kubectl -n backtest get endpoints web` must list pod IPs; fix API/web image pulls (`make k8s-local-images`) if pods are not ready.
+
+Change hostnames in [`overlays/local/ingress-web.yaml`](overlays/local/ingress-web.yaml) if you prefer another name.
 
 6. Seed a sample trading contract (API must be reachable):
 
@@ -222,6 +286,10 @@ kubectl -n backtest patch cronjob backtest-reconciler -p '{"spec":{"suspend":fal
 ```
 
 The reconciler runs `backtest argo-reconciler --once` to sync Argo workflow phase into `{id}.meta.json` files the UI polls.
+
+### Status and progress API
+
+`GET /backtests/{id}/status` returns job status plus `progress_pct` (0–100) and `is_terminal`. The API refreshes Argo workflow state on each status request and computes run-level progress from shard reports under `{backtest_id}/` on the shared `backtest-results` PVC. The web UI polls this endpoint until `is_terminal` is true. The optional `backtest-reconciler` CronJob remains a backup when the API is not polling.
 
 ## Teardown
 

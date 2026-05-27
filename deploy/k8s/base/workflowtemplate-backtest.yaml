@@ -7,9 +7,11 @@ metadata:
     app.kubernetes.io/component: backtest
 spec:
   entrypoint: backtest-batch
-  serviceAccountName: api
+  serviceAccountName: backtest-workflow
   arguments:
     parameters:
+      - name: api-base-url
+        value: http://api.backtest.svc.cluster.local:8000
       - name: config-path
       - name: output-path
       - name: split-by
@@ -37,12 +39,40 @@ spec:
   templates:
     - name: backtest-batch
       steps:
+        - - name: print-payload
+            template: print-payload
+            arguments:
+              parameters:
+                - name: api-base-url
+                  value: "{{workflow.parameters.api-base-url}}"
+                - name: config-path
+                  value: "{{workflow.parameters.config-path}}"
+                - name: config-b64
+                  value: "{{workflow.parameters.config-b64}}"
+                - name: split-by
+                  value: "{{workflow.parameters.split-by}}"
+                - name: backtest-id
+                  value: "{{workflow.parameters.backtest-id}}"
+                - name: output-path
+                  value: "{{workflow.parameters.output-path}}"
         - - name: plan
             template: plan-shards
+            arguments:
+              parameters:
+                - name: config-path
+                  value: "{{workflow.parameters.config-path}}"
+                - name: config-b64
+                  value: "{{workflow.parameters.config-b64}}"
+                - name: split-by
+                  value: "{{workflow.parameters.split-by}}"
+                - name: backtest-id
+                  value: "{{workflow.parameters.backtest-id}}"
         - - name: run-shards
             template: run-shard
             arguments:
               parameters:
+                - name: shard-id
+                  value: "{{item.shard_id}}"
                 - name: shard-config-path
                   value: "{{item.config_path}}"
                 - name: shard-output-path
@@ -50,8 +80,55 @@ spec:
             withParam: "{{steps.plan.outputs.parameters.shards}}"
         - - name: merge
             template: merge-reports
+            arguments:
+              parameters:
+                - name: manifest-path
+                  value: "{{steps.plan.outputs.parameters.manifest-path}}"
+                - name: output-path
+                  value: "{{workflow.parameters.output-path}}"
+                - name: backtest-id
+                  value: "{{workflow.parameters.backtest-id}}"
+
+    - name: print-payload
+      inputs:
+        parameters:
+          - name: api-base-url
+          - name: config-path
+          - name: config-b64
+          - name: split-by
+          - name: backtest-id
+          - name: output-path
+      container:
+        image: backtest-app:latest
+        imagePullPolicy: IfNotPresent
+        command: ["backtest", "print-argo-payload"]
+        args:
+          - --api-base-url
+          - "{{inputs.parameters.api-base-url}}"
+          - --config-path
+          - "{{inputs.parameters.config-path}}"
+          - --config-b64
+          - "{{inputs.parameters.config-b64}}"
+          - --split-by
+          - "{{inputs.parameters.split-by}}"
+          - --backtest-id
+          - "{{inputs.parameters.backtest-id}}"
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: backtest-results
+            mountPath: /data/backtest-results
 
     - name: plan-shards
+      inputs:
+        parameters:
+          - name: config-path
+          - name: config-b64
+          - name: split-by
+          - name: backtest-id
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
@@ -59,19 +136,26 @@ spec:
         args:
           - |
             set -e
-            if [ -n "{{workflow.parameters.config-b64}}" ]; then
-              mkdir -p /workspace
-              echo "{{workflow.parameters.config-b64}}" | base64 -d > /workspace/config.yaml
-              CONFIG=/workspace/config.yaml
+            if [ -n "{{inputs.parameters.backtest-id}}" ]; then
+              WORK="/data/backtest-results/{{inputs.parameters.backtest-id}}"
             else
-              CONFIG="{{workflow.parameters.config-path}}"
+              WORK="/workspace"
             fi
-            exec backtest plan-shards \
+            mkdir -p "$WORK"
+            if [ -n "{{inputs.parameters.config-b64}}" ]; then
+              echo "{{inputs.parameters.config-b64}}" | base64 -d > "$WORK/config.yaml"
+              CONFIG="$WORK/config.yaml"
+            else
+              CONFIG="{{inputs.parameters.config-path}}"
+            fi
+            backtest plan-shards \
               --config "$CONFIG" \
-              --work-dir /workspace \
-              --manifest /workspace/manifest.json \
+              --work-dir "$WORK" \
+              --manifest "$WORK/manifest.json" \
               --shards-param /tmp/shards-param.json \
-              --split-by "{{workflow.parameters.split-by}}"
+              --split-by "{{inputs.parameters.split-by}}"
+            echo "$WORK/manifest.json" > /tmp/manifest-path.txt
+            echo "$WORK" > /tmp/work-dir.txt
         envFrom:
           - secretRef:
               name: app-secrets
@@ -85,44 +169,32 @@ spec:
           - name: shards
             valueFrom:
               path: /tmp/shards-param.json
+          - name: manifest-path
+            valueFrom:
+              path: /tmp/manifest-path.txt
+          - name: work-dir
+            valueFrom:
+              path: /tmp/work-dir.txt
 
     - name: run-shard
       inputs:
         parameters:
+          - name: shard-id
           - name: shard-config-path
           - name: shard-output-path
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
-        command: ["backtest", "run"]
+        command: ["sh", "-c"]
         args:
-          - --config
-          - "{{inputs.parameters.shard-config-path}}"
-          - --output
-          - "{{inputs.parameters.shard-output-path}}"
-          - --cache-dir
-          - /data/cache
-        envFrom:
-          - secretRef:
-              name: app-secrets
-        volumeMounts:
-          - name: workspace
-            mountPath: /workspace
-          - name: backtest-cache
-            mountPath: /data/cache
-
-    - name: merge-reports
-      container:
-        image: backtest-app:latest
-        imagePullPolicy: IfNotPresent
-        command: ["backtest", "merge"]
-        args:
-          - --manifest
-          - /workspace/manifest.json
-          - --output
-          - "{{workflow.parameters.output-path}}"
-          - --backtest-id
-          - "{{workflow.parameters.backtest-id}}"
+          - |
+            set -e
+            echo "Running shard {{inputs.parameters.shard-id}}"
+            backtest run \
+              --config "{{inputs.parameters.shard-config-path}}" \
+              --output "{{inputs.parameters.shard-output-path}}" \
+              --cache-dir /data/cache
+            echo "{{inputs.parameters.shard-output-path}}" > /tmp/shard-output-path.txt
         envFrom:
           - secretRef:
               name: app-secrets
@@ -131,3 +203,42 @@ spec:
             mountPath: /workspace
           - name: backtest-results
             mountPath: /data/backtest-results
+          - name: backtest-cache
+            mountPath: /data/cache
+      outputs:
+        parameters:
+          - name: shard-output-path
+            valueFrom:
+              path: /tmp/shard-output-path.txt
+
+    - name: merge-reports
+      inputs:
+        parameters:
+          - name: manifest-path
+          - name: output-path
+          - name: backtest-id
+      container:
+        image: backtest-app:latest
+        imagePullPolicy: IfNotPresent
+        command: ["sh", "-c"]
+        args:
+          - |
+            set -e
+            backtest merge \
+              --manifest "{{inputs.parameters.manifest-path}}" \
+              --output "{{inputs.parameters.output-path}}" \
+              --backtest-id "{{inputs.parameters.backtest-id}}"
+            echo "{{inputs.parameters.output-path}}" > /tmp/merged-output-path.txt
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: backtest-results
+            mountPath: /data/backtest-results
+      outputs:
+        parameters:
+          - name: output-path
+            valueFrom:
+              path: /tmp/merged-output-path.txt
