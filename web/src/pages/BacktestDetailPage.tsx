@@ -11,6 +11,7 @@ import {
   Link,
   Paper,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -23,6 +24,7 @@ import {
   fetchBacktestDetail,
   fetchBacktestStatus,
   retryBacktest,
+  updateBacktest,
 } from '../api/backtests'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BacktestProgressPanel } from '../components/BacktestProgressPanel'
@@ -80,6 +82,8 @@ export function BacktestDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
   const refreshIntervalMs =
     platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
@@ -112,6 +116,10 @@ export function BacktestDetailPage() {
       cancelled = true
     }
   }, [backtestId])
+
+  useEffect(() => {
+    setNameDraft((metadata?.name ?? '').toString())
+  }, [metadata?.name])
 
   useEffect(() => {
     if (!backtestId) {
@@ -222,6 +230,34 @@ export function BacktestDetailPage() {
     }
   }
 
+  const trimmedNameDraft = nameDraft.trim()
+  const normalizedNameDraft = trimmedNameDraft ? trimmedNameDraft : ''
+  const normalizedCurrentName = (metadata?.name ?? '').toString()
+  const nameDirty = Boolean(metadata) && normalizedNameDraft !== normalizedCurrentName
+
+  async function saveName() {
+    if (!backtestId || !nameDirty) {
+      return
+    }
+    setSavingName(true)
+    setError(null)
+    try {
+      const updated = await updateBacktest(backtestId, {
+        name: trimmedNameDraft ? trimmedNameDraft : null,
+      })
+      setMetadata((current) =>
+        current ? { ...current, name: updated.name ?? null } : current,
+      )
+      setDetail((current) =>
+        current ? { ...current, metadata: { ...current.metadata, name: updated.name ?? null } } : current,
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update backtest name')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   async function handleRetry() {
     if (!metadata) {
       return
@@ -279,6 +315,37 @@ export function BacktestDetailPage() {
                 appearance.time_display_format,
               )}
             </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1, alignItems: { sm: 'center' } }}>
+              <TextField
+                label="Name"
+                size="small"
+                value={nameDraft}
+                onChange={(event) => setNameDraft(event.target.value)}
+                placeholder="(optional)"
+                slotProps={{ htmlInput: { maxLength: 256 } }}
+                sx={{ minWidth: { xs: '100%', sm: 320 } }}
+              />
+              <Stack direction="row" spacing={1}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={!nameDirty || savingName}
+                  onClick={() => {
+                    void saveName()
+                  }}
+                >
+                  {savingName ? 'Saving…' : 'Save'}
+                </Button>
+                <Button
+                  variant="text"
+                  size="small"
+                  disabled={!nameDirty || savingName}
+                  onClick={() => setNameDraft(normalizedCurrentName)}
+                >
+                  Cancel
+                </Button>
+              </Stack>
+            </Stack>
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             {canRetry && (

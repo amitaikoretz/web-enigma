@@ -55,6 +55,16 @@ fi
 
 echo "Restarting workloads in ${K8S_NAMESPACE} to reload credentials"
 kubectl -n "${K8S_NAMESPACE}" rollout restart deployment/api deployment/controller deployment/web statefulset/worker
+
+if [[ "${FORCE_KILL_OLD_PODS:-1}" == "1" ]]; then
+  grace="${POD_KILL_GRACE_SECONDS:-0}"
+  echo "Force deleting pods in ${K8S_NAMESPACE} (FORCE_KILL_OLD_PODS=1, grace=${grace}s)"
+  kubectl -n "${K8S_NAMESPACE}" delete pod -l app.kubernetes.io/name=api --grace-period="${grace}" --force >/dev/null 2>&1 || true
+  kubectl -n "${K8S_NAMESPACE}" delete pod -l app.kubernetes.io/name=controller --grace-period="${grace}" --force >/dev/null 2>&1 || true
+  kubectl -n "${K8S_NAMESPACE}" delete pod -l app.kubernetes.io/name=web --grace-period="${grace}" --force >/dev/null 2>&1 || true
+  kubectl -n "${K8S_NAMESPACE}" delete pod -l app.kubernetes.io/name=worker --grace-period="${grace}" --force >/dev/null 2>&1 || true
+fi
+
 kubectl -n "${K8S_NAMESPACE}" rollout status deployment/api --timeout=180s
 kubectl -n "${K8S_NAMESPACE}" rollout status deployment/controller --timeout=180s
 kubectl -n "${K8S_NAMESPACE}" rollout status deployment/web --timeout=180s

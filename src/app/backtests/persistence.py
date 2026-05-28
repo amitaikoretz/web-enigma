@@ -58,6 +58,7 @@ def _paths_from_row(row: BacktestJob) -> BacktestArtifactPaths:
 def _row_to_list_item(row: BacktestJob) -> BacktestListItem:
     return BacktestListItem(
         id=row.id,
+        name=row.name,
         created_at=row.created_at,
         updated_at=row.updated_at,
         status=row.status,  # type: ignore[arg-type]
@@ -77,6 +78,7 @@ def _row_to_list_item(row: BacktestJob) -> BacktestListItem:
 
 
 def _apply_list_item(row: BacktestJob, item: BacktestListItem) -> None:
+    row.name = item.name
     row.updated_at = item.updated_at
     row.status = item.status
     row.report_status = item.report_status
@@ -108,6 +110,7 @@ class SqlAlchemyBacktestJobRepository:
         with self._session_factory() as session:
             row = BacktestJob(
                 id=item.id,
+                name=item.name,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
                 status=item.status,

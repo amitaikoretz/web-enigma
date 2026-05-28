@@ -25,10 +25,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { createBacktest, fetchBacktestInputConfig } from '../api/backtests'
 import { fetchStrategies } from '../api/strategies'
+import { fetchUniverseConstituents, fetchUniverses } from '../api/universes'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestFeed } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 import type { StrategyMetadata, StrategyParameterMetadata } from '../types/strategies'
+import type { SymbolUniverse } from '../types/universes'
 import {
   buildOverrideParams,
   normalizeParamValue,
@@ -121,8 +123,13 @@ export function BacktestWizardPage() {
   const [loadingPrefill, setLoadingPrefill] = useState(Boolean(prefillFromId))
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [backtestName, setBacktestName] = useState('')
   const [prefillSourceId, setPrefillSourceId] = useState<string | null>(null)
   const [symbols, setSymbols] = useState<string[]>(platformSettings.backtest_defaults.symbols_seed_list)
+  const [availableUniverses, setAvailableUniverses] = useState<SymbolUniverse[]>([])
+  const [loadingUniverses, setLoadingUniverses] = useState(false)
+  const [selectedUniverseKeys, setSelectedUniverseKeys] = useState<string[]>([])
+  const [expandingUniverses, setExpandingUniverses] = useState(false)
   const [startDate, setStartDate] = useState<Dayjs | null>(
     resolveStartDatePreset(platformSettings.backtest_defaults.date_range_preset),
   )
@@ -201,6 +208,75 @@ export function BacktestWizardPage() {
       cancelled = true
     }
   }, [prefillFromId, platformSettings.backtest_defaults.resolution])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingUniverses(true)
+    void fetchUniverses(true)
+      .then((items) => {
+        if (cancelled) {
+          return
+        }
+        setAvailableUniverses(items)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAvailableUniverses([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingUniverses(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const asOfDateForUniverses = useMemo(() => {
+    const resolved = startDate ?? dayjs()
+    return resolved.format('YYYY-MM-DD')
+  }, [startDate])
+
+  const applyUniverseSelection = async (mode: 'add' | 'replace') => {
+    if (selectedUniverseKeys.length === 0) {
+      return
+    }
+    setError(null)
+    setExpandingUniverses(true)
+    try {
+      const selectedUniverses = selectedUniverseKeys
+        .map((key) => availableUniverses.find((item) => item.key === key))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+
+      const expansions = await Promise.all(
+        selectedUniverses.map((universe) => {
+          const asOf = universe.kind === 'user' ? dayjs().format('YYYY-MM-DD') : asOfDateForUniverses
+          return fetchUniverseConstituents(universe.key, asOf)
+        }),
+      )
+      const expanded = expansions.flatMap((item) => item.symbols)
+      if (expanded.length === 0) {
+        const keys = selectedUniverseKeys.join(', ')
+        setError(
+          `No constituents found for ${keys}. ` +
+            'Sync the universe registry and run a universe refresh first (user universes use today, others use the start date).',
+        )
+        return
+      }
+      const normalized = expanded
+        .map((item) => item.trim().toUpperCase())
+        .filter(Boolean)
+      const merged = mode === 'replace' ? normalized : [...symbols, ...normalized]
+      const deduped = merged.filter((item, idx, arr) => arr.indexOf(item) === idx)
+      setSymbols(deduped)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to expand universe')
+    } finally {
+      setExpandingUniverses(false)
+    }
+  }
 
   useEffect(() => {
     if (!prefillFromId || loadingStrategies || strategies.length === 0) {
@@ -350,6 +426,7 @@ export function BacktestWizardPage() {
     setError(null)
     try {
       const response = await createBacktest({
+        name: backtestName.trim() ? backtestName.trim() : null,
         start_date: startDate.format('YYYY-MM-DD'),
         end_date: endDate.format('YYYY-MM-DD'),
         resolution,
@@ -403,8 +480,61 @@ export function BacktestWizardPage() {
       <Stack component="form" spacing={3} onSubmit={handleSubmit}>
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
+            <Typography variant="h6">Metadata</Typography>
+            <TextField
+              label="Name (optional)"
+              value={backtestName}
+              onChange={(event) => setBacktestName(event.target.value)}
+              helperText="Helps you find this backtest later."
+              slotProps={{ htmlInput: { maxLength: 256 } }}
+              fullWidth
+            />
+          </Stack>
+        </Paper>
+        <Paper sx={{ p: 3 }}>
+          <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               <Typography variant="h6">Universe</Typography>
+            </Stack>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'flex-start' } }}>
+              <Autocomplete
+                multiple
+                options={availableUniverses}
+                getOptionLabel={(option) => {
+                  const refresh = option.latest_refresh_as_of
+                    ? ` (refreshed ${option.latest_refresh_as_of})`
+                    : ''
+                  return `${option.key} — ${option.name}${refresh}`
+                }}
+                value={availableUniverses.filter((u) => selectedUniverseKeys.includes(u.key))}
+                onChange={(_event, value) => setSelectedUniverseKeys(value.map((item) => item.key))}
+                loading={loadingUniverses}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Universes"
+                    placeholder="Select one or more universes"
+                    helperText={`Expanded as-of ${asOfDateForUniverses} (user universes expand using today).`}
+                  />
+                )}
+                sx={{ flex: 1 }}
+              />
+              <Stack direction="row" spacing={1} sx={{ pt: { md: 0.5 } }}>
+                <Button
+                  variant="outlined"
+                  onClick={() => void applyUniverseSelection('add')}
+                  disabled={selectedUniverseKeys.length === 0 || expandingUniverses}
+                >
+                  Add constituents
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={() => void applyUniverseSelection('replace')}
+                  disabled={selectedUniverseKeys.length === 0 || expandingUniverses}
+                >
+                  Replace symbols
+                </Button>
+              </Stack>
             </Stack>
             <Autocomplete
               multiple

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +31,15 @@ from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_ma
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
 from app.settings import PlatformSettingsService
 from app.live import runtime as live_runtime
+from app.live import build_alpaca_executor
 from app.backtests.artifacts import persist_backtest_report
 from app.reporting import generate_html_report
 from app.risk.data.report_loader import CandidateLoadError
 from app.risk.dataset.builder import build_risk_dataset
 from app.strategies.registry import list_strategies
+from app.terminal_command import format_terminal_command
+from app.db.session import get_session_factory
+from app.universes.service import SymbolUniverseService
 
 console = Console()
 app = typer.Typer(
@@ -43,6 +48,32 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
 )
+
+universes_app = typer.Typer(
+    help="Manage symbol universes (DB-backed) and refresh constituents.",
+    add_completion=False,
+    no_args_is_help=True,
+)
+app.add_typer(universes_app, name="universes")
+
+
+@app.callback()
+def _global_callback(
+    terminal_command_out: Path | None = typer.Option(
+        None,
+        "--terminal-command-out",
+        envvar="TERMINAL_COMMAND_OUT",
+        help="Write the full CLI command line to this path for Argo output capture.",
+    ),
+) -> None:
+    cmd = format_terminal_command(sys.argv)
+    print(f"terminal-command: {cmd}")
+
+    if terminal_command_out is None:
+        return
+
+    terminal_command_out.parent.mkdir(parents=True, exist_ok=True)
+    terminal_command_out.write_text(f"{cmd}\n", encoding="utf-8")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -619,6 +650,67 @@ def import_metadata_command(
     return _cmd_import_metadata(output_dir)
 
 
+@universes_app.command("refresh", help="Refresh symbol universe constituents in the DB")
+def universes_refresh_command(
+    key: str | None = typer.Option(None, "--key", help="Universe key to refresh"),
+    all_universes: bool = typer.Option(False, "--all", help="Refresh all active universes"),
+    as_of: str = typer.Option(..., "--as-of", help="As-of date (YYYY-MM-DD)"),
+) -> int:
+    from datetime import date as date_type
+
+    try:
+        resolved_as_of = date_type.fromisoformat(as_of)
+    except ValueError:
+        console.print(f"[red]Invalid --as-of date:[/red] {as_of!r} (expected YYYY-MM-DD)")
+        return 2
+
+    if (key is None and not all_universes) or (key is not None and all_universes):
+        console.print("[red]Provide either --key or --all.[/red]")
+        return 2
+
+    session_factory = get_session_factory()
+    universe_service = SymbolUniverseService()
+
+    with session_factory() as session:
+        if all_universes:
+            items = universe_service.list_universes(session, active_only=True)
+            keys = [item["key"] for item in items]
+        else:
+            keys = [key.strip().lower()] if key is not None else []
+
+        for universe_key in keys:
+            record = universe_service.get_universe(session, key=universe_key)
+            if record is None:
+                console.print(f"[yellow]Universe not found:[/yellow] {universe_key}")
+                continue
+            if not bool(record.is_active):
+                console.print(f"[yellow]Universe inactive, skipping:[/yellow] {universe_key}")
+                continue
+            console.print(f"Refreshing [bold]{record.key}[/bold] as_of={resolved_as_of.isoformat()} provider={record.provider}")
+            try:
+                stats = universe_service.refresh_universe_in_db(session, universe=record, as_of=resolved_as_of)
+            except Exception as exc:
+                console.print(f"[red]Refresh failed for {record.key}:[/red] {exc}")
+                return 1
+            console.print(f"OK {record.key}: added={stats.added} closed={stats.closed} unchanged={stats.unchanged}")
+
+    return 0
+
+
+@universes_app.command("sync-registry", help="Sync the local universe registry into the DB (registry wins)")
+def universes_sync_registry_command() -> int:
+    session_factory = get_session_factory()
+    universe_service = SymbolUniverseService()
+
+    with session_factory() as session:
+        stats = universe_service.sync_registry(session)
+
+    console.print(
+        f"Universe registry sync complete: created={stats['created']} updated={stats['updated']} disabled={stats['disabled']}"
+    )
+    return 0
+
+
 @app.command("serve", help="Run the FastAPI market data service")
 def serve_command(
     host: str = typer.Option("0.0.0.0", "--host", help="Bind host"),
@@ -654,6 +746,10 @@ def live_reconciler_command(
 
 
 def main(argv: list[str] | None = None) -> int:
+    prev_argv = None
+    if argv is not None:
+        prev_argv = sys.argv
+        sys.argv = ["backtest", *argv]
     try:
         code = app(args=argv, standalone_mode=False)
     except click.ClickException as exc:
@@ -661,6 +757,9 @@ def main(argv: list[str] | None = None) -> int:
         return exc.exit_code
     except click.exceptions.Exit as exc:
         return exc.exit_code
+    finally:
+        if prev_argv is not None:
+            sys.argv = prev_argv
     return 0 if code is None else int(code)
 
 

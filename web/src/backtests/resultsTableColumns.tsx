@@ -15,6 +15,7 @@ import { formatInTimezone } from '../utils/datetime'
 import { formatBacktestWallRuntime } from '../utils/formatDuration'
 
 export const BACKTEST_RESULTS_COLUMN_IDS = [
+  'name',
   'created',
   'status',
   'report',
@@ -30,6 +31,7 @@ export const BACKTEST_RESULTS_COLUMN_IDS = [
 export type BacktestResultsColumnId = (typeof BACKTEST_RESULTS_COLUMN_IDS)[number]
 
 export const BACKTEST_RESULTS_COLUMN_LABELS: Record<BacktestResultsColumnId, string> = {
+  name: 'Name',
   created: 'Created',
   status: 'Status',
   report: 'Report',
@@ -70,6 +72,12 @@ export interface BacktestResultsColumnDefinition {
 }
 
 export const BACKTEST_RESULTS_COLUMNS: BacktestResultsColumnDefinition[] = [
+  {
+    id: 'name',
+    label: 'Name',
+    minWidth: 220,
+    render: (item) => item.name ?? '—',
+  },
   {
     id: 'created',
     label: 'Created',

@@ -7,7 +7,9 @@ import type {
   BacktestCreateResponse,
   BacktestDetailResponse,
   BacktestListPageResponse,
+  BacktestListItem,
   BacktestStatusResponse,
+  BacktestUpdateRequest,
 } from '../types/backtests'
 
 export interface FetchBacktestsParams {
@@ -154,4 +156,21 @@ export async function deleteBacktest(backtestId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(await readApiError(response, 'Failed to delete backtest'))
   }
+}
+
+export async function updateBacktest(
+  backtestId: string,
+  payload: BacktestUpdateRequest,
+): Promise<BacktestListItem> {
+  const response = await fetch(`/api/backtests/${backtestId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to update backtest'))
+  }
+
+  return response.json() as Promise<BacktestListItem>
 }

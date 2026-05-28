@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react'
 
 import { fetchServerInfo } from '../api/serverInfo'
 import { BacktestResultsColumnSettings } from '../components/BacktestResultsColumnSettings'
+import { SymbolUniversesAdmin } from '../components/SymbolUniversesAdmin'
 import { ThemePresetSelect } from '../components/ThemePresetSelect'
 import { defaultPlatformSettings } from '../settings/defaults'
 import { suggestedThemeModeForPreset } from '../theme/registry'
@@ -31,7 +32,7 @@ import { useSettings } from '../settings/useSettings'
 import type { AppearanceSettings, PlatformSettings, ThemePreset } from '../types/settings'
 import type { ServerInfo } from '../types/serverInfo'
 
-type SettingsTab = 'appearance' | 'backtests' | 'behavior'
+type SettingsTab = 'appearance' | 'backtests' | 'behavior' | 'universes'
 
 export function SettingsPage() {
   const {
@@ -144,6 +145,7 @@ export function SettingsPage() {
           <Tab icon={<WallpaperOutlinedIcon />} iconPosition="start" value="appearance" label="Appearance" />
           <Tab icon={<TuneIcon />} iconPosition="start" value="backtests" label="Backtest Defaults" />
           <Tab icon={<WidgetsOutlinedIcon />} iconPosition="start" value="behavior" label="Platform Behavior" />
+          <Tab icon={<TuneIcon />} iconPosition="start" value="universes" label="Universes" />
         </Tabs>
       </Paper>
 
@@ -698,6 +700,18 @@ export function SettingsPage() {
                 disabled={draft.platform_behavior.backtest_execution_backend !== 'argo'}
               />
             </Box>
+          </Stack>
+        </Paper>
+      )}
+
+      {activeTab === 'universes' && (
+        <Paper sx={{ p: 3 }}>
+          <Stack spacing={3}>
+            <SectionTitle
+              title="Symbol Universes"
+              subtitle="DB-managed canonical symbol categories (admin-only)."
+            />
+            <SymbolUniversesAdmin />
           </Stack>
         </Paper>
       )}

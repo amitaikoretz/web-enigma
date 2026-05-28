@@ -541,6 +541,7 @@ class BacktestJobService:
             config_raw,
             backtest_id,
             selection=_build_selection_summary(payload),
+            name=payload.name,
         )
 
     def retry_backtest(self, source_backtest_id: str) -> BacktestCreateResponse:
@@ -572,6 +573,7 @@ class BacktestJobService:
         *,
         selection: BacktestSelectionSummary | None = None,
         source_backtest_id: str | None = None,
+        name: str | None = None,
     ) -> BacktestCreateResponse:
         platform_settings = self._platform_settings()
         config = BacktestConfig.model_validate(config_raw)
@@ -579,6 +581,7 @@ class BacktestJobService:
         execution_backend = platform_settings.platform_behavior.backtest_execution_backend
         metadata = BacktestListItem(
             id=backtest_id,
+            name=name,
             created_at=created_at,
             updated_at=created_at,
             status="pending",
@@ -939,6 +942,16 @@ class BacktestJobService:
             report=report,
             artifacts=artifacts,
         )
+
+    def update_name(self, backtest_id: str, name: str | None) -> BacktestListItem:
+        current = self.job_repository.get(backtest_id)
+        if current is None:
+            raise FileNotFoundError(f"Backtest '{backtest_id}' not found")
+        updated = current.model_copy(deep=True)
+        updated.name = name
+        updated.updated_at = _utc_now()
+        self.job_repository.update(updated)
+        return self._attach_stored_artifacts(updated)
 
     def delete(self, backtest_id: str) -> bool:
         paths = self.job_repository.get_paths(backtest_id)

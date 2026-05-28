@@ -8,6 +8,7 @@ from app.backtests.models import (
     BacktestListPageResponse,
     BacktestSelectionSummary,
     BacktestStatusResponse,
+    BacktestUpdateRequest,
 )
 from app.backtests.persistence import BacktestArtifactPaths, SqlAlchemyBacktestJobRepository
 from app.backtests.service import (
@@ -32,6 +33,7 @@ __all__ = [
     "BacktestResultRepository",
     "BacktestSelectionSummary",
     "BacktestStatusResponse",
+    "BacktestUpdateRequest",
     "SqlAlchemyBacktestJobRepository",
     "build_backtest_config",
     "build_backtest_config_raw",
