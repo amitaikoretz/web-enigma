@@ -105,6 +105,8 @@ spec:
         imagePullPolicy: IfNotPresent
         command: ["backtest", "print-argo-payload"]
         args:
+          - --terminal-command-out
+          - /tmp/terminal-command.txt
           - --api-base-url
           - "{{inputs.parameters.api-base-url}}"
           - --config-path
@@ -130,6 +132,9 @@ spec:
           - name: launch-curl
             valueFrom:
               path: /tmp/launch-curl.txt
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
 
     - name: plan-shards
       inputs:
@@ -158,6 +163,7 @@ spec:
               CONFIG="{{inputs.parameters.config-path}}"
             fi
             backtest plan-shards \
+              --terminal-command-out /tmp/terminal-command.txt \
               --config "$CONFIG" \
               --work-dir "$WORK" \
               --manifest "$WORK/manifest.json" \
@@ -184,6 +190,9 @@ spec:
           - name: work-dir
             valueFrom:
               path: /tmp/work-dir.txt
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
 
     - name: run-shard
       inputs:
@@ -200,6 +209,7 @@ spec:
             set -e
             echo "Running shard {{inputs.parameters.shard-id}}"
             backtest run \
+              --terminal-command-out /tmp/terminal-command.txt \
               --config "{{inputs.parameters.shard-config-path}}" \
               --output "{{inputs.parameters.shard-output-path}}" \
               --cache-dir /data/cache
@@ -219,6 +229,9 @@ spec:
           - name: shard-output-path
             valueFrom:
               path: /tmp/shard-output-path.txt
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
 
     - name: merge-reports
       inputs:
@@ -234,6 +247,7 @@ spec:
           - |
             set -e
             backtest merge \
+              --terminal-command-out /tmp/terminal-command.txt \
               --manifest "{{inputs.parameters.manifest-path}}" \
               --output "{{inputs.parameters.output-path}}" \
               --backtest-id "{{inputs.parameters.backtest-id}}"
@@ -251,3 +265,6 @@ spec:
           - name: output-path
             valueFrom:
               path: /tmp/merged-output-path.txt
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt

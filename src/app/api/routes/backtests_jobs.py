@@ -14,6 +14,7 @@ from app.backtests import (
     BacktestListItem,
     BacktestListPageResponse,
     BacktestStatusResponse,
+    BacktestUpdateRequest,
 )
 from app.backtests.service import (
     ArgoNotConfiguredError,
@@ -136,3 +137,15 @@ def delete_backtest(
 ) -> None:
     if not deps.backtest_jobs.delete(backtest_id):
         raise HTTPException(status_code=404, detail=f"Backtest '{backtest_id}' not found")
+
+
+@router.patch("/{backtest_id}", response_model=BacktestListItem)
+def update_backtest(
+    backtest_id: str,
+    payload: BacktestUpdateRequest,
+    deps: ApiDependencies = Depends(get_deps),
+) -> BacktestListItem:
+    try:
+        return deps.backtest_jobs.update_name(backtest_id, payload.name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

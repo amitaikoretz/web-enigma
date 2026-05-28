@@ -200,6 +200,7 @@ export type ArgoSplitBy = 'run' | 'symbol' | 'strategy' | 'symbol_strategy'
 
 export interface BacktestListItem {
   id: string
+  name?: string | null
   created_at: string
   updated_at: string
   status: BacktestJobStatus
@@ -292,6 +293,7 @@ export interface BacktestStrategySelectionInput {
 }
 
 export interface BacktestCreateRequest {
+  name?: string | null
   start_date: string
   end_date: string
   resolution: string
@@ -314,6 +316,10 @@ export interface BacktestCreateRequest {
   execution?: {
     fill_model: 'close' | 'next_bar'
   }
+}
+
+export interface BacktestUpdateRequest {
+  name?: string | null
 }
 
 export interface BacktestPortfolioSummary {

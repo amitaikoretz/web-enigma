@@ -45,6 +45,7 @@ class BacktestStrategySelection(BaseModel):
 
 
 class BacktestCreateRequest(BaseModel):
+    name: str | None = Field(default=None, description="Optional display name for this backtest")
     start_date: date
     end_date: date
     resolution: str = Field(description="Bar resolution such as 1m, 5m, 15m, 1h, or 1d")
@@ -83,6 +84,20 @@ class BacktestCreateRequest(BaseModel):
             raise ValueError("start_date must be <= end_date")
         return self
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("name must be a string")
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 256:
+            raise ValueError("name must be at most 256 characters")
+        return trimmed
+
 
 class BacktestSelectionSummary(BaseModel):
     start_date: date
@@ -103,6 +118,7 @@ class BacktestArtifactSummaryItem(BaseModel):
 
 class BacktestListItem(BaseModel):
     id: str
+    name: str | None = None
     created_at: datetime
     updated_at: datetime
     status: BacktestJobStatus
@@ -167,6 +183,24 @@ class BacktestArgoLaunchResponse(BaseModel):
 class BacktestStatusResponse(BacktestListItem):
     progress_pct: float = Field(ge=0, le=100)
     is_terminal: bool
+
+
+class BacktestUpdateRequest(BaseModel):
+    name: str | None = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("name must be a string")
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 256:
+            raise ValueError("name must be at most 256 characters")
+        return trimmed
 
 
 BacktestArtifactFormat = Literal["json", "yaml", "parquet", "other"]

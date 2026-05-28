@@ -216,6 +216,75 @@ class ReconciliationRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class SymbolUniverse(Base):
+    __tablename__ = "symbol_universes"
+    __table_args__ = (
+        Index("ux_symbol_universes_key", "key", unique=True),
+        Index("ix_symbol_universes_is_active", "is_active"),
+        Index("ix_symbol_universes_kind", "kind"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(SqlUuid, primary_key=True, default=uuid.uuid4)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="registry", server_default="registry")
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    provider_ref: Mapped[dict] = mapped_column(json_type, nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class SymbolUniverseConstituent(Base):
+    __tablename__ = "symbol_universe_constituents"
+    __table_args__ = (
+        Index("ix_symbol_universe_constituents_universe_effective_from", "universe_id", "effective_from"),
+        Index("ix_symbol_universe_constituents_universe_symbol", "universe_id", "symbol"),
+        Index("ix_symbol_universe_constituents_symbol", "symbol"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(SqlUuid, primary_key=True, default=uuid.uuid4)
+    universe_id: Mapped[uuid.UUID] = mapped_column(SqlUuid, ForeignKey("symbol_universes.id"), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    effective_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class SymbolUniverseRefreshRun(Base):
+    __tablename__ = "symbol_universe_refresh_runs"
+    __table_args__ = (
+        Index("ix_symbol_universe_refresh_runs_universe_started_at", "universe_id", "started_at"),
+        Index("ix_symbol_universe_refresh_runs_status_started_at", "status", "started_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(SqlUuid, primary_key=True, default=uuid.uuid4)
+    universe_id: Mapped[uuid.UUID | None] = mapped_column(
+        SqlUuid,
+        ForeignKey("symbol_universes.id"),
+        nullable=True,
+    )
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stats: Mapped[dict] = mapped_column(json_type, nullable=False, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class BacktestJob(Base):
     __tablename__ = "backtest_jobs"
     __table_args__ = (
@@ -224,6 +293,7 @@ class BacktestJob(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)

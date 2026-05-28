@@ -12,6 +12,7 @@ from app.api.routes import (
     market_data_downloads,
     server,
     settings,
+    symbol_universes,
     strategies,
     trading_contracts,
 )
@@ -29,3 +30,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(market_data_downloads.router)
     app.include_router(trading_contracts.router)
     app.include_router(live_runtime.router)
+    app.include_router(symbol_universes.router)

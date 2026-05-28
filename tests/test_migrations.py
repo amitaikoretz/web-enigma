@@ -70,6 +70,7 @@ def test_alembic_upgrade_creates_backtest_jobs_table(tmp_path, monkeypatch):
     columns = {column["name"] for column in inspector.get_columns("backtest_jobs")}
     assert {
         "id",
+        "name",
         "status",
         "report_json_path",
         "candidates_parquet_path",

@@ -55,6 +55,7 @@ export interface ExecutionSettings {
 }
 
 export type BacktestResultsColumnId =
+  | 'name'
   | 'created'
   | 'status'
   | 'report'

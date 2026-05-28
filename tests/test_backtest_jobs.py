@@ -152,7 +152,9 @@ def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
     monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
     client = _build_client(tmp_path)
 
-    response = client.post("/backtests", json=_wizard_payload())
+    payload = _wizard_payload()
+    payload["name"] = "My named backtest"
+    response = client.post("/backtests", json=payload)
 
     assert response.status_code == 202
     body = response.json()
@@ -171,6 +173,7 @@ def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
     assert detail.status_code == 200
     detail_body = detail.json()
     assert detail_body["metadata"]["id"] == body["backtest_id"]
+    assert detail_body["metadata"]["name"] == "My named backtest"
     assert detail_body["output_path"].endswith(f"/{body['backtest_id']}.json")
     assert detail_body["report"]["total_runs"] == 4
     assert detail_body["report"]["results"][0]["symbol"] == "AAPL"
@@ -181,6 +184,25 @@ def test_create_backtest_returns_202_and_persists_detail(tmp_path, monkeypatch):
     assert "report_json" in artifact_kinds
     assert "orders_parquet" in artifact_kinds
     assert "trades_parquet" in artifact_kinds
+
+
+def test_patch_backtest_updates_name(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+
+    updated = client.patch(f"/backtests/{backtest_id}", json={"name": "Renamed"})
+    assert updated.status_code == 200
+    assert updated.json()["id"] == backtest_id
+    assert updated.json()["name"] == "Renamed"
+
+    cleared = client.patch(f"/backtests/{backtest_id}", json={"name": "   "})
+    assert cleared.status_code == 200
+    assert cleared.json()["name"] is None
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+    assert detail["metadata"]["name"] is None
 
 
 def test_list_backtests_includes_stored_artifacts(tmp_path, monkeypatch):
