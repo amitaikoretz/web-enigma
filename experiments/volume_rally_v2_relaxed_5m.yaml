@@ -5,7 +5,7 @@
 #   min_close_strength: 0.65 -> 0.55
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_v2_relaxed_5m.yaml \
 #     --output /tmp/volume-rally-v2-relaxed-5m.json
 

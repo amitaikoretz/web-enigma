@@ -79,8 +79,10 @@ def _print_payload_template() -> dict[str, Any]:
         "container": {
             "image": _workflow_image(),
             "imagePullPolicy": "IfNotPresent",
-            "command": ["backtest", "print-argo-payload"],
+            "command": ["python", "-m", "app.standalone.print_argo_payload"],
             "args": [
+                "--terminal-command-out",
+                "/tmp/terminal-command.txt",
                 "--api-base-url",
                 "{{inputs.parameters.api-base-url}}",
                 "--config-path",
@@ -91,7 +93,7 @@ def _print_payload_template() -> dict[str, Any]:
                 "{{inputs.parameters.split-by}}",
                 "--backtest-id",
                 "{{inputs.parameters.backtest-id}}",
-                "--launch-curl",
+                "--launch-curl-out",
                 "/tmp/launch-curl.txt",
             ],
             "envFrom": _container_env(),
@@ -103,40 +105,17 @@ def _print_payload_template() -> dict[str, Any]:
                     "name": "launch-curl",
                     "valueFrom": {"path": "/tmp/launch-curl.txt"},
                 }
+                ,
+                {
+                    "name": "terminal-command",
+                    "valueFrom": {"path": "/tmp/terminal-command.txt"},
+                },
             ]
         },
     }
 
 
 def _plan_shards_template() -> dict[str, Any]:
-    # Stage config from an inline parameter when set; otherwise read config-path on the PVC.
-    # Output parameters go to /tmp so Argo's wait sidecar can collect them reliably.
-    results_mount = workflow_results_mount()
-    plan_script = "\n".join(
-        [
-            "set -e",
-            'if [ -n "{{inputs.parameters.backtest-id}}" ]; then',
-            f'  WORK="{results_mount}/{{{{inputs.parameters.backtest-id}}}}"',
-            "else",
-            '  WORK="/workspace"',
-            "fi",
-            'mkdir -p "$WORK"',
-            'if [ -n "{{inputs.parameters.config-b64}}" ]; then',
-            '  echo "{{inputs.parameters.config-b64}}" | base64 -d > "$WORK/config.yaml"',
-            '  CONFIG="$WORK/config.yaml"',
-            "else",
-            '  CONFIG="{{inputs.parameters.config-path}}"',
-            "fi",
-            "backtest plan-shards \\",
-            '  --config "$CONFIG" \\',
-            '  --work-dir "$WORK" \\',
-            '  --manifest "$WORK/manifest.json" \\',
-            "  --shards-param /tmp/shards-param.json \\",
-            '  --split-by "{{inputs.parameters.split-by}}"',
-            'echo "$WORK/manifest.json" > /tmp/manifest-path.txt',
-            'echo "$WORK" > /tmp/work-dir.txt',
-        ]
-    )
     return {
         "name": "plan-shards",
         "inputs": {
@@ -150,8 +129,25 @@ def _plan_shards_template() -> dict[str, Any]:
         "container": {
             "image": _workflow_image(),
             "imagePullPolicy": "IfNotPresent",
-            "command": ["sh", "-c"],
-            "args": [plan_script],
+            "command": ["python", "-m", "app.standalone.plan_shards_argo"],
+            "args": [
+                "--terminal-command-out",
+                "/tmp/terminal-command.txt",
+                "--config-path",
+                "{{inputs.parameters.config-path}}",
+                "--config-b64",
+                "{{inputs.parameters.config-b64}}",
+                "--split-by",
+                "{{inputs.parameters.split-by}}",
+                "--backtest-id",
+                "{{inputs.parameters.backtest-id}}",
+                "--manifest-path-out",
+                "/tmp/manifest-path.txt",
+                "--work-dir-out",
+                "/tmp/work-dir.txt",
+                "--shards-param-out",
+                "/tmp/shards-param.json",
+            ],
             "envFrom": _container_env(),
             "volumeMounts": _volume_mounts(),
         },
@@ -169,23 +165,16 @@ def _plan_shards_template() -> dict[str, Any]:
                     "name": "work-dir",
                     "valueFrom": {"path": "/tmp/work-dir.txt"},
                 },
+                {
+                    "name": "terminal-command",
+                    "valueFrom": {"path": "/tmp/terminal-command.txt"},
+                },
             ]
         },
     }
 
 
 def _run_shard_template() -> dict[str, Any]:
-    run_script = "\n".join(
-        [
-            "set -e",
-            'echo "Running shard {{inputs.parameters.shard-id}}"',
-            "backtest run \\",
-            '  --config "{{inputs.parameters.shard-config-path}}" \\',
-            '  --output "{{inputs.parameters.shard-output-path}}" \\',
-            "  --cache-dir /data/cache",
-            'echo "{{inputs.parameters.shard-output-path}}" > /tmp/shard-output-path.txt',
-        ]
-    )
     return {
         "name": "run-shard",
         "metadata": {
@@ -203,8 +192,21 @@ def _run_shard_template() -> dict[str, Any]:
         "container": {
             "image": _workflow_image(),
             "imagePullPolicy": "IfNotPresent",
-            "command": ["sh", "-c"],
-            "args": [run_script],
+            "command": ["python", "-m", "app.standalone.run_shard_argo"],
+            "args": [
+                "--terminal-command-out",
+                "/tmp/terminal-command.txt",
+                "--shard-id",
+                "{{inputs.parameters.shard-id}}",
+                "--config",
+                "{{inputs.parameters.shard-config-path}}",
+                "--output",
+                "{{inputs.parameters.shard-output-path}}",
+                "--cache-dir",
+                "/data/cache",
+                "--shard-output-path-out",
+                "/tmp/shard-output-path.txt",
+            ],
             "envFrom": _container_env(),
             "volumeMounts": _volume_mounts(include_cache=True),
         },
@@ -214,22 +216,17 @@ def _run_shard_template() -> dict[str, Any]:
                     "name": "shard-output-path",
                     "valueFrom": {"path": "/tmp/shard-output-path.txt"},
                 }
+                ,
+                {
+                    "name": "terminal-command",
+                    "valueFrom": {"path": "/tmp/terminal-command.txt"},
+                },
             ]
         },
     }
 
 
 def _merge_reports_template() -> dict[str, Any]:
-    merge_script = "\n".join(
-        [
-            "set -e",
-            "backtest merge \\",
-            '  --manifest "{{inputs.parameters.manifest-path}}" \\',
-            '  --output "{{inputs.parameters.output-path}}" \\',
-            '  --backtest-id "{{inputs.parameters.backtest-id}}"',
-            'echo "{{inputs.parameters.output-path}}" > /tmp/merged-output-path.txt',
-        ]
-    )
     return {
         "name": "merge-reports",
         "inputs": {
@@ -242,8 +239,19 @@ def _merge_reports_template() -> dict[str, Any]:
         "container": {
             "image": _workflow_image(),
             "imagePullPolicy": "IfNotPresent",
-            "command": ["sh", "-c"],
-            "args": [merge_script],
+            "command": ["python", "-m", "app.standalone.merge_reports_argo"],
+            "args": [
+                "--terminal-command-out",
+                "/tmp/terminal-command.txt",
+                "--manifest",
+                "{{inputs.parameters.manifest-path}}",
+                "--output",
+                "{{inputs.parameters.output-path}}",
+                "--backtest-id",
+                "{{inputs.parameters.backtest-id}}",
+                "--merged-output-path-out",
+                "/tmp/merged-output-path.txt",
+            ],
             "envFrom": _container_env(),
             "volumeMounts": _volume_mounts(),
         },
@@ -253,6 +261,11 @@ def _merge_reports_template() -> dict[str, Any]:
                     "name": "output-path",
                     "valueFrom": {"path": "/tmp/merged-output-path.txt"},
                 }
+                ,
+                {
+                    "name": "terminal-command",
+                    "valueFrom": {"path": "/tmp/terminal-command.txt"},
+                },
             ]
         },
     }

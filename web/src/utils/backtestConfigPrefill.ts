@@ -189,6 +189,9 @@ export function isRetryEligibleFailure(metadata: BacktestListItem): boolean {
 }
 
 export function canRetryBacktest(metadata: BacktestListItem): boolean {
+  if (metadata.status === 'pending' || metadata.status === 'running') {
+    return true
+  }
   return isRetryEligibleFailure(metadata)
 }
 
@@ -199,5 +202,5 @@ export function canEditAndRetryBacktest(
   if (hasPrefillableInputConfig(reportInputConfig)) {
     return true
   }
-  return isTerminalBacktestStatus(metadata.status) && metadata.selection !== null
+  return metadata.selection !== null
 }

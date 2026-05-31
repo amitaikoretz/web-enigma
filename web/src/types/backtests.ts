@@ -217,6 +217,8 @@ export interface BacktestListItem {
   started_at?: string | null
   finished_at?: string | null
   stored_artifacts?: BacktestArtifactSummaryItem[]
+  progress_pct?: number
+  progress_source?: 'runs' | 'argo'
 }
 
 export interface BacktestArtifactSummaryItem {

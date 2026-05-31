@@ -137,8 +137,13 @@ class BacktestListItem(BaseModel):
     stored_artifacts: list[BacktestArtifactSummaryItem] = Field(default_factory=list)
 
 
+class BacktestListItemWithProgress(BacktestListItem):
+    progress_pct: float = Field(ge=0, le=100)
+    progress_source: Literal["runs", "argo"] = "runs"
+
+
 class BacktestListPageResponse(BaseModel):
-    items: list[BacktestListItem]
+    items: list[BacktestListItemWithProgress]
     total: int
     page: int
     page_size: int
@@ -183,6 +188,23 @@ class BacktestArgoLaunchResponse(BaseModel):
 class BacktestStatusResponse(BacktestListItem):
     progress_pct: float = Field(ge=0, le=100)
     is_terminal: bool
+
+
+class BacktestRetryRequest(BaseModel):
+    force: bool = Field(
+        default=False,
+        description="Allow retry even when the source backtest is still active (creates a new backtest id).",
+    )
+    config_text: str | None = Field(
+        default=None,
+        description="Optional inline config override (YAML or JSON). When provided, the new backtest is launched from this config instead of the stored source config.",
+    )
+    format: Literal["json", "yaml"] = Field(default="yaml", description="Format of config_text when provided.")
+
+
+class BacktestConfigUpdateRequest(BaseModel):
+    config_text: str = Field(description="New backtest config content (YAML or JSON).")
+    format: Literal["json", "yaml"] = "yaml"
 
 
 class BacktestUpdateRequest(BaseModel):

@@ -138,8 +138,8 @@ After `docker compose up --build`:
 3. Postgres: `docker compose exec postgres pg_isready -U postgres -d backtest`
 4. Migrations: `docker compose run --rm migrate alembic current` shows head revision
 5. Seed a contract: `./examples/live/seed_contracts.sh`
-6. Controller one-shot: `docker compose run --rm controller backtest live-controller --config /app/config/live.yaml --once`
-7. Worker one-shot: `docker compose run --rm worker-0 backtest live-worker --config /app/config/live.yaml --shard-id 0 --once`
+6. Controller one-shot: `docker compose run --rm controller kalyxctl live-controller --config /app/config/live.yaml --once`
+7. Worker one-shot: `docker compose run --rm worker-0 kalyxctl live-worker --config /app/config/live.yaml --shard-id 0 --once`
 8. Web (optional): open `http://localhost:8080`
 
 ## Local Redis Backend Notes

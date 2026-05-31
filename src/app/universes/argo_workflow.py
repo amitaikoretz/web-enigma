@@ -24,7 +24,7 @@ def _container_env() -> list[dict[str, Any]]:
 
 def build_symbol_universe_refresh_workflow_spec(*, universe_key: str | None, as_of: str) -> dict[str, Any]:
     key_arg = ["--key", universe_key] if universe_key else ["--all"]
-    cmdline = " ".join(["backtest", "universes", "refresh", *key_arg, "--as-of", as_of])
+    cmdline = " ".join(["kalyxctl", "universes", "refresh", *key_arg, "--as-of", as_of])
     return {
         "serviceAccountName": _workflow_service_account(),
         "ttlStrategy": {"secondsAfterCompletion": WORKFLOW_TTL_SECONDS},
@@ -53,7 +53,7 @@ def build_symbol_universe_refresh_workflow_spec(*, universe_key: str | None, as_
 
 
 def build_symbol_universe_registry_sync_workflow_spec() -> dict[str, Any]:
-    cmdline = " ".join(["backtest", "universes", "sync-registry"])
+    cmdline = " ".join(["kalyxctl", "universes", "sync-registry"])
     return {
         "serviceAccountName": _workflow_service_account(),
         "ttlStrategy": {"secondsAfterCompletion": WORKFLOW_TTL_SECONDS},

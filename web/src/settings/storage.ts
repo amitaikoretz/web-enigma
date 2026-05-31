@@ -2,7 +2,7 @@ import { defaultPlatformSettings } from './defaults'
 import { normalizeThemePreset } from '../theme/registry'
 import type { AppearanceSettings } from '../types/settings'
 
-const APPEARANCE_STORAGE_KEY = 'kairos.appearance-settings.v1'
+const APPEARANCE_STORAGE_KEY = 'kalyx.appearance-settings.v1'
 
 export function loadAppearanceSettings(): AppearanceSettings {
   if (typeof window === 'undefined') {

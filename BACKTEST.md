@@ -1,6 +1,6 @@
 # How Backtesting Works
 
-This project runs backtests through a Typer CLI command named `backtest`.
+This project runs backtests through a Typer CLI command named `kalyxctl`.
 
 For environment setup, local service startup, and live-runtime operations, use:
 
@@ -10,7 +10,7 @@ For environment setup, local service startup, and live-runtime operations, use:
 
 ## End-to-end flow
 
-1. You run `backtest run --config <yaml> --output <json>`.
+1. You run `kalyxctl run --config <yaml> --output <json>`.
 2. The CLI loads YAML and validates it with `BacktestConfig` (Pydantic).
 3. Each `run` entry is executed independently in `backtesting.py`.
 4. A data feed is built from either:
@@ -52,13 +52,13 @@ Environment and infrastructure setup live outside this guide so the backtesting 
 ### 1) List available strategies
 
 ```bash
-backtest list-strategies
+kalyxctl list-strategies
 ```
 
 ### 2) Run a batch config
 
 ```bash
-backtest run \
+kalyxctl run \
   --config examples/algorithms/batch_demo.yaml \
   --output /tmp/backtest-results.json
 ```
@@ -66,7 +66,7 @@ backtest run \
 ### 3) Run with custom cache directory
 
 ```bash
-backtest run \
+kalyxctl run \
   --config examples/algorithms/yahoo_substantial.yaml \
   --output /tmp/yahoo-results.json \
   --cache-dir /tmp/backtest-cache
@@ -75,7 +75,7 @@ backtest run \
 ### 4) Force refresh Yahoo cache
 
 ```bash
-backtest run \
+kalyxctl run \
   --config examples/algorithms/yahoo_substantial.yaml \
   --output /tmp/yahoo-refresh.json \
   --cache-refresh
@@ -84,7 +84,7 @@ backtest run \
 ### 5) Disable cache for this run
 
 ```bash
-backtest run \
+kalyxctl run \
   --config examples/algorithms/yahoo_substantial.yaml \
   --output /tmp/yahoo-no-cache.json \
   --no-cache
@@ -93,7 +93,7 @@ backtest run \
 ### 6) Build an HTML report from JSON output
 
 ```bash
-backtest report-html \
+kalyxctl report-html \
   --input /tmp/backtest-results.json \
   --output /tmp/backtest-report.html \
   --title "Backtest Report"
@@ -101,7 +101,7 @@ backtest report-html \
 
 ## Exit codes
 
-`backtest run` uses status-based exit codes:
+`kalyxctl run` uses status-based exit codes:
 
 - `0`: all runs succeeded
 - `10`: partial failure (some runs failed)
@@ -142,3 +142,14 @@ Behavior:
 - Returns `200` even when the report status is `partial_failure` or `failure`
 - Returns `422` for parse/validation errors
 - Returns `500` if the report cannot be written
+
+## Async backtest jobs API
+
+The server also supports queued/async backtest jobs with persisted metadata and artifacts.
+
+- `POST /backtests` creates a backtest job and returns `202` with a backtest id.
+- `GET /backtests/{id}/status` returns progress and terminal status.
+- `POST /backtests/{id}/retry` launches a *new* backtest id using the stored config from `{id}`.
+  - By default this returns `409` if `{id}` is still `pending` or `running`.
+  - Send `{"force": true}` to allow cloning/retrying even while `{id}` is active (does not stop the current run).
+- `PATCH /backtests/{id}/config` replaces the stored config YAML/JSON for `{id}` (useful for “edit then retry” flows).

@@ -1,4 +1,4 @@
-# Backtest App
+# Kalyx Platform
 
 A simple `backtesting.py` CLI app with:
 - YAML input validated by Pydantic
@@ -23,14 +23,14 @@ pip install -e .
 
 Run a sample backtest:
 
-backtest list-strategies
-backtest run --config examples/algorithms/batch_demo.yaml --output /tmp/results.json
+kalyxctl list-strategies
+kalyxctl run --config examples/algorithms/batch_demo.yaml --output /tmp/results.json
 ```
 
 Start the API:
 
 ```bash
-backtest serve --port 8000
+kalyxctl serve --port 8000
 ```
 
 ## Docs

@@ -9,7 +9,7 @@
 #   breakeven_atr_mult: 1.0 -> 0.75
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_v2_tuned_b_5m.yaml \
 #     --output /tmp/volume-rally-v2-tuned-b-5m.json
 

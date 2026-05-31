@@ -190,3 +190,93 @@ body {
   left: 5%;
   opacity: 0.4;
 }
+
+.glass-wash-fjord_porcelain {
+  width: 420px;
+  height: 260px;
+  background: rgba(210, 232, 255, 0.65);
+  top: -70px;
+  right: -40px;
+  opacity: 0.42;
+}
+
+.glass-wash-fjord_porcelain-b {
+  width: 320px;
+  height: 320px;
+  background: rgba(205, 224, 255, 0.55);
+  bottom: -110px;
+  left: 10%;
+  opacity: 0.32;
+}
+
+.glass-wash-glacier_lilac {
+  width: 420px;
+  height: 240px;
+  background: rgba(220, 214, 255, 0.55);
+  top: -70px;
+  left: 25%;
+  opacity: 0.36;
+}
+
+.glass-wash-glacier_lilac-b {
+  width: 300px;
+  height: 300px;
+  background: rgba(232, 228, 255, 0.45);
+  bottom: -90px;
+  right: 10%;
+  opacity: 0.28;
+}
+
+.glass-wash-fjord_ink_fx {
+  width: 520px;
+  height: 280px;
+  background: rgba(122, 162, 247, 0.22);
+  top: -90px;
+  right: -70px;
+  opacity: 0.35;
+}
+
+.glass-wash-fjord_ink_fx-b {
+  width: 360px;
+  height: 360px;
+  background: rgba(223, 231, 245, 0.14);
+  bottom: -140px;
+  left: 8%;
+  opacity: 0.22;
+}
+
+.glass-wash-deep_fjord_fx {
+  width: 520px;
+  height: 260px;
+  background: rgba(34, 211, 238, 0.2);
+  top: -90px;
+  left: 22%;
+  opacity: 0.32;
+}
+
+.glass-wash-deep_fjord_fx-b {
+  width: 360px;
+  height: 360px;
+  background: rgba(234, 244, 255, 0.12);
+  bottom: -140px;
+  right: 10%;
+  opacity: 0.2;
+}
+
+.glass-wash-aurora_slate {
+  width: 520px;
+  height: 280px;
+  background: rgba(167, 139, 250, 0.22);
+  top: -90px;
+  right: -70px;
+  opacity: 0.34;
+}
+
+.glass-wash-aurora_slate-b {
+  width: 360px;
+  height: 360px;
+  background: rgba(243, 246, 255, 0.12);
+  bottom: -140px;
+  left: 10%;
+  opacity: 0.2;
+}

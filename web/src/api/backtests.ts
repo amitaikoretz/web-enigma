@@ -48,10 +48,26 @@ function normalizeBacktestListPage(
 export async function retryBacktest(backtestId: string): Promise<BacktestCreateResponse> {
   const response = await fetch(`/api/backtests/${backtestId}/retry`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   })
 
   if (!response.ok) {
     throw new Error(await readApiError(response, 'Failed to retry backtest'))
+  }
+
+  return response.json() as Promise<BacktestCreateResponse>
+}
+
+export async function retryBacktestForce(backtestId: string): Promise<BacktestCreateResponse> {
+  const response = await fetch(`/api/backtests/${backtestId}/retry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ force: true }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to rerun backtest'))
   }
 
   return response.json() as Promise<BacktestCreateResponse>
@@ -118,7 +134,12 @@ export async function fetchBacktestInputConfig(backtestId: string): Promise<Reco
   }
 
   const yamlText = await fetchBacktestConfigYaml(backtestId)
-  const parsed = parseYaml(yamlText)
+  const parsed = parseYaml(yamlText, {
+    // The backtest config can legitimately include many YAML aliases/anchors.
+    // The yaml library defaults to a conservative max to mitigate "billion laughs"-style attacks.
+    // Our config comes from our own API for an already-created backtest, so allow a higher limit.
+    maxAliasCount: -1,
+  })
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error('Backtest configuration is not available yet.')
   }

@@ -8,11 +8,13 @@ from pydantic import ValidationError
 
 from app.api.deps import ApiDependencies, get_deps
 from app.backtests import (
+    BacktestConfigUpdateRequest,
     BacktestCreateRequest,
     BacktestCreateResponse,
     BacktestDetailResponse,
     BacktestListItem,
     BacktestListPageResponse,
+    BacktestRetryRequest,
     BacktestStatusResponse,
     BacktestUpdateRequest,
 )
@@ -99,10 +101,11 @@ def get_backtest_report(
 )
 def retry_backtest(
     backtest_id: str,
+    payload: BacktestRetryRequest | None = None,
     deps: ApiDependencies = Depends(get_deps),
 ) -> BacktestCreateResponse:
     try:
-        return deps.backtest_jobs.retry_backtest(backtest_id)
+        return deps.backtest_jobs.retry_backtest(backtest_id, payload)
     except BacktestJobActiveError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ArgoNotConfiguredError as exc:
@@ -128,6 +131,20 @@ def get_backtest_config(
         media_type="application/x-yaml",
         headers={"Content-Disposition": f'inline; filename="{backtest_id}.yaml"'},
     )
+
+
+@router.patch("/{backtest_id}/config", response_model=BacktestListItem)
+def update_backtest_config(
+    backtest_id: str,
+    payload: BacktestConfigUpdateRequest,
+    deps: ApiDependencies = Depends(get_deps),
+) -> BacktestListItem:
+    try:
+        return deps.backtest_jobs.update_config(backtest_id, payload)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.delete("/{backtest_id}", status_code=status.HTTP_204_NO_CONTENT)

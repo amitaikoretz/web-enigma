@@ -2,7 +2,7 @@
 # breakeven floor, stale exit, tighter initial stop. Zero commission for gross-edge comparison.
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_v2_5m.yaml \
 #     --output /tmp/volume-rally-v2-5m.json
 #

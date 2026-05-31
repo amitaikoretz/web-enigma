@@ -2,7 +2,7 @@
 # winners more room (wider trail + higher target). Same universe/dates for comparison.
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_gross_edge_5m.yaml \
 #     --output /tmp/volume-rally-gross-edge-5m.json
 #

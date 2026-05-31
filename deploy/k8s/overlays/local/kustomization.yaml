@@ -26,3 +26,4 @@ patches:
   - path: patch-api-recreate.yaml
   - path: patch-web-replicas.yaml
   - path: patch-pvc-hostpath.yaml
+  - path: patch-imagepull-never.yaml

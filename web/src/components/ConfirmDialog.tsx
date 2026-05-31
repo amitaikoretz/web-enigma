@@ -17,6 +17,8 @@ export interface ConfirmDialogProps {
   open: boolean
   title: string
   description: ReactNode
+  intent?: 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error'
+  icon?: ReactNode
   confirmLabel?: string
   cancelLabel?: string
   loading?: boolean
@@ -28,12 +30,16 @@ export function ConfirmDialog({
   open,
   title,
   description,
+  intent = 'error',
+  icon,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   loading = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
+  const resolvedIcon = icon ?? <WarningAmberOutlinedIcon sx={{ fontSize: 24 }} />
+
   return (
     <Dialog
       open={open}
@@ -65,12 +71,12 @@ export function ConfirmDialog({
               width: 44,
               height: 44,
               borderRadius: '50%',
-              bgcolor: alpha(theme.palette.error.main, 0.14),
-              color: 'error.main',
+              bgcolor: alpha(theme.palette[intent].main, 0.14),
+              color: `${intent}.main`,
               flexShrink: 0,
             })}
           >
-            <WarningAmberOutlinedIcon sx={{ fontSize: 24 }} />
+            {resolvedIcon}
           </Box>
           <Stack spacing={0.5} sx={{ pt: 0.25, minWidth: 0 }}>
             <Typography variant="h6" component="span">
@@ -96,7 +102,7 @@ export function ConfirmDialog({
           onClick={onConfirm}
           disabled={loading}
           variant="contained"
-          color="error"
+          color={intent}
           startIcon={loading ? <CircularProgress size={16} color="inherit" /> : undefined}
         >
           {confirmLabel}

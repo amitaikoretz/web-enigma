@@ -1,2 +1,2 @@
 [console_scripts]
-backtest = app.cli:main
+kalyxctl = app.cli:main

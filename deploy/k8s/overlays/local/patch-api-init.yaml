@@ -12,10 +12,24 @@ spec:
             - sh
             - -c
             - until pg_isready -h postgres -p 5432 -U postgres -d backtest; do echo waiting for postgres; sleep 2; done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
         - name: migrate
           image: backtest-app:latest
           imagePullPolicy: IfNotPresent
           command: ["alembic", "upgrade", "head"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           envFrom:
             - secretRef:
                 name: app-secrets

@@ -322,6 +322,7 @@ def test_compute_argo_weighted_completed_runs_mid_run_progress(tmp_path: Path) -
     workflow = {
         "status": {
             "phase": "Running",
+            "progress": "35/100",
             "nodes": {
                 "pending-node": {
                     "templateName": "run-shard",
@@ -341,7 +342,7 @@ def test_compute_argo_weighted_completed_runs_mid_run_progress(tmp_path: Path) -
     completed_runs, fallback_pct = blend_completed_runs(metadata, tmp_path, workflow=workflow)
 
     assert completed_runs == 4
-    assert fallback_pct is None
+    assert fallback_pct == 35.0
 
 
 def test_blend_completed_runs_workflow_fallback_pct(tmp_path: Path) -> None:

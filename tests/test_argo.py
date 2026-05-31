@@ -54,12 +54,11 @@ def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
     print_payload_template = next(
         item for item in spec["templates"] if item["name"] == "print-payload"
     )
-    launch_curl_output = print_payload_template["outputs"]["parameters"][0]
-    assert launch_curl_output == {
-        "name": "launch-curl",
-        "valueFrom": {"path": "/tmp/launch-curl.txt"},
-    }
+    outputs = {item["name"]: item["valueFrom"]["path"] for item in print_payload_template["outputs"]["parameters"]}
+    assert outputs["launch-curl"] == "/tmp/launch-curl.txt"
+    assert outputs["terminal-command"] == "/tmp/terminal-command.txt"
     assert "/tmp/launch-curl.txt" in print_payload_template["container"]["args"]
+    assert "/tmp/terminal-command.txt" in print_payload_template["container"]["args"]
 
 
 def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
@@ -81,6 +80,7 @@ def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
         "shards": "/tmp/shards-param.json",
         "manifest-path": "/tmp/manifest-path.txt",
         "work-dir": "/tmp/work-dir.txt",
+        "terminal-command": "/tmp/terminal-command.txt",
     }
     plan_script = plan_template["container"]["args"][0]
     assert f'{workflow_results_mount()}/{{{{inputs.parameters.backtest-id}}}}' in plan_script

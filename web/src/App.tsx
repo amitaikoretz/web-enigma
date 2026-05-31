@@ -149,13 +149,10 @@ function App() {
           <Stack spacing={0.25} sx={{ minWidth: 0 }}>
             <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
               <Typography variant="h6" component="h1">
-                Kairos
+                Kalyx
               </Typography>
               <ApiHealthIndicator />
             </Stack>
-            <Typography variant="caption" color="text.secondary">
-              Backtesting workspace
-            </Typography>
           </Stack>
 
           <Box sx={{ display: { xs: 'none', md: 'flex' }, flex: 1, justifyContent: 'center' }}>

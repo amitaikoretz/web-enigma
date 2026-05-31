@@ -17,6 +17,7 @@ import {
 import { alpha } from '@mui/material/styles'
 import { useEffect, useMemo, useState } from 'react'
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined'
+import AddIcon from '@mui/icons-material/Add'
 
 import {
   fetchUniverses,
@@ -52,6 +53,7 @@ export function SymbolUniversesAdmin() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const selected = useMemo(
     () => items.find((item) => item.key === selectedKey) ?? null,
     [items, selectedKey],
@@ -196,6 +198,7 @@ export function SymbolUniversesAdmin() {
       setUserCreateDraft({ name: '', description: '', symbolsText: '', isActive: true })
       await reload()
       setSelectedKey(created.key)
+      setCreateDialogOpen(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user universe')
     } finally {
@@ -286,6 +289,80 @@ export function SymbolUniversesAdmin() {
     <Stack spacing={2.5}>
       {error && <Alert severity="error">{error}</Alert>}
       {success && <Alert severity="success">{success}</Alert>}
+
+      <Dialog
+        open={createDialogOpen}
+        onClose={loading ? undefined : () => setCreateDialogOpen(false)}
+        aria-labelledby="create-universe-title"
+        slotProps={{
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(6px)',
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            },
+          },
+          paper: {
+            sx: {
+              width: '100%',
+              maxWidth: 620,
+              p: 0.5,
+            },
+          },
+        }}
+      >
+        <DialogTitle id="create-universe-title" sx={{ pb: 1 }}>
+          Create user universe
+        </DialogTitle>
+        <DialogContent sx={{ pt: 0 }}>
+          <Stack spacing={1.5}>
+            <TextField
+              label="Name"
+              value={userCreateDraft.name}
+              onChange={(e) => setUserCreateDraft((prev) => ({ ...prev, name: e.target.value }))}
+              disabled={loading}
+              autoFocus
+              placeholder="My Tech Basket"
+            />
+            <TextField
+              label="Description"
+              value={userCreateDraft.description}
+              onChange={(e) => setUserCreateDraft((prev) => ({ ...prev, description: e.target.value }))}
+              disabled={loading}
+            />
+            <TextField
+              label="Symbols (comma/newline separated)"
+              value={userCreateDraft.symbolsText}
+              onChange={(e) => setUserCreateDraft((prev) => ({ ...prev, symbolsText: e.target.value }))}
+              multiline
+              minRows={6}
+              placeholder="AAPL, MSFT, NVDA"
+              disabled={loading}
+              helperText="Symbols are uppercased and deduped on save."
+            />
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Switch
+                checked={userCreateDraft.isActive}
+                onChange={(_e, checked) => setUserCreateDraft((prev) => ({ ...prev, isActive: checked }))}
+                disabled={loading}
+              />
+              <Typography>Active</Typography>
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
+          <Button onClick={() => setCreateDialogOpen(false)} disabled={loading} variant="outlined" color="inherit">
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleCreateUserUniverse()}
+            disabled={loading}
+            variant="contained"
+            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={deleteDialogOpen}
@@ -395,18 +472,29 @@ export function SymbolUniversesAdmin() {
         </DialogActions>
       </Dialog>
 
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-        <Paper sx={{ p: 2, flex: 1 }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: 'stretch' }}>
+        <Paper sx={{ p: 2, flex: 1, minWidth: 320 }}>
           <Stack spacing={1.5}>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
               <Typography variant="h6">Universes (registry-managed)</Typography>
-              <Button size="small" onClick={handleRefreshAll} disabled={loading}>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => setCreateDialogOpen(true)}
+                disabled={loading}
+              >
+                Create
+              </Button>
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <Button variant="outlined" onClick={handleSyncRegistry} disabled={loading} sx={{ flex: 1 }}>
+                Sync registry to DB (Argo)
+              </Button>
+              <Button variant="outlined" onClick={handleRefreshAll} disabled={loading} sx={{ flex: 1 }}>
                 Refresh all (Argo)
               </Button>
             </Stack>
-            <Button variant="outlined" onClick={handleSyncRegistry} disabled={loading}>
-              Sync registry to DB (Argo)
-            </Button>
             <Divider />
             <Stack spacing={1}>
               {items.length === 0 ? (
@@ -440,129 +528,105 @@ export function SymbolUniversesAdmin() {
           </Stack>
         </Paper>
 
-        <Paper sx={{ p: 2, flex: 1 }}>
+        <Paper sx={{ p: 2, flex: 2, minWidth: 0 }}>
           <Stack spacing={1.5}>
-            <Typography variant="h6">Create user universe</Typography>
-            <TextField
-              label="Name"
-              value={userCreateDraft.name}
-              onChange={(e) => setUserCreateDraft((prev) => ({ ...prev, name: e.target.value }))}
-              disabled={loading}
-            />
-            <TextField
-              label="Description"
-              value={userCreateDraft.description}
-              onChange={(e) => setUserCreateDraft((prev) => ({ ...prev, description: e.target.value }))}
-              disabled={loading}
-            />
-            <TextField
-              label="Symbols (comma/newline separated)"
-              value={userCreateDraft.symbolsText}
-              onChange={(e) => setUserCreateDraft((prev) => ({ ...prev, symbolsText: e.target.value }))}
-              multiline
-              minRows={5}
-              placeholder="AAPL, MSFT, NVDA"
-              disabled={loading}
-            />
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-              <Switch
-                checked={userCreateDraft.isActive}
-                onChange={(_e, checked) => setUserCreateDraft((prev) => ({ ...prev, isActive: checked }))}
-                disabled={loading}
-              />
-              <Typography>Active</Typography>
-            </Stack>
-            <Button variant="contained" onClick={handleCreateUserUniverse} disabled={loading}>
-              Create user universe
-            </Button>
+            {!selected ? (
+              <Stack spacing={0.75}>
+                <Typography variant="h6">Universe details</Typography>
+                <Typography color="text.secondary">
+                  Select a universe on the left to view and edit details.
+                </Typography>
+              </Stack>
+            ) : (
+              <>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  spacing={1}
+                  sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}
+                >
+                  <Box>
+                    <Typography variant="h6">{selected.key}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Latest refresh: {selected.latest_refresh_status ?? '—'}{' '}
+                      {selected.latest_refresh_as_of ? `as_of=${selected.latest_refresh_as_of}` : ''}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                    <Button variant="outlined" onClick={reload} disabled={loading}>
+                      Reload
+                    </Button>
+                    <Button variant="outlined" onClick={handleRefreshSelected} disabled={loading}>
+                      Refresh now (Argo)
+                    </Button>
+                    <Button variant="contained" onClick={handleSaveSelected} disabled={loading}>
+                      Save
+                    </Button>
+                  </Stack>
+                </Stack>
+                <TextField
+                  label={selected.kind === 'user' ? 'Name' : 'Name (registry)'}
+                  value={editDraft.name}
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  disabled={loading || selected.kind !== 'user'}
+                />
+                <TextField label="Provider" value={selected.provider ?? '—'} disabled />
+                <TextField
+                  label={selected.kind === 'user' ? 'Description' : 'Description (registry)'}
+                  value={editDraft.description}
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, description: e.target.value }))}
+                  disabled={loading || selected.kind !== 'user'}
+                />
+                <TextField
+                  label="Provider ref (JSON)"
+                  value={editDraft.providerRefText}
+                  onChange={(e) => setEditDraft((prev) => ({ ...prev, providerRefText: e.target.value }))}
+                  multiline
+                  minRows={6}
+                  disabled={loading || selected.kind === 'user'}
+                />
+                {selected.kind === 'user' && (
+                  <Stack spacing={1}>
+                    <TextField
+                      label="Replace symbols (comma/newline separated)"
+                      value={editDraft.symbolsText}
+                      onChange={(e) => setEditDraft((prev) => ({ ...prev, symbolsText: e.target.value }))}
+                      multiline
+                      minRows={4}
+                      placeholder="AAPL, MSFT, NVDA"
+                      disabled={loading}
+                      helperText="This versions membership effective today."
+                    />
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                      <Button variant="outlined" onClick={handleReplaceUserSymbols} disabled={loading}>
+                        Replace symbols (versioned)
+                      </Button>
+                      <Button
+                        color="error"
+                        variant="outlined"
+                        onClick={() => {
+                          setDeleteDialogOpen(true)
+                          setDeleteConfirmText('')
+                        }}
+                        disabled={loading}
+                      >
+                        Delete universe
+                      </Button>
+                    </Stack>
+                  </Stack>
+                )}
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <Switch
+                    checked={editDraft.isActive}
+                    onChange={(_e, checked) => setEditDraft((prev) => ({ ...prev, isActive: checked }))}
+                    disabled={loading}
+                  />
+                  <Typography>Active</Typography>
+                </Stack>
+              </>
+            )}
           </Stack>
         </Paper>
       </Stack>
-
-      {selected && (
-        <Paper sx={{ p: 2 }}>
-          <Stack spacing={1.5}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ alignItems: { md: 'center' }, justifyContent: 'space-between' }}>
-              <Box>
-                <Typography variant="h6">{selected.key}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Latest refresh: {selected.latest_refresh_status ?? '—'} {selected.latest_refresh_as_of ? `as_of=${selected.latest_refresh_as_of}` : ''}
-                </Typography>
-              </Box>
-              <Stack direction="row" spacing={1}>
-                <Button variant="outlined" onClick={reload} disabled={loading}>
-                  Reload
-                </Button>
-                <Button variant="outlined" onClick={handleRefreshSelected} disabled={loading}>
-                  Refresh now (Argo)
-                </Button>
-                <Button variant="contained" onClick={handleSaveSelected} disabled={loading}>
-                  Save
-                </Button>
-              </Stack>
-            </Stack>
-            <TextField
-              label={selected.kind === 'user' ? 'Name' : 'Name (registry)'}
-              value={editDraft.name}
-              onChange={(e) => setEditDraft((prev) => ({ ...prev, name: e.target.value }))}
-              disabled={loading || selected.kind !== 'user'}
-            />
-            <TextField label="Provider" value={selected.provider ?? '—'} disabled />
-            <TextField
-              label={selected.kind === 'user' ? 'Description' : 'Description (registry)'}
-              value={editDraft.description}
-              onChange={(e) => setEditDraft((prev) => ({ ...prev, description: e.target.value }))}
-              disabled={loading || selected.kind !== 'user'}
-            />
-            <TextField
-              label="Provider ref (JSON)"
-              value={editDraft.providerRefText}
-              onChange={(e) => setEditDraft((prev) => ({ ...prev, providerRefText: e.target.value }))}
-              multiline
-              minRows={6}
-              disabled={loading || selected.kind === 'user'}
-            />
-            {selected.kind === 'user' && (
-              <Stack spacing={1}>
-                <TextField
-                  label="Replace symbols (comma/newline separated)"
-                  value={editDraft.symbolsText}
-                  onChange={(e) => setEditDraft((prev) => ({ ...prev, symbolsText: e.target.value }))}
-                  multiline
-                  minRows={4}
-                  placeholder="AAPL, MSFT, NVDA"
-                  disabled={loading}
-                  helperText="This versions membership effective today."
-                />
-                <Stack direction="row" spacing={1}>
-                  <Button variant="outlined" onClick={handleReplaceUserSymbols} disabled={loading}>
-                    Replace symbols (versioned)
-                  </Button>
-                  <Button
-                    color="error"
-                    variant="outlined"
-                    onClick={() => {
-                      setDeleteDialogOpen(true)
-                      setDeleteConfirmText('')
-                    }}
-                    disabled={loading}
-                  >
-                    Delete universe
-                  </Button>
-                </Stack>
-              </Stack>
-            )}
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-              <Switch
-                checked={editDraft.isActive}
-                onChange={(_e, checked) => setEditDraft((prev) => ({ ...prev, isActive: checked }))}
-                disabled={loading}
-              />
-              <Typography>Active</Typography>
-            </Stack>
-          </Stack>
-        </Paper>
-      )}
     </Stack>
   )
 }

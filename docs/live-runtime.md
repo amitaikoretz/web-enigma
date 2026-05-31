@@ -7,9 +7,9 @@ This guide explains the current local operating model for the live runtime comma
 The current CLI includes:
 
 ```bash
-backtest live-controller --config /path/to/live.yaml
-backtest live-worker --config /path/to/live.yaml --shard-id 0
-backtest live-reconciler --config /path/to/live.yaml
+kalyxctl live-controller --config /path/to/live.yaml
+kalyxctl live-worker --config /path/to/live.yaml --shard-id 0
+kalyxctl live-reconciler --config /path/to/live.yaml
 ```
 
 For local debugging, each command also supports `--once`.
@@ -73,7 +73,7 @@ Start PostgreSQL and Redis using your preferred local tooling.
 ### 2. Start the API
 
 ```bash
-backtest serve --host 0.0.0.0 --port 8000
+kalyxctl serve --host 0.0.0.0 --port 8000
 ```
 
 The controller expects the contracts API base URL to be reachable.
@@ -85,38 +85,38 @@ The controller syncs against the API’s trading-contract data. Make sure your t
 ### 4. Start the controller
 
 ```bash
-backtest live-controller --config /path/to/live.yaml
+kalyxctl live-controller --config /path/to/live.yaml
 ```
 
 For one iteration only:
 
 ```bash
-backtest live-controller --config /path/to/live.yaml --once
+kalyxctl live-controller --config /path/to/live.yaml --once
 ```
 
 ### 5. Start one or more workers
 
 ```bash
-backtest live-worker --config /path/to/live.yaml --shard-id 0
-backtest live-worker --config /path/to/live.yaml --shard-id 1
+kalyxctl live-worker --config /path/to/live.yaml --shard-id 0
+kalyxctl live-worker --config /path/to/live.yaml --shard-id 1
 ```
 
 For a one-iteration smoke test:
 
 ```bash
-backtest live-worker --config /path/to/live.yaml --shard-id 0 --once
+kalyxctl live-worker --config /path/to/live.yaml --shard-id 0 --once
 ```
 
 ### 6. Optionally start the reconciler
 
 ```bash
-backtest live-reconciler --config /path/to/live.yaml
+kalyxctl live-reconciler --config /path/to/live.yaml
 ```
 
 Or run a one-shot pass:
 
 ```bash
-backtest live-reconciler --config /path/to/live.yaml --once
+kalyxctl live-reconciler --config /path/to/live.yaml --once
 ```
 
 ## Suggested Local Wiring

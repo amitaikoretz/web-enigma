@@ -24,7 +24,7 @@ spec:
               image: backtest-app:latest
               imagePullPolicy: IfNotPresent
               command:
-                - backtest
+                - kalyxctl
                 - argo-reconciler
                 - --output-dir
                 - /data/backtest-results

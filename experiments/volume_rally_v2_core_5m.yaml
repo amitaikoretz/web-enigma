@@ -2,7 +2,7 @@
 # Uses tuned A params (session_start 5, spike 2.8, close strength 0.50).
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_v2_core_5m.yaml \
 #     --output /tmp/volume-rally-v2-core-5m.json
 

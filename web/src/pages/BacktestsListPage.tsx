@@ -22,7 +22,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
-import { deleteBacktest, fetchBacktests, retryBacktest } from '../api/backtests'
+import { deleteBacktest, fetchBacktests, retryBacktest, retryBacktestForce } from '../api/backtests'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
@@ -76,6 +76,7 @@ export function BacktestsListPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [retryTarget, setRetryTarget] = useState<BacktestListItem | null>(null)
 
   const visibleColumns = useMemo(
     () =>
@@ -186,7 +187,8 @@ export function BacktestsListPage() {
     setRetryingId(item.id)
     setError(null)
     try {
-      const response = await retryBacktest(item.id)
+      const isActive = item.status === 'pending' || item.status === 'running'
+      const response = isActive ? await retryBacktestForce(item.id) : await retryBacktest(item.id)
       navigate(`/backtests/${response.backtest_id}`, {
         state: { retriedFrom: item.id },
       })
@@ -194,6 +196,7 @@ export function BacktestsListPage() {
       setError(err instanceof Error ? err.message : 'Failed to retry backtest')
     } finally {
       setRetryingId(null)
+      setRetryTarget((current) => (current?.id === item.id ? null : current))
     }
   }
 
@@ -351,6 +354,7 @@ export function BacktestsListPage() {
                   const isRetrying = retryingId === item.id
                   const isSelected = selectedIds.has(item.id)
                   const showRetry = canRetryBacktest(item)
+                  const isActive = item.status === 'pending' || item.status === 'running'
 
                   return (
                     <TableRow
@@ -385,14 +389,14 @@ export function BacktestsListPage() {
                       <TableCell align="right">
                         <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
                           {showRetry && (
-                            <Tooltip title="Retry with same configuration">
+                            <Tooltip title={isActive ? 'Run again from same configuration' : 'Retry with same configuration'}>
                               <span>
                                 <IconButton
                                   aria-label="Retry backtest"
                                   disabled={isDeleting || isRetrying}
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    void handleRetry(item)
+                                    setRetryTarget(item)
                                   }}
                                   size="small"
                                 >
@@ -442,6 +446,59 @@ export function BacktestsListPage() {
           </>
         )}
       </Paper>
+
+      <ConfirmDialog
+        open={retryTarget !== null}
+        title={retryTarget && (retryTarget.status === 'pending' || retryTarget.status === 'running') ? 'Run again?' : 'Retry backtest?'}
+        intent="info"
+        icon={<ReplayIcon sx={{ fontSize: 24 }} />}
+        description={
+          retryTarget ? (
+            <Stack spacing={1.5}>
+              <Typography color="text.secondary">
+                This will start a new backtest using the same configuration. The existing run (if any) will not be stopped.
+              </Typography>
+              <Box
+                sx={{
+                  px: 1.5,
+                  py: 1.25,
+                  borderRadius: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  bgcolor: 'action.hover',
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  {retryTarget.selection
+                    ? `${retryTarget.selection.start_date} → ${retryTarget.selection.end_date}`
+                    : 'Selection summary unavailable'}
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {retryTarget.selection
+                    ? `${retryTarget.selection.symbols?.length ?? 0} symbols · ${retryTarget.selection.strategies?.length ?? 0} strategies`
+                    : '—'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  {retryTarget.id}
+                </Typography>
+              </Box>
+            </Stack>
+          ) : null
+        }
+        confirmLabel={retryTarget && (retryTarget.status === 'pending' || retryTarget.status === 'running') ? 'Run again' : 'Retry backtest'}
+        cancelLabel="Cancel"
+        loading={retryTarget !== null && retryingId === retryTarget.id}
+        onCancel={() => {
+          if (retryingId === null) {
+            setRetryTarget(null)
+          }
+        }}
+        onConfirm={() => {
+          if (retryTarget) {
+            void handleRetry(retryTarget)
+          }
+        }}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

@@ -226,11 +226,29 @@ def _load_joined_dataset_from_sidecars(
         if sidecars is None:
             return None
         label_df, feature_df = sidecars
-        paths = default_artifact_paths(resolve_results_root(report_path), report_path.stem)
-        candidates, _ = load_candidates_from_reports([report_path])
-        if not candidates:
-            continue
-        candidate_df = pd.DataFrame([_candidate_row(c) for c in candidates])
+        try:
+            candidates, _ = load_candidates_from_reports([report_path])
+        except Exception as exc:
+            from app.risk.data.report_loader import CandidateLoadError
+
+            if isinstance(exc, CandidateLoadError) and "No candidates found" in str(exc):
+                candidates = []
+            else:
+                raise
+
+        # If the report JSON omitted candidate logs, fall back to a reduced join using only
+        # label + feature sidecars. This supports risk-model training but drops candidate metadata.
+        if candidates:
+            candidate_df = pd.DataFrame([_candidate_row(c) for c in candidates])
+        else:
+            candidate_df = pd.DataFrame({"candidate_id": pd.concat([label_df["candidate_id"], feature_df["candidate_id"]]).dropna().unique()})
+            if "feature_timestamp" in feature_df.columns and "timestamp" not in candidate_df.columns:
+                # Provide a reasonable time column for downstream sorting/splitting.
+                # This is best-effort and may not exactly equal the candidate timestamp.
+                ts = feature_df[["candidate_id", "feature_timestamp"]].dropna().drop_duplicates("candidate_id", keep="last")
+                candidate_df = candidate_df.merge(ts, on="candidate_id", how="left")
+                candidate_df = candidate_df.rename(columns={"feature_timestamp": "timestamp"})
+
         label_join_cols = [
             col
             for col in label_df.columns
@@ -244,6 +262,20 @@ def _load_joined_dataset_from_sidecars(
         ]
         joined = candidate_df.merge(label_df[label_join_cols], on="candidate_id", how="inner")
         joined = joined.merge(feature_df[feature_join_cols], on="candidate_id", how="inner")
+
+        # When candidate logs are missing from the report JSON and no candidate sidecar exists,
+        # synthesize the training-critical candidate fields from labels/features sidecars.
+        #
+        # - `planned_stop_pct` / `planned_horizon_bars` are required by downstream risk modeling
+        #   and correspond 1:1 with the label inputs.
+        # - `side` is currently always LONG in V1 labeling/features.
+        if "planned_stop_pct" not in joined.columns and "stop_pct" in joined.columns:
+            joined["planned_stop_pct"] = joined["stop_pct"]
+        if "planned_horizon_bars" not in joined.columns and "horizon_bars" in joined.columns:
+            joined["planned_horizon_bars"] = joined["horizon_bars"]
+        if "side" not in joined.columns:
+            joined["side"] = "LONG"
+
         frames.append(joined)
 
     if not frames:
@@ -265,10 +297,20 @@ def build_risk_dataset(
 
     joined_from_sidecars = _load_joined_dataset_from_sidecars(report_paths)
     if joined_from_sidecars is not None:
-        candidates, duplicates = load_candidates_from_reports(
-            report_paths,
-            default_benchmark=effective_config.default_benchmark_symbol,
-        )
+        try:
+            candidates, duplicates = load_candidates_from_reports(
+                report_paths,
+                default_benchmark=effective_config.default_benchmark_symbol,
+            )
+            total_candidates = len(candidates)
+        except Exception as exc:
+            from app.risk.data.report_loader import CandidateLoadError
+
+            if isinstance(exc, CandidateLoadError) and "No candidates found" in str(exc):
+                duplicates = 0
+                total_candidates = int(joined_from_sidecars["candidate_id"].nunique()) if "candidate_id" in joined_from_sidecars.columns else len(joined_from_sidecars)
+            else:
+                raise
         joined = joined_from_sidecars.copy()
         joined.insert(0, "dataset_version", effective_config.dataset_version)
         joined.insert(1, "label_version", effective_config.label_version)
@@ -283,7 +325,7 @@ def build_risk_dataset(
             feature_version=effective_config.feature_version,
             config_hash=_config_hash(effective_config),
             source_report_paths=[str(path.resolve()) for path in report_paths],
-            total_candidates=len(candidates),
+            total_candidates=total_candidates,
             labeled_rows=len(joined),
             feature_rows=len(joined),
             joined_rows=len(joined),

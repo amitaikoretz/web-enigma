@@ -127,7 +127,11 @@ export const BACKTEST_RESULTS_COLUMNS: BacktestResultsColumnDefinition[] = [
     render: (item) => {
       const isActive = item.status === 'pending' || item.status === 'running'
       const progressValue =
-        item.total_runs === 0 ? 0 : (item.completed_runs / item.total_runs) * 100
+        typeof item.progress_pct === 'number'
+          ? item.progress_pct
+          : item.total_runs === 0
+            ? 0
+            : (item.completed_runs / item.total_runs) * 100
 
       if (!isActive) {
         return `${item.completed_runs}/${item.total_runs}`

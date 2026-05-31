@@ -1,0 +1,27 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argo-workflow-controller-configmaps
+  labels:
+    app.kubernetes.io/name: argo-workflow-controller-configmaps
+    app.kubernetes.io/component: backtest-workflows
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argo-workflow-controller-configmaps
+  labels:
+    app.kubernetes.io/name: argo-workflow-controller-configmaps
+    app.kubernetes.io/component: backtest-workflows
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argo-workflow-controller-configmaps
+subjects:
+  - kind: ServiceAccount
+    name: argo-workflows-workflow-controller
+    namespace: argo

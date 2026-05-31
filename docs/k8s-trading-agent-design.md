@@ -1714,9 +1714,9 @@ The repo already uses `typer`, and all new operational entry points should follo
 
 Suggested commands:
 
-- `backtest live-controller --config ...`
-- `backtest live-worker --config ... --shard-id ...`
-- `backtest live-reconciler --config ...`
+- `kalyxctl live-controller --config ...`
+- `kalyxctl live-worker --config ... --shard-id ...`
+- `kalyxctl live-reconciler --config ...`
 - `backtest live-replay --config ...`
 
 These commands should:

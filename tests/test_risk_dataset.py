@@ -204,3 +204,100 @@ def test_end_to_end_backtest_with_risk_auxiliary_sidecars(tmp_path: Path, monkey
     df = pd.read_parquet(output_path)
     assert "hit_stop_before_target" in df.columns
     assert "return_20" in df.columns
+
+
+def test_build_risk_dataset_from_sidecars_without_candidates(tmp_path: Path):
+    from app.backtests.artifacts import default_artifact_paths, persist_backtest_report
+
+    # Create a report with no candidates, but write sidecar parquet files as if risk auxiliary was enabled.
+    report = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="0.1.0",
+        config_sha256="test",
+        input_config={"runs": []},
+        total_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        status="success",
+        results=[
+            RunResult(
+                run_id="csv_candidates",
+                status="success",
+                strategy="breakout_channel",
+                symbol=None,
+                data_source="csv",
+                summary=RunSummary(
+                    start_value=10_000.0,
+                    end_value=10_100.0,
+                    return_pct=1.0,
+                    total_trades=0,
+                    won_trades=0,
+                    lost_trades=0,
+                ),
+                analyzers={"resolution": "1d"},
+                candidates=[],
+            )
+        ],
+    )
+
+    report_path = tmp_path / "job.json"
+    written = persist_backtest_report(report, report_path)
+    paths = default_artifact_paths(tmp_path, report_path.stem)
+    assert paths.labels_parquet_path is not None
+    assert paths.features_parquet_path is not None
+
+    labels_df = pd.DataFrame(
+        [
+            {
+                "candidate_id": "abc123",
+                "label_version": "labels_v1",
+                "entry_price": 100.0,
+                "horizon_bars": 5,
+                "stop_pct": 0.03,
+                "target_pct": 0.06,
+                "mae_pct": -0.01,
+                "mae_abs_pct": 0.01,
+                "mae_atr": None,
+                "mfe_pct": 0.02,
+                "final_return_pct": 0.01,
+                "realized_R": 0.33,
+                "hit_stop": False,
+                "hit_target": False,
+                "hit_stop_before_target": True,
+                "bars_to_stop": None,
+                "bars_to_target": None,
+                "bars_held": 5,
+                "exit_reason": "TIME",
+                "label_quality_flag": "OK",
+            }
+        ]
+    )
+    features_df = pd.DataFrame(
+        [
+            {
+                "candidate_id": "abc123",
+                "feature_version": "features_v1",
+                "feature_timestamp": "2024-01-10T00:00:00+00:00",
+                "feature_quality_flag": "OK",
+                "return_20": 0.01,
+                "atr_14_pct": 0.02,
+            }
+        ]
+    )
+
+    Path(paths.labels_parquet_path).parent.mkdir(parents=True, exist_ok=True)
+    labels_df.to_parquet(paths.labels_parquet_path, index=False)
+    features_df.to_parquet(paths.features_parquet_path, index=False)
+
+    output_path = tmp_path / "dataset.parquet"
+    manifest = build_risk_dataset(
+        [report_path],
+        output_path=output_path,
+        config=RiskDatasetConfig(min_history_bars=5, lookback_bars=5, include_index_features=False),
+    )
+    assert manifest.joined_rows == 1
+    df = pd.read_parquet(output_path)
+    assert df.iloc[0]["candidate_id"] == "abc123"
+    assert df.iloc[0]["timestamp"] == "2024-01-10T00:00:00+00:00"
+    assert "hit_stop_before_target" in df.columns
+    assert "return_20" in df.columns
