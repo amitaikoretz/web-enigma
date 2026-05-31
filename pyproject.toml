@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-backtest = "app.cli:main"
+kalyxctl = "app.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

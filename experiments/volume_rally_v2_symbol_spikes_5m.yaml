@@ -8,7 +8,7 @@
 #   4.0 — TSLA
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_v2_symbol_spikes_5m.yaml \
 #     --output /tmp/volume-rally-v2-symbol-spikes-5m.json
 

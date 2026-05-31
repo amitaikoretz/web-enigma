@@ -12,6 +12,7 @@ resources:
   - namespace.yaml
   - rbac-backtest-workflow.yaml
   - rbac-api-workflow-submitter.yaml
+  - rbac-argo-workflow-controller-configmaps.yaml
   - pvc-backtest-results.yaml
   - pvc-backtest-cache.yaml
   - service-postgres-external.yaml

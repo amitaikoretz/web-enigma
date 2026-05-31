@@ -109,15 +109,14 @@ k3s-recreate-host-volumes: ## Delete old PVCs and redeploy hostPath volumes (cop
 	-$(KUBECTL) -n backtest-workflows delete pvc backtest-results backtest-cache --ignore-not-found
 	$(MAKE) k3s-apply-host-volumes
 	$(KUBECTL) apply -k $(K8S_LOCAL_OVERLAY)
-	$(KUBECTL) apply -k deploy/k8s/overlays/local-workflows
 	$(KUBECTL) -n $(K8S_NAMESPACE) scale deployment/api --replicas=1
 	$(KUBECTL) -n $(K8S_NAMESPACE) scale statefulset/worker --replicas=1
 	$(MAKE) k8s-restart-workloads
 
-k3s-deploy: ## Apply local kustomize overlay, hostPath PVs, workflow namespace, and sync ALPACA_* from local env into app-secrets
+k3s-deploy: ## Apply local kustomize overlay, hostPath PVs, and sync ALPACA_* from local env into app-secrets
 	$(MAKE) k3s-apply-host-volumes
+	-$(KUBECTL) -n $(K8S_NAMESPACE) delete job/migrate --ignore-not-found
 	$(KUBECTL) apply -k $(K8S_LOCAL_OVERLAY)
-	$(KUBECTL) apply -k deploy/k8s/overlays/local-workflows
 	$(MAKE) sync-app-secrets
 	$(MAKE) k8s-restart-workloads
 
@@ -190,8 +189,8 @@ api-serve: ## Run the Python API on the host (Argo Workflows in local k3s/docker
 	export ARGO_SERVER_URL="$${ARGO_SERVER_URL:-$(ARGO_SERVER_URL)}"; \
 	chmod +x scripts/print_api_serve_prerequisites.sh; \
 	./scripts/print_api_serve_prerequisites.sh; \
-	if command -v backtest >/dev/null 2>&1; then \
-		exec backtest serve --host "$(API_HOST)" --port "$(API_PORT)"; \
+	if command -v kalyxctl >/dev/null 2>&1; then \
+		exec kalyxctl serve --host "$(API_HOST)" --port "$(API_PORT)"; \
 	else \
 		exec python -m app.cli serve --host "$(API_HOST)" --port "$(API_PORT)"; \
 	fi

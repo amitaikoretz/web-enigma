@@ -14,7 +14,6 @@ resources:
   - configmap-backtest.yaml
   - pvc-backtest-results.yaml
   - pvc-backtest-cache.yaml
-  - rbac-api-argo.yaml
   - job-migrate.yaml
   - deployment-api.yaml
   - service-api.yaml
@@ -23,7 +22,6 @@ resources:
   - statefulset-workers.yaml
   - cronjob-reconciler.yaml
   - cronjob-backtest-reconciler.yaml
-  - workflowtemplate-backtest.yaml
   - deployment-web.yaml
   - service-web.yaml
 

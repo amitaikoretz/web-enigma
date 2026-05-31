@@ -188,6 +188,12 @@ def test_get_constituents_as_of(tmp_path, monkeypatch):
     assert body["key"] == "demo"
     assert sorted(body["symbols"]) == ["AAPL", "MSFT"]
 
+    # If users refreshed universes "today" but the backtest start date is earlier, fall back to the
+    # nearest available snapshot (even if it's after the requested date).
+    response = client.get(f"/universes/demo/constituents?as_of={date(2026, 5, 1).isoformat()}")
+    assert response.status_code == 200
+    assert sorted(response.json()["symbols"]) == ["AAPL", "MSFT"]
+
 
 def test_sync_registry_upserts_and_disables(tmp_path):
     _client, session_factory = _build_client(tmp_path)

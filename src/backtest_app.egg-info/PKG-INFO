@@ -12,6 +12,7 @@ Requires-Dist: pydantic>=2.7.0
 Requires-Dist: pyarrow>=17.0.0
 Requires-Dist: PyYAML>=6.0.1
 Requires-Dist: redis>=5.0.0
+Requires-Dist: httpx>=0.27.0
 Requires-Dist: kubernetes>=31.0.0
 Requires-Dist: rich>=13.7.1
 Requires-Dist: SQLAlchemy>=2.0.36
@@ -19,10 +20,9 @@ Requires-Dist: typer>=0.12.3
 Requires-Dist: uvicorn>=0.30.0
 Requires-Dist: yfinance>=0.2.40
 Provides-Extra: dev
-Requires-Dist: httpx>=0.27.0; extra == "dev"
 Requires-Dist: pytest>=8.0.0; extra == "dev"
 
-# Backtest App
+# Kalyx Platform
 
 A simple `backtesting.py` CLI app with:
 - YAML input validated by Pydantic
@@ -47,14 +47,14 @@ pip install -e .
 
 Run a sample backtest:
 
-backtest list-strategies
-backtest run --config examples/algorithms/batch_demo.yaml --output /tmp/results.json
+kalyxctl list-strategies
+kalyxctl run --config examples/algorithms/batch_demo.yaml --output /tmp/results.json
 ```
 
 Start the API:
 
 ```bash
-backtest serve --port 8000
+kalyxctl serve --port 8000
 ```
 
 ## Docs

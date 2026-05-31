@@ -57,7 +57,7 @@ make K8S_BUILD=docker k8s-local-images
 make k3s-deploy
 ```
 
-Without `k8s-local-images`, `api` stays in `Init:ImagePullBackOff` (kubelet tries `docker.io/library/backtest-app:latest`), and `web` stays in `Init:0/1` waiting for the API.
+Without `k8s-local-images`, workloads that use `backtest-app:latest` / `backtest-web:latest` either hang in `ImagePullBackOff` (kubelet tries `docker.io/library/backtest-app:latest`) or Argo workflow pods fail early.
 
 Confirm images exist in k3s:
 
@@ -319,7 +319,7 @@ argo submit -n backtest-workflows --from workflowtemplate/backtest-batch \
   -p backtest-id=my-experiment
 ```
 
-Shard planning and merge use `backtest plan-shards` and `backtest merge` inside the workflow. Workflow pods write merged reports under `/data/backtest-results` (override with `BACKTEST_WORKFLOW_RESULTS_MOUNT`). Merge calls `update_metadata_from_report` to persist artifact path pointers in Postgres (no HTTP). Set `BACKTEST_RESULTS_DIR=/data/backtest-results` on the API so it reads the same paths from the shared PVC.
+Shard planning and merge use `kalyxctl plan-shards` and `kalyxctl merge` inside the workflow. Workflow pods write merged reports under `/data/backtest-results` (override with `BACKTEST_WORKFLOW_RESULTS_MOUNT`). Merge calls `update_metadata_from_report` to persist artifact path pointers in Postgres (no HTTP). Set `BACKTEST_RESULTS_DIR=/data/backtest-results` on the API so it reads the same paths from the shared PVC.
 
 ### Enable status reconciliation
 
@@ -327,7 +327,7 @@ Shard planning and merge use `backtest plan-shards` and `backtest merge` inside 
 kubectl -n backtest patch cronjob backtest-reconciler -p '{"spec":{"suspend":false}}'
 ```
 
-The reconciler runs `backtest argo-reconciler --once` to sync Argo workflow phase into the `backtest_jobs` table the UI polls.
+The reconciler runs `kalyxctl argo-reconciler --once` to sync Argo workflow phase into the `backtest_jobs` table the UI polls.
 
 ### Status and progress API
 

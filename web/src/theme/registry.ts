@@ -12,6 +12,7 @@ export const ADAPTIVE_THEME_PRESETS: ThemePreset[] = ['default']
 export const LIGHT_THEME_PRESETS: ThemePreset[] = [
   'alpine',
   'fjord',
+  'fjord_porcelain',
   'oslo',
   'helsinki',
   'polar',
@@ -19,9 +20,20 @@ export const LIGHT_THEME_PRESETS: ThemePreset[] = [
   'silica',
   'alto',
   'glacial',
+  'glacier_lilac',
+  'graphite_teal',
 ]
 
-export const DARK_THEME_PRESETS: ThemePreset[] = ['solaris', 'aurora']
+export const DARK_THEME_PRESETS: ThemePreset[] = [
+  'solaris',
+  'aurora',
+  'fjord_ink_fx',
+  'deep_fjord_fx',
+  'aurora_slate',
+  'obsidian_cobalt',
+  'plum_neon',
+  'steel_ember',
+]
 
 export const THEME_PRESET_GROUP_LABELS: Record<ThemePresetGroup, string> = {
   adaptive: 'Adaptive',

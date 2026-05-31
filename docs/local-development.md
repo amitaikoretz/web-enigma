@@ -50,7 +50,7 @@ This creates the API, backtest job, and live runtime tables managed by Alembic.
 If you have legacy `{backtest_id}.meta.json` files from before the database migration, import them once:
 
 ```bash
-backtest import-metadata --output-dir "${BACKTEST_RESULTS_DIR:-/tmp/backtest-api-results}"
+kalyxctl import-metadata --output-dir "${BACKTEST_RESULTS_DIR:-/tmp/backtest-api-results}"
 ```
 
 ## First Successful Backtest
@@ -60,7 +60,7 @@ backtest import-metadata --output-dir "${BACKTEST_RESULTS_DIR:-/tmp/backtest-api
 Run a sample config and write the JSON report:
 
 ```bash
-backtest run \
+kalyxctl run \
   --config examples/algorithms/batch_demo.yaml \
   --output /tmp/backtest-results.json
 ```
@@ -68,7 +68,7 @@ backtest run \
 Generate an HTML report from the JSON output:
 
 ```bash
-backtest report-html \
+kalyxctl report-html \
   --input /tmp/backtest-results.json \
   --output /tmp/backtest-report.html \
   --title "Batch Backtest Dashboard"
@@ -79,7 +79,7 @@ backtest report-html \
 Start the API:
 
 ```bash
-backtest serve --host 0.0.0.0 --port 8000
+kalyxctl serve --host 0.0.0.0 --port 8000
 ```
 
 In another terminal, run a backtest synchronously over HTTP:
@@ -133,7 +133,7 @@ In the web UI, open **Data** in the top navigation to create download jobs, trac
 Start the API:
 
 ```bash
-backtest serve --port 8000
+kalyxctl serve --port 8000
 ```
 
 Start the frontend:
@@ -163,7 +163,7 @@ export ARGO_TOKEN="$(argo auth token)"         # when auth is enabled
 export ARGO_NAMESPACE=backtest-workflows
 export ARGO_WORKFLOW_SERVICE_ACCOUNT=backtest-workflow
 export BACKTEST_RESULTS_DIR="${BACKTEST_RESULTS_DIR:-$(pwd)/data/backtest-results}"
-backtest serve --port 8000
+kalyxctl serve --port 8000
 ```
 
 To launch Argo explicitly (regardless of the platform default):
@@ -180,8 +180,8 @@ curl -X POST http://localhost:8000/backtests/argo \
 Parallel shard planning and report merge are also available via CLI:
 
 ```bash
-backtest plan-shards --config experiments/volume_rally_v2_core_5m.yaml --work-dir /tmp/shards --split-by symbol
-backtest merge --manifest /tmp/shards/manifest.json --output /tmp/merged.json
+kalyxctl plan-shards --config experiments/volume_rally_v2_core_5m.yaml --work-dir /tmp/shards --split-by symbol
+kalyxctl merge --manifest /tmp/shards/manifest.json --output /tmp/merged.json
 ```
 
 See [`deploy/k8s/README.md`](../deploy/k8s/README.md) for cluster setup.
@@ -191,17 +191,17 @@ See [`deploy/k8s/README.md`](../deploy/k8s/README.md) for cluster setup.
 The CLI currently exposes these long-running service commands:
 
 ```bash
-backtest live-controller --config /path/to/live.yaml
-backtest live-worker --config /path/to/live.yaml --shard-id 0
-backtest live-reconciler --config /path/to/live.yaml
+kalyxctl live-controller --config /path/to/live.yaml
+kalyxctl live-worker --config /path/to/live.yaml --shard-id 0
+kalyxctl live-reconciler --config /path/to/live.yaml
 ```
 
 Useful one-shot variants for local debugging:
 
 ```bash
-backtest live-controller --config /path/to/live.yaml --once
-backtest live-worker --config /path/to/live.yaml --shard-id 0 --once
-backtest live-reconciler --config /path/to/live.yaml --once
+kalyxctl live-controller --config /path/to/live.yaml --once
+kalyxctl live-worker --config /path/to/live.yaml --shard-id 0 --once
+kalyxctl live-reconciler --config /path/to/live.yaml --once
 ```
 
 The live runtime needs:
@@ -229,13 +229,13 @@ See [docs/docker-compose.md](./docs/docker-compose.md) for profiles, seeding con
 List built-in strategies:
 
 ```bash
-backtest list-strategies
+kalyxctl list-strategies
 ```
 
 Evaluate the latest completed Alpaca bar and submit paper/live orders for an Alpaca trading config:
 
 ```bash
-backtest alpaca-run --config /path/to/alpaca.yaml
+kalyxctl alpaca-run --config /path/to/alpaca.yaml
 ```
 
 Candidate logging for live Alpaca runs is controlled from **Settings → Live trading → Log live entry candidates**, or via `execution.include_candidate_log` in the Alpaca YAML. When enabled, events append to `{state_directory}/{run_id}/candidates.jsonl`.

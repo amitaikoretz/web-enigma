@@ -8,11 +8,11 @@ Requires Alpaca credentials in the environment.
 ## Run
 
 ```bash
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_baseline_1m.yaml \
   --output /tmp/volume-rally-baseline.json
 
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_tuned_5m.yaml \
   --output /tmp/volume-rally-tuned.json
 ```
@@ -65,7 +65,7 @@ Gross PnL still negative — confirms fees were not the only problem. AMD hit tw
 Config: [`experiments/volume_rally_v2_5m.yaml`](volume_rally_v2_5m.yaml) — session window, close strength, 1 trade/session, breakeven, stale exit, tighter initial stop.
 
 ```bash
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_v2_5m.yaml \
   --output /tmp/volume-rally-v2-5m.json
 ```
@@ -86,7 +86,7 @@ Config: [`experiments/volume_rally_v2_relaxed_5m.yaml`](volume_rally_v2_relaxed_
 - `min_close_strength`: 0.65 → **0.55**
 
 ```bash
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_v2_relaxed_5m.yaml \
   --output /tmp/volume-rally-v2-relaxed-5m.json
 ```
@@ -111,7 +111,7 @@ Changes vs relaxed:
 - Symbols: **AAPL, AMD, NVDA, MSFT, META, TSLA, GOOGL, AMZN**
 
 ```bash
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_v2_tuned_5m.yaml \
   --output /tmp/volume-rally-v2-tuned-5m.json
 ```
@@ -139,7 +139,7 @@ Next levers: symbol-specific params (NVDA/TSLA need stricter filters), longer da
 Config: [`experiments/volume_rally_v2_core_5m.yaml`](volume_rally_v2_core_5m.yaml) — AAPL, AMD, MSFT only, tuned A params.
 
 ```bash
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_v2_core_5m.yaml \
   --output /tmp/volume-rally-v2-core-5m.json
 ```
@@ -160,7 +160,7 @@ Config: [`experiments/volume_rally_v2_symbol_spikes_5m.yaml`](volume_rally_v2_sy
 Spike tiers: AAPL/AMD **2.8**, MSFT/GOOGL/META/AMZN **3.0**, NVDA **3.5**, TSLA **4.0**.
 
 ```bash
-backtest run \
+kalyxctl run \
   --config experiments/volume_rally_v2_symbol_spikes_5m.yaml \
   --output /tmp/volume-rally-v2-symbol-spikes-5m.json
 ```

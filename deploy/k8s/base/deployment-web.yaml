@@ -7,6 +7,14 @@ metadata:
     app.kubernetes.io/component: web
 spec:
   replicas: 0
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: web
@@ -21,11 +29,36 @@ spec:
           command:
             - sh
             - -c
-            - until wget -qO- http://api:8000/health; do echo waiting for api; sleep 2; done
+            - |
+              set -e
+              i=0
+              until wget -qO- http://api:8000/health >/dev/null 2>&1; do
+                i=$((i+1))
+                if [ "$i" -ge 150 ]; then
+                  echo "api did not become ready in time" >&2
+                  exit 1
+                fi
+                echo "waiting for api..."
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
       containers:
         - name: web
           image: backtest-web:latest
           imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
           ports:
             - name: http
               containerPort: 80
@@ -35,6 +68,13 @@ spec:
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /

@@ -25,7 +25,7 @@ spec:
               image: backtest-app:latest
               imagePullPolicy: IfNotPresent
               command:
-                - backtest
+                - kalyxctl
                 - live-reconciler
                 - --config
                 - /app/config/live.yaml

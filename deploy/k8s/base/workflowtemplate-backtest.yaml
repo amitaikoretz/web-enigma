@@ -8,6 +8,9 @@ metadata:
 spec:
   entrypoint: backtest-batch
   serviceAccountName: backtest-workflow
+  # Argo validates this as an integer at admission time; template expressions are treated as strings.
+  # To override parallelism per-run, use `argo submit --parallelism N ...` (or set it in the Workflow spec).
+  parallelism: 8
   ttlStrategy:
     secondsAfterCompletion: 604800
   arguments:
@@ -103,7 +106,7 @@ spec:
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
-        command: ["backtest", "print-argo-payload"]
+        command: ["python", "-m", "app.standalone.print_argo_payload"]
         args:
           - --terminal-command-out
           - /tmp/terminal-command.txt
@@ -117,7 +120,7 @@ spec:
           - "{{inputs.parameters.split-by}}"
           - --backtest-id
           - "{{inputs.parameters.backtest-id}}"
-          - --launch-curl
+          - --launch-curl-out
           - /tmp/launch-curl.txt
         envFrom:
           - secretRef:
@@ -135,6 +138,18 @@ spec:
           - name: terminal-command
             valueFrom:
               path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt
 
     - name: plan-shards
       inputs:
@@ -146,31 +161,24 @@ spec:
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
-        command: ["sh", "-c"]
+        command: ["python", "-m", "app.standalone.plan_shards_argo"]
         args:
-          - |
-            set -e
-            if [ -n "{{inputs.parameters.backtest-id}}" ]; then
-              WORK="/data/backtest-results/{{inputs.parameters.backtest-id}}"
-            else
-              WORK="/workspace"
-            fi
-            mkdir -p "$WORK"
-            if [ -n "{{inputs.parameters.config-b64}}" ]; then
-              echo "{{inputs.parameters.config-b64}}" | base64 -d > "$WORK/config.yaml"
-              CONFIG="$WORK/config.yaml"
-            else
-              CONFIG="{{inputs.parameters.config-path}}"
-            fi
-            backtest plan-shards \
-              --terminal-command-out /tmp/terminal-command.txt \
-              --config "$CONFIG" \
-              --work-dir "$WORK" \
-              --manifest "$WORK/manifest.json" \
-              --shards-param /tmp/shards-param.json \
-              --split-by "{{inputs.parameters.split-by}}"
-            echo "$WORK/manifest.json" > /tmp/manifest-path.txt
-            echo "$WORK" > /tmp/work-dir.txt
+          - --terminal-command-out
+          - /tmp/terminal-command.txt
+          - --config-path
+          - "{{inputs.parameters.config-path}}"
+          - --config-b64
+          - "{{inputs.parameters.config-b64}}"
+          - --split-by
+          - "{{inputs.parameters.split-by}}"
+          - --backtest-id
+          - "{{inputs.parameters.backtest-id}}"
+          - --manifest-path-out
+          - /tmp/manifest-path.txt
+          - --work-dir-out
+          - /tmp/work-dir.txt
+          - --shards-param-out
+          - /tmp/shards-param.json
         envFrom:
           - secretRef:
               name: app-secrets
@@ -193,6 +201,18 @@ spec:
           - name: terminal-command
             valueFrom:
               path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt
 
     - name: run-shard
       inputs:
@@ -203,17 +223,20 @@ spec:
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
-        command: ["sh", "-c"]
+        command: ["python", "-m", "app.standalone.run_shard_argo"]
         args:
-          - |
-            set -e
-            echo "Running shard {{inputs.parameters.shard-id}}"
-            backtest run \
-              --terminal-command-out /tmp/terminal-command.txt \
-              --config "{{inputs.parameters.shard-config-path}}" \
-              --output "{{inputs.parameters.shard-output-path}}" \
-              --cache-dir /data/cache
-            echo "{{inputs.parameters.shard-output-path}}" > /tmp/shard-output-path.txt
+          - --terminal-command-out
+          - /tmp/terminal-command.txt
+          - --shard-id
+          - "{{inputs.parameters.shard-id}}"
+          - --config
+          - "{{inputs.parameters.shard-config-path}}"
+          - --output
+          - "{{inputs.parameters.shard-output-path}}"
+          - --cache-dir
+          - /data/cache
+          - --shard-output-path-out
+          - /tmp/shard-output-path.txt
         envFrom:
           - secretRef:
               name: app-secrets
@@ -232,6 +255,18 @@ spec:
           - name: terminal-command
             valueFrom:
               path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt
 
     - name: merge-reports
       inputs:
@@ -242,16 +277,18 @@ spec:
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
-        command: ["sh", "-c"]
+        command: ["python", "-m", "app.standalone.merge_reports_argo"]
         args:
-          - |
-            set -e
-            backtest merge \
-              --terminal-command-out /tmp/terminal-command.txt \
-              --manifest "{{inputs.parameters.manifest-path}}" \
-              --output "{{inputs.parameters.output-path}}" \
-              --backtest-id "{{inputs.parameters.backtest-id}}"
-            echo "{{inputs.parameters.output-path}}" > /tmp/merged-output-path.txt
+          - --terminal-command-out
+          - /tmp/terminal-command.txt
+          - --manifest
+          - "{{inputs.parameters.manifest-path}}"
+          - --output
+          - "{{inputs.parameters.output-path}}"
+          - --backtest-id
+          - "{{inputs.parameters.backtest-id}}"
+          - --merged-output-path-out
+          - /tmp/merged-output-path.txt
         envFrom:
           - secretRef:
               name: app-secrets
@@ -268,3 +305,15 @@ spec:
           - name: terminal-command
             valueFrom:
               path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt

@@ -13,11 +13,9 @@ from pydantic import ValidationError
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-from app.api import app as fastapi_app
 from app.api_logging import DEFAULT_LOG_DIR, build_timestamped_log_file, configure_api_logging
 from app.strategies.auditor_logging import configure_strategy_logging
 from app.config.models import AlpacaTradingConfig, BacktestConfig, LiveTradingConfig
-from app.backtests.argo_payload import build_argo_launch_payload, format_argo_launch_curl
 from app.backtests.argo_progress import (
     ARGO_PROGRESS_TOTAL,
     ThrottledProgressWriter,
@@ -43,8 +41,8 @@ from app.universes.service import SymbolUniverseService
 
 console = Console()
 app = typer.Typer(
-    name="backtest",
-    help="backtesting.py backtest CLI",
+    name="kalyxctl",
+    help="Kalyx platform CLI",
     add_completion=False,
     no_args_is_help=True,
 )
@@ -235,6 +233,8 @@ def _cmd_list_strategies() -> int:
 
 
 def _cmd_serve(host: str, port: int, log_dir: Path) -> int:
+    from app.api import app as fastapi_app
+
     log_file = build_timestamped_log_file(log_dir)
     logger = configure_api_logging(log_file, force=True)
     logger.info("API started on %s:%s", host, port)
@@ -356,57 +356,6 @@ def _cmd_merge(manifest_path: str, output_path: str, backtest_id: str | None) ->
         f"Status={report.status}. Output={output}"
     )
     return merge_exit_code(report)
-
-
-def _cmd_print_argo_payload(
-    api_base_url: str,
-    config_path: str | None,
-    config_text_file: str | None,
-    config_b64: str | None,
-    split_by: str | None,
-    backtest_id: str | None,
-    launch_curl_path: str | None = None,
-) -> int:
-    config_text: str | None = None
-    resolved_config_path = config_path.strip() if config_path else None
-    if config_b64 and config_b64.strip():
-        try:
-            config_text = base64.b64decode(config_b64).decode()
-        except (ValueError, UnicodeDecodeError) as exc:
-            print(f"Invalid config-b64: {exc}")
-            return 2
-    elif config_text_file:
-        text_path = Path(config_text_file)
-        if not text_path.exists():
-            print(f"Config text file not found: {config_text_file}")
-            return 2
-        config_text = text_path.read_text(encoding="utf-8")
-
-    try:
-        if config_text is not None:
-            payload = build_argo_launch_payload(
-                config_text=config_text,
-                split_by=split_by or "",
-                backtest_id=backtest_id or "",
-            )
-        elif resolved_config_path:
-            payload = build_argo_launch_payload(
-                config_path=resolved_config_path,
-                split_by=split_by or "",
-                backtest_id=backtest_id or "",
-            )
-        else:
-            print("Provide one of --config-path, --config-text-file, or --config-b64")
-            return 2
-    except ValueError as exc:
-        print(f"Payload build failed: {exc}")
-        return 2
-
-    curl = format_argo_launch_curl(api_base_url, payload)
-    print(curl)
-    if launch_curl_path:
-        Path(launch_curl_path).write_text(curl, encoding="utf-8")
-    return 0
 
 
 def _cmd_argo_reconciler(output_dir: str, once: bool) -> int:
@@ -559,50 +508,6 @@ def build_risk_dataset_command(
     return _cmd_build_risk_dataset(input_json, output, config, cache_dir)
 
 
-@app.command(
-    "print-argo-payload",
-    help="Print a curl command that launches this backtest via POST /backtests/argo",
-)
-def print_argo_payload_command(
-    api_base_url: str = typer.Option(
-        ...,
-        "--api-base-url",
-        help="API base URL (e.g. http://localhost:8000)",
-    ),
-    config_path: str | None = typer.Option(
-        None,
-        "--config-path",
-        help="Config path on the shared backtest-results volume",
-    ),
-    config_text_file: str | None = typer.Option(
-        None,
-        "--config-text-file",
-        help="Local file whose contents become inline config_text in the payload",
-    ),
-    config_b64: str | None = typer.Option(
-        None,
-        "--config-b64",
-        help="Base64-encoded config YAML (matches workflow config-b64 parameter)",
-    ),
-    split_by: str | None = typer.Option(None, "--split-by", help="Argo shard grouping"),
-    backtest_id: str | None = typer.Option(None, "--backtest-id", help="Backtest job id"),
-    launch_curl: str | None = typer.Option(
-        None,
-        "--launch-curl",
-        help="Write the curl command to this path (for Argo output parameters)",
-    ),
-) -> int:
-    return _cmd_print_argo_payload(
-        api_base_url,
-        config_path,
-        config_text_file,
-        config_b64,
-        split_by,
-        backtest_id,
-        launch_curl,
-    )
-
-
 @app.command("argo-reconciler", help="Reconcile Argo backtest workflow status with job metadata")
 def argo_reconciler_command(
     output_dir: str = typer.Option(..., "--output-dir", help="Backtest results directory"),
@@ -686,12 +591,30 @@ def universes_refresh_command(
             if not bool(record.is_active):
                 console.print(f"[yellow]Universe inactive, skipping:[/yellow] {universe_key}")
                 continue
+            run = universe_service.create_refresh_run(
+                session,
+                universe_id=record.id,
+                as_of=resolved_as_of,
+                status="running",
+            )
             console.print(f"Refreshing [bold]{record.key}[/bold] as_of={resolved_as_of.isoformat()} provider={record.provider}")
             try:
                 stats = universe_service.refresh_universe_in_db(session, universe=record, as_of=resolved_as_of)
             except Exception as exc:
+                universe_service.finish_refresh_run(
+                    session,
+                    run_id=run.id,
+                    status="failed",
+                    error=str(exc),
+                )
                 console.print(f"[red]Refresh failed for {record.key}:[/red] {exc}")
                 return 1
+            universe_service.finish_refresh_run(
+                session,
+                run_id=run.id,
+                status="succeeded",
+                stats=stats.as_dict(),
+            )
             console.print(f"OK {record.key}: added={stats.added} closed={stats.closed} unchanged={stats.unchanged}")
 
     return 0
@@ -749,7 +672,7 @@ def main(argv: list[str] | None = None) -> int:
     prev_argv = None
     if argv is not None:
         prev_argv = sys.argv
-        sys.argv = ["backtest", *argv]
+        sys.argv = ["kalyxctl", *argv]
     try:
         code = app(args=argv, standalone_mode=False)
     except click.ClickException as exc:

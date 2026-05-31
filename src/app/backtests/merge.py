@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app import __version__
+from app.engine.aggregates import compute_report_aggregates
 from app.backtests.sharding import ShardPlan, load_shard_manifest
 from app.output.models import BacktestReport, RunResult
 
@@ -61,6 +62,7 @@ def merge_shard_reports(
         failed_runs=failed,
         status=status,  # type: ignore[arg-type]
         results=results,
+        aggregates=compute_report_aggregates(results),
     )
 
 

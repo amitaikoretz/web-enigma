@@ -67,7 +67,7 @@ services:
 
   api:
     build: .
-    command: backtest serve --host 0.0.0.0 --port 8000
+    command: kalyxctl serve --host 0.0.0.0 --port 8000
     environment:
       <<: *app-environment
       LIVE_SHARD_COUNT: "2"
@@ -91,7 +91,7 @@ services:
 
   controller:
     build: .
-    command: backtest live-controller --config /app/config/live.yaml
+    command: kalyxctl live-controller --config /app/config/live.yaml
     environment:
       <<: *app-environment
     volumes: *live-service-volumes
@@ -102,7 +102,7 @@ services:
 
   worker-0:
     build: .
-    command: backtest live-worker --config /app/config/live.yaml --shard-id 0
+    command: kalyxctl live-worker --config /app/config/live.yaml --shard-id 0
     environment:
       <<: *app-environment
     volumes: *live-service-volumes
@@ -113,7 +113,7 @@ services:
 
   worker-1:
     build: .
-    command: backtest live-worker --config /app/config/live.yaml --shard-id 1
+    command: kalyxctl live-worker --config /app/config/live.yaml --shard-id 1
     environment:
       <<: *app-environment
     volumes: *live-service-volumes
@@ -125,7 +125,7 @@ services:
   reconciler:
     image: backtest-app:latest
     build: .
-    command: backtest live-reconciler --config /app/config/live.yaml
+    command: kalyxctl live-reconciler --config /app/config/live.yaml
     environment:
       <<: *app-environment
     volumes: *live-service-volumes

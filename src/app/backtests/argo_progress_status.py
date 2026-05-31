@@ -161,12 +161,12 @@ def blend_completed_runs(
     if metadata.execution_backend != "argo":
         return metadata.completed_runs, None
 
+    workflow_pct = _workflow_progress_pct(workflow) if workflow is not None else None
     manifest_path = output_dir / metadata.id / "manifest.json"
     if not manifest_path.exists():
         if workflow is None:
             return metadata.completed_runs, None
-        fallback_pct = _workflow_progress_pct(workflow)
-        return metadata.completed_runs, fallback_pct
+        return metadata.completed_runs, workflow_pct
 
     plan = load_shard_manifest(manifest_path)
     file_based = _compute_completed_runs_from_files(metadata, output_dir, plan)
@@ -175,4 +175,6 @@ def blend_completed_runs(
 
     argo_total, fallback_pct = compute_completed_runs_from_argo(metadata, output_dir, workflow)
     combined = min(metadata.total_runs, round(argo_total))
-    return combined, fallback_pct
+    # Prefer using Argo's workflow progress meter for UI progress, even when we can infer
+    # shard-level progress for completed run counts.
+    return combined, workflow_pct if workflow_pct is not None else fallback_pct

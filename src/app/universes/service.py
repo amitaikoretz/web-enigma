@@ -3,12 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 
+import logging
 from sqlalchemy import Select, and_, desc, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import SymbolUniverse, SymbolUniverseConstituent, SymbolUniverseRefreshRun
 from app.universes.registry import UNIVERSE_REGISTRY
 from app.universes.providers import provider_for_universe
+
+logger = logging.getLogger(__name__)
 
 
 class InvalidUniverseError(RuntimeError):
@@ -350,20 +353,52 @@ class SymbolUniverseService:
         session.commit()
 
     def constituents_as_of(self, session: Session, *, universe: SymbolUniverse, as_of: date) -> list[str]:
-        as_of_dt = _as_of_start(as_of)
-        query = (
-            select(SymbolUniverseConstituent.symbol)
-            .where(SymbolUniverseConstituent.universe_id == universe.id)
-            .where(SymbolUniverseConstituent.effective_from <= as_of_dt)
-            .where(
-                or_(
-                    SymbolUniverseConstituent.effective_to.is_(None),
-                    SymbolUniverseConstituent.effective_to >= as_of_dt,
+        def _query_symbols(for_as_of_dt: datetime) -> list[str]:
+            query = (
+                select(SymbolUniverseConstituent.symbol)
+                .where(SymbolUniverseConstituent.universe_id == universe.id)
+                .where(SymbolUniverseConstituent.effective_from <= for_as_of_dt)
+                .where(
+                    or_(
+                        SymbolUniverseConstituent.effective_to.is_(None),
+                        SymbolUniverseConstituent.effective_to >= for_as_of_dt,
+                    )
                 )
+                .order_by(SymbolUniverseConstituent.symbol.asc())
             )
-            .order_by(SymbolUniverseConstituent.symbol.asc())
+            return [row[0] for row in session.execute(query).all()]
+
+        as_of_dt = _as_of_start(as_of)
+        symbols = _query_symbols(as_of_dt)
+        if symbols:
+            return symbols
+
+        # Fallback: if the exact requested as-of has no snapshot yet, use the nearest snapshot
+        # by effective_from. This makes the UI more forgiving when users refreshed "today" but
+        # the backtest start date is earlier (or vice-versa).
+        nearest_effective_from = session.execute(
+            select(func.max(SymbolUniverseConstituent.effective_from)).where(
+                SymbolUniverseConstituent.universe_id == universe.id,
+                SymbolUniverseConstituent.effective_from <= as_of_dt,
+            )
+        ).scalar_one()
+        if nearest_effective_from is None:
+            nearest_effective_from = session.execute(
+                select(func.min(SymbolUniverseConstituent.effective_from)).where(
+                    SymbolUniverseConstituent.universe_id == universe.id,
+                    SymbolUniverseConstituent.effective_from > as_of_dt,
+                )
+            ).scalar_one()
+            if nearest_effective_from is None:
+                return []
+
+        logger.warning(
+            "Universe constituents fallback: key=%s requested_as_of=%s using_effective_from=%s",
+            getattr(universe, "key", None),
+            as_of_dt.isoformat(),
+            nearest_effective_from.isoformat(),
         )
-        return [row[0] for row in session.execute(query).all()]
+        return _query_symbols(nearest_effective_from)
 
     def refresh_universe_in_db(self, session: Session, *, universe: SymbolUniverse, as_of: date) -> UniverseRefreshStats:
         provider = provider_for_universe(universe)
@@ -374,6 +409,14 @@ class SymbolUniverseService:
             target_membership = {s for s in target_membership if s}
         except Exception as exc:  # noqa: BLE001 - provider exceptions should surface as runtime errors
             raise SymbolUniverseProviderError(str(exc)) from exc
+
+        logger.info(
+            "Universe refresh: key=%s as_of=%s provider=%s fetched=%s",
+            getattr(universe, "key", None),
+            as_of_dt.date().isoformat(),
+            getattr(universe, "provider", None),
+            len(target_membership),
+        )
 
         current_symbols = set(self.constituents_as_of(session, universe=universe, as_of=as_of))
         added = sorted(target_membership - current_symbols)
@@ -426,3 +469,27 @@ class SymbolUniverseService:
         session.commit()
         session.refresh(record)
         return record
+
+    def finish_refresh_run(
+        self,
+        session: Session,
+        *,
+        run_id,
+        status: str,
+        stats: dict | None = None,
+        error: str | None = None,
+        finished_at: datetime | None = None,
+    ) -> None:
+        resolved_finished_at = finished_at or datetime.now(UTC)
+        stmt = (
+            update(SymbolUniverseRefreshRun)
+            .where(SymbolUniverseRefreshRun.id == run_id)
+            .values(
+                status=status,
+                finished_at=resolved_finished_at,
+                stats=stats or {},
+                error=error,
+            )
+        )
+        session.execute(stmt)
+        session.commit()

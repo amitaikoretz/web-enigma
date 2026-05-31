@@ -27,11 +27,14 @@ from app.backtests.models import (
     ArgoSplitBy,
     BacktestArgoLaunchRequest,
     BacktestArgoLaunchResponse,
+    BacktestConfigUpdateRequest,
     BacktestCreateRequest,
     BacktestCreateResponse,
     BacktestDetailResponse,
     BacktestListItem,
+    BacktestListItemWithProgress,
     BacktestListPageResponse,
+    BacktestRetryRequest,
     BacktestSelectionSummary,
     BacktestStatusResponse,
 )
@@ -544,18 +547,26 @@ class BacktestJobService:
             name=payload.name,
         )
 
-    def retry_backtest(self, source_backtest_id: str) -> BacktestCreateResponse:
+    def retry_backtest(
+        self,
+        source_backtest_id: str,
+        payload: BacktestRetryRequest | None = None,
+    ) -> BacktestCreateResponse:
         config_path = self.repository.config_path(source_backtest_id)
         if not config_path.exists():
             raise FileNotFoundError(f"Backtest config '{source_backtest_id}' not found")
 
         source = self.job_repository.get(source_backtest_id)
-        if source is not None and source.status in {"pending", "running"}:
+        force = bool(payload.force) if payload is not None else False
+        if source is not None and source.status in {"pending", "running"} and not force:
             raise BacktestJobActiveError(f"Backtest '{source_backtest_id}' is still active")
 
-        config_raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-        if not isinstance(config_raw, dict):
-            raise ValueError("Config root must be an object")
+        if payload is not None and payload.config_text is not None:
+            config_raw = _parse_inline_config(payload.config_text, payload.format)
+        else:
+            config_raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if not isinstance(config_raw, dict):
+                raise ValueError("Config root must be an object")
 
         new_id = uuid.uuid4().hex
         config_raw = _rewrite_run_ids(config_raw, new_id)
@@ -565,6 +576,20 @@ class BacktestJobService:
             new_id,
             source_backtest_id=source_backtest_id,
         )
+
+    def update_config(self, backtest_id: str, payload: BacktestConfigUpdateRequest) -> BacktestListItem:
+        existing = self.job_repository.get(backtest_id)
+        if existing is None:
+            raise FileNotFoundError(f"Backtest '{backtest_id}' not found")
+        config_raw = _parse_inline_config(payload.config_text, payload.format)
+        BacktestConfig.model_validate(config_raw)
+        self.repository.save_config_yaml(backtest_id, config_raw)
+        selection = _selection_from_config_raw(config_raw)
+        updated = existing.model_copy(deep=True)
+        updated.selection = selection or updated.selection
+        updated.updated_at = _utc_now()
+        self.job_repository.update(updated)
+        return updated
 
     def _submit_from_config_raw(
         self,
@@ -858,7 +883,34 @@ class BacktestJobService:
         total = self.job_repository.count()
         offset = (page - 1) * page_size
         items = self.job_repository.list_recent_page(offset=offset, limit=page_size)
-        refreshed = [self._refresh_list_item(item) for item in items]
+        refreshed: list[BacktestListItemWithProgress] = []
+        for item in items:
+            updated = self._refresh_list_item(item)
+
+            workflow = None
+            if (
+                updated.execution_backend == "argo"
+                and updated.workflow_name
+                and updated.status in {"pending", "running"}
+                and self.argo_submitter.is_configured
+            ):
+                workflow = self._fetch_argo_workflow(updated)
+
+            completed_runs, fallback_pct = self._resolve_running_progress(updated, workflow=workflow)
+            progress = _progress_pct(
+                completed_runs,
+                updated.total_runs,
+                updated.status,
+                fallback_pct=fallback_pct,
+            )
+            progress_source = "argo" if fallback_pct is not None else "runs"
+            refreshed.append(
+                BacktestListItemWithProgress(
+                    **updated.model_dump(),
+                    progress_pct=progress,
+                    progress_source=progress_source,
+                )
+            )
         return BacktestListPageResponse(
             items=refreshed,
             total=total,

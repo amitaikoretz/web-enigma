@@ -24,17 +24,40 @@ spec:
           command:
             - sh
             - -c
-            - until wget -qO- http://api:8000/health; do echo waiting for api; sleep 2; done
+            - |
+              set -e
+              i=0
+              until wget -qO- http://api:8000/health >/dev/null 2>&1; do
+                i=$((i+1))
+                if [ "$i" -ge 150 ]; then
+                  echo "api did not become ready in time" >&2
+                  exit 1
+                fi
+                echo "waiting for api..."
+                sleep 2
+              done
+        - name: check-cli
+          image: backtest-app:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - command -v kalyxctl >/dev/null 2>&1
       containers:
         - name: worker
           image: backtest-app:latest
           imagePullPolicy: IfNotPresent
           command: ["/bin/sh", "-c"]
           args:
-            - exec backtest live-worker --config /app/config/live.yaml --shard-id "${HOSTNAME##*-}"
+            - exec kalyxctl live-worker --config /app/config/live.yaml --shard-id "${HOSTNAME##*-}"
           envFrom:
             - secretRef:
                 name: app-secrets
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "command -v kalyxctl >/dev/null 2>&1"]
+            initialDelaySeconds: 2
+            periodSeconds: 10
           volumeMounts:
             - name: live-config
               mountPath: /app/config/live.yaml

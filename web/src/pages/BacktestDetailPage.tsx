@@ -7,6 +7,10 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Link,
   Paper,
@@ -24,6 +28,7 @@ import {
   fetchBacktestDetail,
   fetchBacktestStatus,
   retryBacktest,
+  retryBacktestForce,
   updateBacktest,
 } from '../api/backtests'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -31,6 +36,7 @@ import { BacktestProgressPanel } from '../components/BacktestProgressPanel'
 import { BacktestStatusChip, ReportStatusChip } from '../components/BacktestStatusChip'
 import { BacktestArtifactInventory } from '../components/BacktestArtifactInventory'
 import { BacktestArtifactChips, publicArtifacts, sidecarArtifacts } from '../components/BacktestArtifactChips'
+import { BacktestCliCommandsSection } from '../components/BacktestCliCommandsSection'
 import { BacktestConfigInspector } from '../components/BacktestConfigInspector'
 import { BacktestRunDetailPanel } from '../components/BacktestRunDetailPanel'
 import { BacktestRunsComparisonTable } from '../components/BacktestRunsComparisonTable'
@@ -82,6 +88,8 @@ export function BacktestDetailPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false)
+  const [symbolsDialogOpen, setSymbolsDialogOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [savingName, setSavingName] = useState(false)
   const refreshIntervalMs =
@@ -266,7 +274,8 @@ export function BacktestDetailPage() {
     setRetrying(true)
     setError(null)
     try {
-      const response = await retryBacktest(metadata.id)
+      const isActive = metadata.status === 'pending' || metadata.status === 'running'
+      const response = isActive ? await retryBacktestForce(metadata.id) : await retryBacktest(metadata.id)
       navigate(`/backtests/${response.backtest_id}`, {
         state: { retriedFrom: metadata.id },
       })
@@ -274,6 +283,7 @@ export function BacktestDetailPage() {
       setError(err instanceof Error ? err.message : 'Failed to retry backtest')
     } finally {
       setRetrying(false)
+      setRetryDialogOpen(false)
     }
   }
 
@@ -293,6 +303,11 @@ export function BacktestDetailPage() {
   if (!metadata) {
     return <Alert severity="warning">Backtest detail is unavailable.</Alert>
   }
+
+  const selectionSymbols = metadata.selection?.symbols ?? []
+  const visibleSymbols = selectionSymbols.slice(0, 30)
+  const hiddenSymbolCount = Math.max(0, selectionSymbols.length - visibleSymbols.length)
+  const symbolsInline = selectionSymbols.length > 0 ? visibleSymbols.join(', ') : '—'
 
   return (
     <Stack spacing={3}>
@@ -349,17 +364,23 @@ export function BacktestDetailPage() {
           </Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             {canRetry && (
-              <Tooltip title="Launch a new backtest with the same configuration">
+              <Tooltip
+                title={
+                  metadata.status === 'pending' || metadata.status === 'running'
+                    ? 'Launch a new backtest from the same configuration (does not stop the current run)'
+                    : 'Launch a new backtest with the same configuration'
+                }
+              >
                 <span>
                   <Button
                     variant="contained"
                     startIcon={retrying ? <CircularProgress size={18} color="inherit" /> : <ReplayIcon />}
                     disabled={retrying}
                     onClick={() => {
-                      void handleRetry()
+                      setRetryDialogOpen(true)
                     }}
                   >
-                    Retry
+                    {metadata.status === 'pending' || metadata.status === 'running' ? 'Run again' : 'Retry'}
                   </Button>
                 </span>
               </Tooltip>
@@ -368,7 +389,7 @@ export function BacktestDetailPage() {
               title={
                 canEditAndRetry
                   ? 'Open the wizard with this backtest configuration'
-                  : 'Available after the backtest completes and its configuration is saved.'
+                  : 'Available once the configuration is available.'
               }
             >
               <span>
@@ -379,7 +400,7 @@ export function BacktestDetailPage() {
                   startIcon={<ReplayIcon />}
                   disabled={!canEditAndRetry}
                 >
-                  Edit and retry
+                  Edit and run
                 </Button>
               </span>
             </Tooltip>
@@ -429,9 +450,8 @@ export function BacktestDetailPage() {
 
       {isActive && metadata && (
         <BacktestProgressPanel
-          completedRuns={metadata.completed_runs}
-          totalRuns={metadata.total_runs}
           progressPct={metadata.progress_pct}
+          isIndeterminate={metadata.total_runs === 0}
         />
       )}
 
@@ -446,7 +466,24 @@ export function BacktestDetailPage() {
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
               <Metric label="Date range" value={`${metadata.selection.start_date} → ${metadata.selection.end_date}`} />
               <Metric label="Resolution" value={metadata.selection.resolution} />
-              <Metric label="Symbols" value={metadata.selection.symbols.join(', ')} />
+              <Metric
+                label="Symbols"
+                value={
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                    <Typography>{symbolsInline}</Typography>
+                    {hiddenSymbolCount > 0 && (
+                      <Button
+                        size="small"
+                        variant="text"
+                        onClick={() => setSymbolsDialogOpen(true)}
+                        sx={{ px: 0.5, minWidth: 'auto' }}
+                      >
+                        +{hiddenSymbolCount} more
+                      </Button>
+                    )}
+                  </Stack>
+                }
+              />
               <Metric label="Strategies" value={metadata.selection.strategies.join(', ')} />
             </Stack>
           ) : (
@@ -454,6 +491,29 @@ export function BacktestDetailPage() {
           )}
         </Stack>
       </Paper>
+
+      <Dialog
+        open={symbolsDialogOpen}
+        onClose={() => setSymbolsDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Symbols ({selectionSymbols.length})</DialogTitle>
+        <DialogContent dividers>
+          {selectionSymbols.length === 0 ? (
+            <Typography color="text.secondary">No symbols available.</Typography>
+          ) : (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {selectionSymbols.map((symbol) => (
+                <Chip key={symbol} label={symbol} size="small" />
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSymbolsDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <BacktestArtifactInventory
         artifacts={publicArtifacts(detail?.artifacts ?? metadata.stored_artifacts ?? [])}
@@ -500,6 +560,7 @@ export function BacktestDetailPage() {
                   <BacktestArtifactChips artifacts={sidecarArtifacts(detail?.artifacts ?? [])} />
                 </Stack>
               )}
+              <BacktestCliCommandsSection outputPath={detail?.output_path ?? null} artifacts={detail?.artifacts ?? []} />
               {candidateSummary && (
                 <Stack spacing={1}>
                   <Typography variant="subtitle2">Candidate logging</Typography>
@@ -579,6 +640,30 @@ export function BacktestDetailPage() {
           </Stack>
         </Paper>
       )}
+
+      <ConfirmDialog
+        open={retryDialogOpen}
+        title={isActive ? 'Run again?' : 'Retry backtest?'}
+        intent="info"
+        icon={<ReplayIcon sx={{ fontSize: 24 }} />}
+        description={
+          <Typography color="text.secondary">
+            This will start a new backtest using the same configuration. The existing run (if any)
+            will not be stopped.
+          </Typography>
+        }
+        confirmLabel={isActive ? 'Run again' : 'Retry backtest'}
+        cancelLabel="Cancel"
+        loading={retrying}
+        onCancel={() => {
+          if (!retrying) {
+            setRetryDialogOpen(false)
+          }
+        }}
+        onConfirm={() => {
+          void handleRetry()
+        }}
+      />
 
       <ConfirmDialog
         open={deleteDialogOpen}

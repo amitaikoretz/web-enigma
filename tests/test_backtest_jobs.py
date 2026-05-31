@@ -359,6 +359,40 @@ def test_backtest_status_reports_running_then_completed(tmp_path, monkeypatch):
     assert completed["progress_pct"] == 100.0
 
 
+def test_retry_backtest_allows_force_clone_while_running(tmp_path, monkeypatch):
+    started = Event()
+    finish = Event()
+
+    def blocking_runner(config, config_raw, on_run_complete=None, on_run_error=None, **_kwargs):
+        started.set()
+        finish.wait(timeout=5)
+        return _fake_runner(
+            config,
+            config_raw,
+            on_run_complete=on_run_complete,
+            on_run_error=on_run_error,
+        )
+
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", blocking_runner)
+    client = _build_client(tmp_path)
+
+    create = client.post("/backtests", json=_wizard_payload())
+    source_id = create.json()["backtest_id"]
+    assert started.wait(timeout=2)
+
+    blocked = client.post(f"/backtests/{source_id}/retry")
+    assert blocked.status_code == 409
+
+    forced = client.post(f"/backtests/{source_id}/retry", json={"force": True})
+    assert forced.status_code == 202
+    body = forced.json()
+    assert body["source_backtest_id"] == source_id
+    assert body["backtest_id"] != source_id
+
+    finish.set()
+    _wait_for_terminal_status(client, source_id)
+
+
 def test_local_backtest_status_reports_incremental_progress(tmp_path, monkeypatch):
     progress_samples: list[float] = []
 
@@ -476,6 +510,48 @@ def test_argo_status_progress_from_shard_reports(tmp_path, monkeypatch):
     assert body["completed_runs"] == 2
     assert body["progress_pct"] == 50.0
     assert body["is_terminal"] is False
+
+
+def test_list_backtests_uses_argo_workflow_progress_pct(tmp_path):
+    from datetime import UTC, datetime
+
+    from app.backtests.models import BacktestListItem
+
+    class FakeArgoSubmitter:
+        is_configured = True
+
+        def get_workflow(self, workflow_name: str) -> dict | None:
+            del workflow_name
+            return {"status": {"phase": "Running", "progress": "37/100"}}
+
+    client = _build_client(tmp_path)
+    jobs = client.app.state.deps.backtest_jobs
+    jobs.argo_submitter = FakeArgoSubmitter()
+
+    repository = jobs.repository
+    job_repository = jobs.job_repository
+    backtest_id = "argo-list-progress-test"
+
+    job_repository.create(
+        BacktestListItem(
+            id=backtest_id,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+            status="running",
+            total_runs=400,
+            completed_runs=0,
+            execution_backend="argo",
+            workflow_name="backtest-argo-list-progress-test",
+            workflow_namespace="backtest-workflows",
+        ),
+        paths=repository.artifact_paths(backtest_id),
+    )
+
+    listed = client.get("/backtests").json()["items"]
+    item = next(entry for entry in listed if entry["id"] == backtest_id)
+    assert item["progress_pct"] == 37.0
+    assert item["progress_source"] == "argo"
+    assert item["completed_runs"] == 0
 
 
 def test_argo_status_reconciles_to_completed_on_read(tmp_path, monkeypatch):

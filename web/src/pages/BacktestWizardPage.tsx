@@ -1,3 +1,4 @@
+import AddIcon from '@mui/icons-material/Add'
 import TuneIcon from '@mui/icons-material/Tune'
 import {
   Alert,
@@ -6,6 +7,10 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   FormControlLabel,
   InputLabel,
@@ -13,6 +18,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Slider,
   Stack,
   Switch,
   TextField,
@@ -25,7 +31,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { createBacktest, fetchBacktestInputConfig } from '../api/backtests'
 import { fetchStrategies } from '../api/strategies'
-import { fetchUniverseConstituents, fetchUniverses } from '../api/universes'
+import { createUserUniverse, fetchUniverseConstituents, fetchUniverses } from '../api/universes'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestFeed } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
@@ -130,6 +136,22 @@ export function BacktestWizardPage() {
   const [loadingUniverses, setLoadingUniverses] = useState(false)
   const [selectedUniverseKeys, setSelectedUniverseKeys] = useState<string[]>([])
   const [expandingUniverses, setExpandingUniverses] = useState(false)
+  const [createUniverseDialogOpen, setCreateUniverseDialogOpen] = useState(false)
+  const [createUniverseDraft, setCreateUniverseDraft] = useState({
+    name: '',
+    description: '',
+    isActive: true,
+  })
+  const [creatingUniverse, setCreatingUniverse] = useState(false)
+  const [addConstituentsDialogOpen, setAddConstituentsDialogOpen] = useState(false)
+  const [expandedUniverseSymbols, setExpandedUniverseSymbols] = useState<string[]>([])
+  const [addConstituentsDraft, setAddConstituentsDraft] = useState({
+    subsamplePct: 100,
+    shuffle: true,
+    seed: '',
+    includeText: '',
+    excludeText: '',
+  })
   const [startDate, setStartDate] = useState<Dayjs | null>(
     resolveStartDatePreset(platformSettings.backtest_defaults.date_range_preset),
   )
@@ -209,6 +231,18 @@ export function BacktestWizardPage() {
     }
   }, [prefillFromId, platformSettings.backtest_defaults.resolution])
 
+  const reloadUniverses = async () => {
+    setLoadingUniverses(true)
+    try {
+      const items = await fetchUniverses(true)
+      setAvailableUniverses(items)
+    } catch {
+      setAvailableUniverses([])
+    } finally {
+      setLoadingUniverses(false)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
     setLoadingUniverses(true)
@@ -239,6 +273,61 @@ export function BacktestWizardPage() {
     return resolved.format('YYYY-MM-DD')
   }, [startDate])
 
+  const parseSymbolFilterText = (value: string) =>
+    value
+      .split(/[\n,]+/g)
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean)
+
+  const shuffleWithSeed = (items: string[], seedText: string) => {
+    const seedBase = seedText.trim() || 'seed'
+    const mix = (input: string) => {
+      let h = 2166136261
+      for (let i = 0; i < input.length; i += 1) {
+        h ^= input.charCodeAt(i)
+        h = Math.imul(h, 16777619)
+      }
+      return h >>> 0
+    }
+    let state = mix(seedBase)
+    const next = () => {
+      state = (Math.imul(1664525, state) + 1013904223) >>> 0
+      return state / 2 ** 32
+    }
+    const copy = [...items]
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(next() * (i + 1))
+      ;[copy[i], copy[j]] = [copy[j], copy[i]]
+    }
+    return copy
+  }
+
+  const subsampleCount = (count: number, pct: number) => {
+    const normalizedPct = Math.max(1, Math.min(100, Math.round(pct)))
+    if (count <= 0) {
+      return 0
+    }
+    if (normalizedPct === 100) {
+      return count
+    }
+    return Math.max(1, Math.floor((count * normalizedPct) / 100))
+  }
+
+  const filteredExpandedSymbolsBeforeSampling = useMemo(() => {
+    const include = parseSymbolFilterText(addConstituentsDraft.includeText)
+    const exclude = new Set(parseSymbolFilterText(addConstituentsDraft.excludeText))
+    const includeSet = include.length > 0 ? new Set(include) : null
+    const base = expandedUniverseSymbols.filter((item) => (includeSet ? includeSet.has(item) : true))
+    const filtered = base.filter((item) => !exclude.has(item))
+    return addConstituentsDraft.shuffle ? shuffleWithSeed(filtered, addConstituentsDraft.seed) : filtered
+  }, [addConstituentsDraft.excludeText, addConstituentsDraft.includeText, addConstituentsDraft.seed, addConstituentsDraft.shuffle, expandedUniverseSymbols])
+
+  const filteredExpandedSymbols = useMemo(() => {
+    const pct = Math.max(1, Math.min(100, Math.round(addConstituentsDraft.subsamplePct)))
+    const target = subsampleCount(filteredExpandedSymbolsBeforeSampling.length, pct)
+    return filteredExpandedSymbolsBeforeSampling.slice(0, target)
+  }, [addConstituentsDraft.subsamplePct, filteredExpandedSymbolsBeforeSampling])
+
   const applyUniverseSelection = async (mode: 'add' | 'replace') => {
     if (selectedUniverseKeys.length === 0) {
       return
@@ -268,13 +357,78 @@ export function BacktestWizardPage() {
       const normalized = expanded
         .map((item) => item.trim().toUpperCase())
         .filter(Boolean)
-      const merged = mode === 'replace' ? normalized : [...symbols, ...normalized]
-      const deduped = merged.filter((item, idx, arr) => arr.indexOf(item) === idx)
-      setSymbols(deduped)
+      const dedupedExpanded = normalized.filter((item, idx, arr) => arr.indexOf(item) === idx)
+      if (mode === 'add') {
+        setExpandedUniverseSymbols(dedupedExpanded)
+        setAddConstituentsDraft({
+          subsamplePct: 100,
+          shuffle: true,
+          seed: '',
+          includeText: '',
+          excludeText: '',
+        })
+        setAddConstituentsDialogOpen(true)
+        return
+      }
+      const merged = [...dedupedExpanded]
+      setSymbols(merged)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to expand universe')
     } finally {
       setExpandingUniverses(false)
+    }
+  }
+
+  const handleConfirmAddConstituents = () => {
+    if (filteredExpandedSymbols.length === 0) {
+      setError('No symbols matched the filters.')
+      return
+    }
+    const merged = [...symbols, ...filteredExpandedSymbols]
+    const deduped = merged.filter((item, idx, arr) => arr.indexOf(item) === idx)
+    setSymbols(deduped)
+    setAddConstituentsDialogOpen(false)
+  }
+
+  const openCreateUniverseDialog = () => {
+    if (symbols.length === 0) {
+      setError('Add at least one symbol before creating a universe.')
+      return
+    }
+    setError(null)
+    setCreateUniverseDraft({ name: '', description: '', isActive: true })
+    setCreateUniverseDialogOpen(true)
+  }
+
+  const handleCreateUniverse = async () => {
+    const name = createUniverseDraft.name.trim()
+    if (!name) {
+      setError('Universe name is required.')
+      return
+    }
+    if (symbols.length === 0) {
+      setError('No symbols selected.')
+      return
+    }
+
+    setCreatingUniverse(true)
+    setError(null)
+    try {
+      const created = await createUserUniverse({
+        name,
+        description: createUniverseDraft.description.trim() || null,
+        symbols,
+        is_active: createUniverseDraft.isActive,
+      })
+      setCreateUniverseDialogOpen(false)
+      await reloadUniverses()
+      setSelectedUniverseKeys((prev) =>
+        prev.includes(created.key) ? prev : [...prev, created.key],
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create universe')
+    } finally {
+      setCreatingUniverse(false)
     }
   }
 
@@ -372,7 +526,7 @@ export function BacktestWizardPage() {
 
   const handleResolutionChange = (nextResolution: Resolution) => {
     setResolution(nextResolution)
-    setStrategyOverrides((_current) => {
+    setStrategyOverrides(() => {
       const nextOverrides: Record<string, Record<string, unknown>> = {}
       for (const strategy of selectedStrategies) {
         nextOverrides[strategy.name] = buildStrategyParams(strategy, nextResolution)
@@ -470,6 +624,181 @@ export function BacktestWizardPage() {
 
       {error && <Alert severity="error">{error}</Alert>}
 
+      <Dialog
+        open={addConstituentsDialogOpen}
+        onClose={expandingUniverses ? undefined : () => setAddConstituentsDialogOpen(false)}
+        aria-labelledby="add-constituents-title"
+        slotProps={{
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(6px)',
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            },
+          },
+          paper: {
+            sx: {
+              width: '100%',
+              maxWidth: 680,
+              p: 0.5,
+            },
+          },
+        }}
+      >
+        <DialogTitle id="add-constituents-title" sx={{ pb: 1 }}>
+          Add constituents ({filteredExpandedSymbols.length} of {expandedUniverseSymbols.length})
+        </DialogTitle>
+        <DialogContent sx={{ pt: 0 }}>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="subtitle2">Subsample</Typography>
+              <Slider
+                value={addConstituentsDraft.subsamplePct}
+                onChange={(_e, value) =>
+                  setAddConstituentsDraft((prev) => ({ ...prev, subsamplePct: value as number }))
+                }
+                valueLabelDisplay="auto"
+                valueLabelFormat={(value) => {
+                  const baseCount = filteredExpandedSymbolsBeforeSampling.length
+                  const keep = subsampleCount(baseCount, Number(value))
+                  return `${keep} / ${baseCount}`
+                }}
+                min={1}
+                max={100}
+                disabled={expandingUniverses}
+                sx={{ mt: 1.5, mb: 0.5 }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                Keep {filteredExpandedSymbols.length} of {filteredExpandedSymbolsBeforeSampling.length} matched symbols.
+              </Typography>
+            </Box>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                label="Include (optional)"
+                value={addConstituentsDraft.includeText}
+                onChange={(e) => setAddConstituentsDraft((prev) => ({ ...prev, includeText: e.target.value }))}
+                helperText="Comma/newline separated symbols. Leave empty to include all."
+                disabled={expandingUniverses}
+                fullWidth
+              />
+              <TextField
+                label="Exclude (optional)"
+                value={addConstituentsDraft.excludeText}
+                onChange={(e) => setAddConstituentsDraft((prev) => ({ ...prev, excludeText: e.target.value }))}
+                helperText="Comma/newline separated symbols to remove."
+                disabled={expandingUniverses}
+                fullWidth
+              />
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={addConstituentsDraft.shuffle}
+                    onChange={(_e, checked) => setAddConstituentsDraft((prev) => ({ ...prev, shuffle: checked }))}
+                    disabled={expandingUniverses}
+                  />
+                }
+                label="Shuffle before sampling"
+              />
+              <TextField
+                label="Seed (optional)"
+                value={addConstituentsDraft.seed}
+                onChange={(e) => setAddConstituentsDraft((prev) => ({ ...prev, seed: e.target.value }))}
+                disabled={expandingUniverses || !addConstituentsDraft.shuffle}
+                placeholder="42"
+                sx={{ flex: 1 }}
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
+          <Button
+            onClick={() => setAddConstituentsDialogOpen(false)}
+            disabled={expandingUniverses}
+            variant="outlined"
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmAddConstituents}
+            disabled={expandingUniverses || filteredExpandedSymbols.length === 0}
+            variant="contained"
+          >
+            Add {filteredExpandedSymbols.length}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={createUniverseDialogOpen}
+        onClose={creatingUniverse ? undefined : () => setCreateUniverseDialogOpen(false)}
+        aria-labelledby="create-universe-title"
+        slotProps={{
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(6px)',
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            },
+          },
+          paper: {
+            sx: {
+              width: '100%',
+              maxWidth: 620,
+              p: 0.5,
+            },
+          },
+        }}
+      >
+        <DialogTitle id="create-universe-title" sx={{ pb: 1 }}>
+          Create universe from symbols ({symbols.length})
+        </DialogTitle>
+        <DialogContent sx={{ pt: 0 }}>
+          <Stack spacing={1.5}>
+            <TextField
+              label="Name"
+              value={createUniverseDraft.name}
+              onChange={(e) => setCreateUniverseDraft((prev) => ({ ...prev, name: e.target.value }))}
+              disabled={creatingUniverse}
+              autoFocus
+              placeholder="My Basket"
+            />
+            <TextField
+              label="Description"
+              value={createUniverseDraft.description}
+              onChange={(e) => setCreateUniverseDraft((prev) => ({ ...prev, description: e.target.value }))}
+              disabled={creatingUniverse}
+            />
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+              <Switch
+                checked={createUniverseDraft.isActive}
+                onChange={(_e, checked) => setCreateUniverseDraft((prev) => ({ ...prev, isActive: checked }))}
+                disabled={creatingUniverse}
+              />
+              <Typography>Active</Typography>
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
+          <Button
+            onClick={() => setCreateUniverseDialogOpen(false)}
+            disabled={creatingUniverse}
+            variant="outlined"
+            color="inherit"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleCreateUniverse()}
+            disabled={creatingUniverse || symbols.length === 0 || !createUniverseDraft.name.trim()}
+            variant="contained"
+            startIcon={creatingUniverse ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {loadingPrefill && (
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <CircularProgress size={20} />
@@ -533,6 +862,9 @@ export function BacktestWizardPage() {
                   disabled={selectedUniverseKeys.length === 0 || expandingUniverses}
                 >
                   Replace symbols
+                </Button>
+                <Button variant="contained" onClick={openCreateUniverseDialog} disabled={symbols.length === 0}>
+                  Create Universe
                 </Button>
               </Stack>
             </Stack>

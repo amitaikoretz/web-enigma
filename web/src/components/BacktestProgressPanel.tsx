@@ -1,25 +1,20 @@
 import { LinearProgress, Paper, Stack, Typography } from '@mui/material'
 
 interface BacktestProgressPanelProps {
-  completedRuns: number
-  totalRuns: number
   progressPct: number
+  isIndeterminate?: boolean
 }
 
 export function BacktestProgressPanel({
-  completedRuns,
-  totalRuns,
   progressPct,
+  isIndeterminate = false,
 }: BacktestProgressPanelProps) {
   return (
     <Paper sx={{ p: 3 }}>
       <Stack spacing={1.5}>
         <Typography variant="h6">Backtest in progress</Typography>
-        <Typography color="text.secondary">
-          {completedRuns} of {totalRuns} runs completed.
-        </Typography>
         <LinearProgress
-          variant={totalRuns === 0 ? 'indeterminate' : 'determinate'}
+          variant={isIndeterminate ? 'indeterminate' : 'determinate'}
           value={progressPct}
           color="primary"
           sx={{

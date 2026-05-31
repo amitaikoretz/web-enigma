@@ -2,7 +2,7 @@
 # Same tuned params as volume_rally_v2_core_5m.yaml; longer window for sample size.
 #
 # Run:
-#   backtest run \
+#   kalyxctl run \
 #     --config experiments/volume_rally_v2_core_12m.yaml \
 #     --output /tmp/volume-rally-v2-core-12m.json
 
