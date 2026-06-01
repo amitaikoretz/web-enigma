@@ -452,6 +452,7 @@ export function BacktestDetailPage() {
         <BacktestProgressPanel
           progressPct={metadata.progress_pct}
           isIndeterminate={metadata.total_runs === 0}
+          startedAt={metadata.started_at ?? metadata.created_at}
         />
       )}
 

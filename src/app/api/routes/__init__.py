@@ -10,9 +10,11 @@ from app.api.routes import (
     live_runtime,
     market_data,
     market_data_downloads,
+    scans,
     server,
     settings,
     symbol_universes,
+    risk_models,
     strategies,
     trading_contracts,
 )
@@ -28,6 +30,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(backtests_run.router)
     app.include_router(market_data.router)
     app.include_router(market_data_downloads.router)
+    app.include_router(scans.router)
+    app.include_router(risk_models.router)
     app.include_router(trading_contracts.router)
     app.include_router(live_runtime.router)
     app.include_router(symbol_universes.router)

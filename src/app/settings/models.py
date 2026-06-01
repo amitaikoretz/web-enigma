@@ -61,7 +61,7 @@ class AppearanceDefaults(BaseModel):
 class BacktestDefaults(BaseModel):
     symbols_seed_list: list[str] = Field(default_factory=lambda: ["AAPL"], min_length=1)
     date_range_preset: Literal["30D", "90D", "1Y"] = "30D"
-    resolution: Literal["1m", "5m", "15m", "1h", "1d"] = "1d"
+    resolution: Literal["1m", "5m", "15m", "1h", "1d"] = "5m"
     feed: Literal["iex", "sip", "otc"] = "iex"
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
     analyzers: AnalyzerConfig = Field(

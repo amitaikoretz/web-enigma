@@ -4,8 +4,10 @@ import CloseIcon from '@mui/icons-material/Close'
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload'
 import InsightsIcon from '@mui/icons-material/Insights'
 import MenuIcon from '@mui/icons-material/Menu'
+import ManageSearchIcon from '@mui/icons-material/ManageSearch'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
+import ShieldIcon from '@mui/icons-material/Shield'
 import {
   AppBar,
   Box,
@@ -35,11 +37,17 @@ import { DataDownloadDetailPage } from './pages/DataDownloadDetailPage'
 import { DataDownloadsListPage } from './pages/DataDownloadsListPage'
 import { DataDownloadWizardPage } from './pages/DataDownloadWizardPage'
 import { RuntimePage } from './pages/RuntimePage'
+import { ScanRunDetailPage } from './pages/ScanRunDetailPage'
+import { ScannersLandingPage } from './pages/ScannersLandingPage'
+import { ScannerTypePage } from './pages/ScannerTypePage'
 import { SettingsPage } from './pages/SettingsPage'
+import { RiskModelsListPage } from './pages/RiskModelsListPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
+  { label: 'Risk Models', to: '/risk-models', icon: <ShieldIcon /> },
   { label: 'Data', to: '/data/downloads', icon: <CloudDownloadIcon /> },
+  { label: 'Scanners', to: '/scanners', icon: <ManageSearchIcon /> },
   { label: 'Contracts', to: '/contracts', icon: <AssignmentIcon /> },
   { label: 'Runtime', to: '/runtime', icon: <MonitorHeartIcon /> },
   { label: 'Chart', to: '/chart', icon: <BarChartIcon /> },
@@ -197,9 +205,13 @@ function App() {
           <Route path="/backtests" element={<BacktestsListPage />} />
           <Route path="/backtests/new" element={<BacktestWizardPage />} />
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
+          <Route path="/risk-models" element={<RiskModelsListPage />} />
           <Route path="/data/downloads" element={<DataDownloadsListPage />} />
           <Route path="/data/downloads/new" element={<DataDownloadWizardPage />} />
           <Route path="/data/downloads/:jobId" element={<DataDownloadDetailPage />} />
+          <Route path="/scanners" element={<ScannersLandingPage />} />
+          <Route path="/scanners/:scanType" element={<ScannerTypePage />} />
+          <Route path="/scanners/:scanType/runs/:scanId" element={<ScanRunDetailPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
           <Route path="/runtime" element={<RuntimePage />} />
           <Route path="/settings" element={<SettingsPage />} />

@@ -8,7 +8,10 @@ from starlette.requests import Request
 from app.backtests import BacktestJobService
 from app.config.models import DataCacheConfig
 from app.data.downloads import DataDownloadJobRepository, DataDownloadJobService
+from app.scans.service import ScanJobService
 from app.settings import PlatformSettingsService
+from app.risk.persistence import SqlAlchemyRiskModelRepository
+from app.risk.service import RiskModelService
 
 
 @dataclass(frozen=True)
@@ -17,7 +20,10 @@ class ApiDependencies:
     output_dir: Path
     backtest_jobs: BacktestJobService
     data_download_jobs: DataDownloadJobService
+    scan_jobs: ScanJobService
     settings_service: PlatformSettingsService
+    risk_models: RiskModelService
+    risk_models_repo: SqlAlchemyRiskModelRepository
 
 
 def get_deps(request: Request) -> ApiDependencies:

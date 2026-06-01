@@ -16,7 +16,7 @@ export const defaultPlatformSettings: PlatformSettings = {
   backtest_defaults: {
     symbols_seed_list: ['AAPL'],
     date_range_preset: '30D',
-    resolution: '1d',
+    resolution: '5m',
     feed: 'iex',
     broker: {
       cash: 10000,

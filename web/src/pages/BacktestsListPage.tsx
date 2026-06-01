@@ -6,6 +6,10 @@ import {
   Button,
   Checkbox,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   Paper,
   Stack,
@@ -16,6 +20,7 @@ import {
   TablePagination,
   TableRow,
   Tooltip,
+  TextField,
   Typography,
 } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -23,6 +28,7 @@ import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-d
 
 import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
 import { deleteBacktest, fetchBacktests, retryBacktest, retryBacktestForce } from '../api/backtests'
+import { createRiskModel } from '../api/riskModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
@@ -77,6 +83,9 @@ export function BacktestsListPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [retryTarget, setRetryTarget] = useState<BacktestListItem | null>(null)
+  const [riskDialogOpen, setRiskDialogOpen] = useState(false)
+  const [riskSubmitting, setRiskSubmitting] = useState(false)
+  const [riskRandomSeed, setRiskRandomSeed] = useState('7')
 
   const visibleColumns = useMemo(
     () =>
@@ -259,6 +268,32 @@ export function BacktestsListPage() {
     }
   }
 
+  async function submitRiskModel() {
+    const ids = items.filter((item) => selectedIds.has(item.id)).map((item) => item.id)
+    if (ids.length === 0) {
+      return
+    }
+    setRiskSubmitting(true)
+    setError(null)
+    try {
+      await createRiskModel({
+        backtest_ids: ids,
+        targets: [
+          { target_key: 'stop_prob', task_type: 'classification' },
+          { target_key: 'mae', task_type: 'regression' },
+        ],
+        dataset_config: {},
+        train_config: { random_seed: Number(riskRandomSeed) || 7 },
+      })
+      setRiskDialogOpen(false)
+      navigate('/risk-models')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create risk model')
+    } finally {
+      setRiskSubmitting(false)
+    }
+  }
+
   function toggleRowSelection(backtestId: string, checked: boolean) {
     setSelectedIds((current) => {
       const next = new Set(current)
@@ -294,6 +329,13 @@ export function BacktestsListPage() {
       >
         <BoxSection title="Backtest Results" subtitle="Track recent jobs and open any saved analysis." />
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+          <Button
+            variant="outlined"
+            disabled={selectedOnPageCount === 0 || bulkDeleting}
+            onClick={() => setRiskDialogOpen(true)}
+          >
+            Train risk model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
+          </Button>
           <Button
             color="error"
             variant="outlined"
@@ -446,6 +488,48 @@ export function BacktestsListPage() {
           </>
         )}
       </Paper>
+
+      <Dialog
+        open={riskDialogOpen}
+        onClose={() => {
+          if (!riskSubmitting) {
+            setRiskDialogOpen(false)
+          }
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Train risk model</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Stack spacing={2}>
+            <Typography color="text.secondary">
+              Trains stop probability + MAE models from the selected backtests via Argo.
+            </Typography>
+            <Typography>
+              Selected backtests on this page: <b>{selectedOnPageCount}</b>
+            </Typography>
+            <TextField
+              label="Random seed"
+              value={riskRandomSeed}
+              onChange={(e) => setRiskRandomSeed(e.target.value)}
+              size="small"
+              helperText="Used for train/calibration splits in v1."
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRiskDialogOpen(false)} disabled={riskSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void submitRiskModel()}
+            variant="contained"
+            disabled={riskSubmitting || selectedOnPageCount === 0}
+          >
+            {riskSubmitting ? 'Submitting…' : 'Start training'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <ConfirmDialog
         open={retryTarget !== null}

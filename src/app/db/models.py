@@ -241,6 +241,68 @@ class SymbolUniverse(Base):
     )
 
 
+class RiskModelGroup(Base):
+    __tablename__ = "risk_model_groups"
+    __table_args__ = (
+        Index("ix_risk_model_groups_created_at", "created_at"),
+        Index("ix_risk_model_groups_status", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    argo_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    argo_workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    params_json: Mapped[dict] = mapped_column(json_type, nullable=False, default=dict)
+    artifact_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    summary_metrics_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class RiskModelSource(Base):
+    __tablename__ = "risk_model_sources"
+    __table_args__ = (
+        Index("ux_risk_model_sources_group_backtest", "group_id", "backtest_id", unique=True),
+        Index("ix_risk_model_sources_group_id", "group_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(String(64), ForeignKey("risk_model_groups.id"), nullable=False)
+    backtest_id: Mapped[str] = mapped_column(String(64), ForeignKey("backtest_jobs.id"), nullable=False)
+    source_report_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class RiskModelTarget(Base):
+    __tablename__ = "risk_model_targets"
+    __table_args__ = (
+        Index("ix_risk_model_targets_group_id", "group_id"),
+        Index("ix_risk_model_targets_target_key", "target_key"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_id: Mapped[str] = mapped_column(String(64), ForeignKey("risk_model_groups.id"), nullable=False)
+    target_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="running", server_default="running")
+    model_artifact_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metrics_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
+    dataset_manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feature_columns_json: Mapped[list[str] | None] = mapped_column(json_type, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class SymbolUniverseConstituent(Base):
     __tablename__ = "symbol_universe_constituents"
     __table_args__ = (

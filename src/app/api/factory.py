@@ -21,7 +21,12 @@ from app.backtests.persistence import SqlAlchemyBacktestJobRepository
 from app.config.models import DataCacheConfig
 from app.data.downloads import DataDownloadJobRepository, DataDownloadJobService
 from app.db.session import get_session_factory
+from app.scans.argo import ScanArgoSubmitter
+from app.scans.repository import ScanJobRepository
+from app.scans.service import ScanJobService
 from app.settings import PlatformSettingsService
+from app.risk.persistence import SqlAlchemyRiskModelRepository
+from app.risk.service import RiskModelService
 
 
 def create_app(
@@ -41,27 +46,69 @@ def create_app(
     resolved_cache_config = cache_config or DataCacheConfig(
         directory=os.environ.get("BACKTEST_CACHE_DIR") or DataCacheConfig().directory
     )
+
+    def _is_writable_dir(candidate: Path) -> bool:
+        try:
+            if candidate.exists():
+                if not candidate.is_dir():
+                    return False
+                return os.access(candidate, os.W_OK | os.X_OK)
+            parent = candidate.parent
+            if not parent.exists() or not parent.is_dir():
+                return False
+            return os.access(parent, os.W_OK | os.X_OK)
+        except OSError:
+            return False
+
     env_results_dir = os.environ.get("BACKTEST_RESULTS_DIR")
-    resolved_output_dir = (
+    default_pvc_results_dir = Path("/data/backtest-results")
+    tmp_results_dir = Path(tempfile.gettempdir()) / "backtest-api-results"
+
+    resolved_output_dir_candidate = (
         output_dir
         or (Path(env_results_dir) if env_results_dir else None)
-        or (Path(tempfile.gettempdir()) / "backtest-api-results")
-    ).resolve()
+        or (default_pvc_results_dir if _is_writable_dir(default_pvc_results_dir) else None)
+        or tmp_results_dir
+    )
+    resolved_output_dir = resolved_output_dir_candidate.resolve()
+    if resolved_output_dir_candidate != tmp_results_dir and not _is_writable_dir(resolved_output_dir):
+        logger.warning(
+            "BACKTEST_RESULTS_DIR=%s is not writable; falling back to %s",
+            str(resolved_output_dir_candidate),
+            str(tmp_results_dir),
+        )
+        resolved_output_dir = tmp_results_dir.resolve()
+
     settings_service = PlatformSettingsService(resolved_output_dir / "settings" / "platform-settings.json")
     data_download_repository = DataDownloadJobRepository(resolved_output_dir)
+    scan_repository = ScanJobRepository(resolved_output_dir)
     resolved_session_factory = session_factory or get_session_factory()
+    backtest_repo = SqlAlchemyBacktestJobRepository(resolved_session_factory)
+    risk_repo = SqlAlchemyRiskModelRepository(resolved_session_factory)
     app.state.deps = ApiDependencies(
         cache_config=resolved_cache_config,
         output_dir=resolved_output_dir,
         backtest_jobs=BacktestJobService(
             BacktestArtifactStore(resolved_output_dir),
-            SqlAlchemyBacktestJobRepository(resolved_session_factory),
+            backtest_repo,
             resolved_cache_config,
             settings_service=settings_service,
             argo_submitter=ArgoWorkflowSubmitter(),
         ),
         data_download_jobs=DataDownloadJobService(data_download_repository, resolved_cache_config),
+        scan_jobs=ScanJobService(
+            scan_repository,
+            argo_submitter=ScanArgoSubmitter(),
+            output_dir=resolved_output_dir,
+        ),
         settings_service=settings_service,
+        risk_models=RiskModelService(
+            session_factory=resolved_session_factory,
+            backtest_repo=backtest_repo,
+            risk_repo=risk_repo,
+            argo_submitter=ArgoWorkflowSubmitter(),
+        ),
+        risk_models_repo=risk_repo,
     )
 
     register_exception_handlers(app, logger)

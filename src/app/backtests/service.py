@@ -614,7 +614,10 @@ class BacktestJobService:
             selection=selection or _selection_from_config_raw(config_raw),
             execution_backend=execution_backend,
         )
-        paths = default_artifact_paths(self.repository.output_dir, backtest_id)
+        results_root = self.repository.output_dir
+        if execution_backend == "argo":
+            results_root = Path(workflow_results_mount())
+        paths = default_artifact_paths(results_root, backtest_id)
         self.job_repository.create(metadata, paths=paths)
         self.repository.save_config_yaml(backtest_id, config_raw)
 
@@ -697,7 +700,7 @@ class BacktestJobService:
             selection=_selection_from_config_raw(config_raw),
             execution_backend="argo",
         )
-        paths = default_artifact_paths(self.repository.output_dir, backtest_id)
+        paths = default_artifact_paths(Path(workflow_results_mount()), backtest_id)
         self.job_repository.create(metadata, paths=paths)
         return self._launch_argo_workflow(
             backtest_id=backtest_id,
@@ -726,7 +729,7 @@ class BacktestJobService:
                 selection=_selection_from_config_raw(config_raw),
                 execution_backend="argo",
             )
-            paths = default_artifact_paths(self.repository.output_dir, backtest_id)
+            paths = default_artifact_paths(Path(workflow_results_mount()), backtest_id)
             self.job_repository.create(metadata, paths=paths)
         else:
             metadata = metadata.model_copy(deep=True)

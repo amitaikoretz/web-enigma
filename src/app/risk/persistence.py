@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.db.models import RiskModelGroup, RiskModelSource, RiskModelTarget
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+@dataclass(frozen=True)
+class RiskModelListItem:
+    group_id: str
+    created_at: datetime
+    updated_at: datetime
+    status: str
+    argo_namespace: str | None
+    argo_workflow_name: str | None
+    backtest_ids: list[str]
+    targets: list[str]
+    summary_metrics: dict[str, Any] | None
+    artifact_dir: str
+
+
+@dataclass(frozen=True)
+class RiskModelTargetRow:
+    id: int
+    group_id: str
+    target_key: str
+    task_type: str
+    status: str
+    model_artifact_path: str | None
+    metrics: dict[str, Any] | None
+    dataset_manifest_path: str | None
+    feature_columns: list[str] | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class RiskModelDetail:
+    group_id: str
+    created_at: datetime
+    updated_at: datetime
+    status: str
+    argo_namespace: str | None
+    argo_workflow_name: str | None
+    params: dict[str, Any]
+    artifact_dir: str
+    summary_metrics: dict[str, Any] | None
+    sources: list[dict[str, Any]]
+    targets: list[RiskModelTargetRow]
+
+
+class SqlAlchemyRiskModelRepository:
+    def __init__(self, session_factory: sessionmaker[Session]):
+        self._session_factory = session_factory
+
+    def create_group(
+        self,
+        *,
+        group_id: str,
+        status: str,
+        params: dict[str, Any],
+        artifact_dir: str,
+        backtest_ids: list[str],
+        source_report_paths: dict[str, str | None] | None = None,
+        argo_namespace: str | None = None,
+        argo_workflow_name: str | None = None,
+    ) -> None:
+        now = _utc_now()
+        with self._session_factory() as session:
+            row = RiskModelGroup(
+                id=group_id,
+                status=status,
+                argo_namespace=argo_namespace,
+                argo_workflow_name=argo_workflow_name,
+                params_json=params,
+                artifact_dir=artifact_dir,
+                summary_metrics_json=None,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(row)
+            for backtest_id in backtest_ids:
+                session.add(
+                    RiskModelSource(
+                        group_id=group_id,
+                        backtest_id=backtest_id,
+                        source_report_path=(source_report_paths or {}).get(backtest_id),
+                    )
+                )
+            session.commit()
+
+    def update_group_workflow(self, group_id: str, *, argo_namespace: str, argo_workflow_name: str) -> None:
+        with self._session_factory() as session:
+            row = session.get(RiskModelGroup, group_id)
+            if row is None:
+                raise KeyError(f"Risk model group '{group_id}' not found")
+            row.argo_namespace = argo_namespace
+            row.argo_workflow_name = argo_workflow_name
+            row.updated_at = _utc_now()
+            session.commit()
+
+    def update_group_status(self, group_id: str, *, status: str, summary_metrics: dict[str, Any] | None = None) -> None:
+        with self._session_factory() as session:
+            row = session.get(RiskModelGroup, group_id)
+            if row is None:
+                raise KeyError(f"Risk model group '{group_id}' not found")
+            row.status = status
+            row.summary_metrics_json = summary_metrics
+            row.updated_at = _utc_now()
+            session.commit()
+
+    def upsert_target(
+        self,
+        *,
+        group_id: str,
+        target_key: str,
+        task_type: str,
+        status: str,
+        model_artifact_path: str | None,
+        metrics: dict[str, Any] | None,
+        dataset_manifest_path: str | None,
+        feature_columns: list[str] | None,
+    ) -> None:
+        with self._session_factory() as session:
+            existing = session.scalar(
+                select(RiskModelTarget).where(
+                    RiskModelTarget.group_id == group_id,
+                    RiskModelTarget.target_key == target_key,
+                )
+            )
+            if existing is None:
+                row = RiskModelTarget(
+                    group_id=group_id,
+                    target_key=target_key,
+                    task_type=task_type,
+                    status=status,
+                    model_artifact_path=model_artifact_path,
+                    metrics_json=metrics,
+                    dataset_manifest_path=dataset_manifest_path,
+                    feature_columns_json=feature_columns,
+                )
+                session.add(row)
+            else:
+                existing.task_type = task_type
+                existing.status = status
+                existing.model_artifact_path = model_artifact_path
+                existing.metrics_json = metrics
+                existing.dataset_manifest_path = dataset_manifest_path
+                existing.feature_columns_json = feature_columns
+                existing.updated_at = _utc_now()
+            session.commit()
+
+    def list_recent(self, *, limit: int = 100) -> list[RiskModelListItem]:
+        with self._session_factory() as session:
+            groups = session.scalars(
+                select(RiskModelGroup).order_by(RiskModelGroup.created_at.desc()).limit(limit)
+            ).all()
+            group_ids = [g.id for g in groups]
+            sources = (
+                session.query(RiskModelSource)
+                .filter(RiskModelSource.group_id.in_(group_ids) if group_ids else False)  # type: ignore[arg-type]
+                .all()
+            )
+            targets = (
+                session.query(RiskModelTarget)
+                .filter(RiskModelTarget.group_id.in_(group_ids) if group_ids else False)  # type: ignore[arg-type]
+                .all()
+            )
+
+            backtest_map: dict[str, list[str]] = {}
+            for src in sources:
+                backtest_map.setdefault(src.group_id, []).append(src.backtest_id)
+            target_map: dict[str, list[str]] = {}
+            for t in targets:
+                target_map.setdefault(t.group_id, []).append(t.target_key)
+
+            out: list[RiskModelListItem] = []
+            for g in groups:
+                out.append(
+                    RiskModelListItem(
+                        group_id=g.id,
+                        created_at=g.created_at,
+                        updated_at=g.updated_at,
+                        status=g.status,
+                        argo_namespace=g.argo_namespace,
+                        argo_workflow_name=g.argo_workflow_name,
+                        backtest_ids=sorted(backtest_map.get(g.id, [])),
+                        targets=sorted(set(target_map.get(g.id, []))),
+                        summary_metrics=g.summary_metrics_json,
+                        artifact_dir=g.artifact_dir,
+                    )
+                )
+            return out
+
+    def get_detail(self, group_id: str) -> RiskModelDetail | None:
+        with self._session_factory() as session:
+            g = session.get(RiskModelGroup, group_id)
+            if g is None:
+                return None
+            sources = session.scalars(select(RiskModelSource).where(RiskModelSource.group_id == group_id)).all()
+            targets = session.scalars(select(RiskModelTarget).where(RiskModelTarget.group_id == group_id)).all()
+            return RiskModelDetail(
+                group_id=g.id,
+                created_at=g.created_at,
+                updated_at=g.updated_at,
+                status=g.status,
+                argo_namespace=g.argo_namespace,
+                argo_workflow_name=g.argo_workflow_name,
+                params=g.params_json,
+                artifact_dir=g.artifact_dir,
+                summary_metrics=g.summary_metrics_json,
+                sources=[
+                    {
+                        "backtest_id": s.backtest_id,
+                        "source_report_path": s.source_report_path,
+                        "created_at": s.created_at,
+                    }
+                    for s in sources
+                ],
+                targets=[
+                    RiskModelTargetRow(
+                        id=t.id,
+                        group_id=t.group_id,
+                        target_key=t.target_key,
+                        task_type=t.task_type,
+                        status=t.status,
+                        model_artifact_path=t.model_artifact_path,
+                        metrics=t.metrics_json,
+                        dataset_manifest_path=t.dataset_manifest_path,
+                        feature_columns=t.feature_columns_json,
+                        created_at=t.created_at,
+                        updated_at=t.updated_at,
+                    )
+                    for t in targets
+                ],
+            )
+
+    def count(self) -> int:
+        with self._session_factory() as session:
+            return int(session.scalar(select(func.count()).select_from(RiskModelGroup)) or 0)
