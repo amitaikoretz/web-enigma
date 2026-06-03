@@ -1,0 +1,13 @@
+rules:
+  - name: rsi_overbought
+    params:
+      period: 14
+      overbought: 60
+  - name: fixed_pct_oco
+    params:
+      atr_period: 14
+      sl_atr_mult: 1.5
+      tp_atr_mult: 3.0
+  - name: max_hold_bars
+    params:
+      max_hold_bars: 18

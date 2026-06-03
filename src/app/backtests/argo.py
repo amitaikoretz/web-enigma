@@ -9,6 +9,8 @@ import httpx
 
 from app.backtests.argo_workflow import build_backtest_workflow_spec
 
+_DEFAULT_SHARD_PARALLELISM = 8
+
 
 @dataclass(frozen=True)
 class ArgoWorkflowConfig:
@@ -76,6 +78,10 @@ class ArgoWorkflowSubmitter:
         backtest_id: str,
         config_yaml: str | None = None,
     ) -> dict[str, Any]:
+        shard_parallelism = int(
+            os.environ.get("BACKTEST_SHARD_PARALLELISM", str(_DEFAULT_SHARD_PARALLELISM)).strip()
+            or str(_DEFAULT_SHARD_PARALLELISM)
+        )
         return {
             "apiVersion": "argoproj.io/v1alpha1",
             "kind": "Workflow",
@@ -94,6 +100,7 @@ class ArgoWorkflowSubmitter:
                 backtest_id=backtest_id,
                 config_yaml=config_yaml,
                 api_base_url=os.environ.get("BACKTEST_API_BASE_URL", "").strip() or None,
+                shard_parallelism=shard_parallelism,
             ),
         }
 
@@ -206,3 +213,12 @@ class ArgoWorkflowSubmitter:
         if not isinstance(items, list):
             return []
         return [item for item in items if isinstance(item, dict)]
+
+    def terminate_workflow(self, workflow_name: str, *, namespace: str | None = None) -> bool:
+        target_namespace = namespace or self.config.namespace
+        response = self._http_request(
+            "PUT",
+            f"/api/v1/workflows/{target_namespace}/{workflow_name}/terminate",
+            json={},
+        )
+        return response.status_code < 400

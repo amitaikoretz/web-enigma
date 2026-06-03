@@ -116,13 +116,22 @@ def test_end_to_end_backtest_json_to_dataset(tmp_path: Path):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "breakout_channel",
-                "strategy_params": {
-                    "lookback": 3,
-                    "stake": 1.0,
-                    "stop_loss_pct": 0.01,
-                    "take_profit_pct": 0.02,
-                    "max_hold_bars": 5,
+                "trigger": {
+                    "name": "breakout_channel",
+                    "params": {
+                        "lookback": 3,
+                        "stake": 1.0,
+                        "stop_loss_pct": 0.01,
+                        "take_profit_pct": 0.02,
+                        "max_hold_bars": 5,
+                    },
+                },
+                "exit_rules": {
+                    "rules": [
+                        {"name": "channel_break", "params": {"lookback": 3}},
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                        {"name": "max_hold_bars", "params": {"max_hold_bars": 5}},
+                    ]
                 },
                 "analyzers": {"include_candidate_log": True},
             }
@@ -155,13 +164,22 @@ def test_end_to_end_backtest_with_risk_auxiliary_sidecars(tmp_path: Path, monkey
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "breakout_channel",
-                "strategy_params": {
-                    "lookback": 3,
-                    "stake": 1.0,
-                    "stop_loss_pct": 0.01,
-                    "take_profit_pct": 0.02,
-                    "max_hold_bars": 5,
+                "trigger": {
+                    "name": "breakout_channel",
+                    "params": {
+                        "lookback": 3,
+                        "stake": 1.0,
+                        "stop_loss_pct": 0.01,
+                        "take_profit_pct": 0.02,
+                        "max_hold_bars": 5,
+                    },
+                },
+                "exit_rules": {
+                    "rules": [
+                        {"name": "channel_break", "params": {"lookback": 3}},
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                        {"name": "max_hold_bars", "params": {"max_hold_bars": 5}},
+                    ]
                 },
                 "analyzers": {
                     "include_candidate_log": True,

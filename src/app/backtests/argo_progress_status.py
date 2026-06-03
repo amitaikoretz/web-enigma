@@ -10,7 +10,6 @@ from app.backtests.argo_progress import parse_argo_progress, progress_fraction
 from app.backtests.models import BacktestListItem
 from app.backtests.sharding import ShardPlan, load_shard_manifest
 from app.config.models import BacktestConfig
-from app.engine.runner import _run_strategy_entries
 from app.output.models import BacktestReport
 
 
@@ -23,7 +22,7 @@ def count_runs_in_shard_config(config_path: Path) -> int:
         config = BacktestConfig.model_validate(raw)
     except (OSError, ValueError, ValidationError):
         return 0
-    return sum(len(_run_strategy_entries(run)) for run in config.runs)
+    return len(config.runs)
 
 
 def _node_input_parameters(node: dict[str, Any]) -> dict[str, str]:

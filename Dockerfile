@@ -21,4 +21,4 @@ RUN pip install --no-cache-dir -e . --no-deps
 
 ENV PYTHONUNBUFFERED=1
 
-CMD ["backtest", "serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["kalyxctl", "serve", "--host", "0.0.0.0", "--port", "8000"]

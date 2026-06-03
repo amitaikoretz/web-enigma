@@ -192,11 +192,12 @@ export interface BacktestSelectionSummary {
   resolution: string
   feed: BacktestFeed
   symbols: string[]
-  strategies: string[]
+  triggers: string[]
+  exit_rules: string[]
 }
 
 export type BacktestExecutionBackend = 'local' | 'argo'
-export type ArgoSplitBy = 'run' | 'symbol' | 'strategy' | 'symbol_strategy'
+export type ArgoSplitBy = 'run' | 'symbol' | 'trigger' | 'symbol_trigger'
 
 export interface BacktestListItem {
   id: string
@@ -294,6 +295,15 @@ export interface BacktestStrategySelectionInput {
   params: Record<string, unknown>
 }
 
+export interface ExitRuleSelectionInput {
+  name: string
+  params: Record<string, unknown>
+}
+
+export interface ExitRulesSelectionInput {
+  rules: ExitRuleSelectionInput[]
+}
+
 export interface BacktestCreateRequest {
   name?: string | null
   start_date: string
@@ -301,7 +311,8 @@ export interface BacktestCreateRequest {
   resolution: string
   feed: BacktestFeed
   symbols: string[]
-  strategies: BacktestStrategySelectionInput[]
+  triggers: BacktestStrategySelectionInput[]
+  exit_rules: ExitRulesSelectionInput[]
   broker?: {
     cash: number
     commission: number

@@ -187,7 +187,7 @@ def test_hydrate_report_from_shard_sidecars(tmp_path: Path) -> None:
     manifest_path = tmp_path / "work" / "manifest.json"
     write_shard_manifest(
         ShardPlan(
-            split_by="symbol_strategy",
+                split_by="symbol_trigger",
             config_path=str(tmp_path / "config.yaml"),
             shards=[
                 ShardSpec(
@@ -231,6 +231,79 @@ def test_hydrate_report_from_shard_sidecars(tmp_path: Path) -> None:
 
     assert len(hydrated.results[0].orders) == 1
     assert hydrated.results[0].orders[0].price == 100.0
+    assert len(hydrated.results[0].trades) == 1
+    assert hydrated.results[0].trades[0].reason == "time_exit"
+
+
+def test_hydrate_report_from_nested_shard_sidecars(tmp_path: Path) -> None:
+    from app.backtests.sharding import ShardPlan, ShardSpec, write_shard_manifest
+
+    run_id = "job-1:001:AAPL:breakout_channel"
+    shard_output = tmp_path / "work" / "shards" / "aapl_breakout_channel" / "aapl_breakout_channel.json"
+    shard_output.parent.mkdir(parents=True, exist_ok=True)
+    shard_output.write_text("{}", encoding="utf-8")
+
+    trades_path = shard_output.with_suffix(".trades.parquet")
+    pd.DataFrame(
+        [
+            {
+                "run_id": run_id,
+                "datetime": "2024-01-02T16:40:00+00:00",
+                "size": 1.0,
+                "price": 100.0,
+                "value": 100.0,
+                "pnl": 10.0,
+                "pnlcomm": 10.0,
+                "reason": "time_exit",
+            }
+        ]
+    ).to_parquet(trades_path, index=False)
+
+    manifest_path = tmp_path / "work" / "manifest.json"
+    write_shard_manifest(
+        ShardPlan(
+            config_path=str((tmp_path / "work" / "job-1.yaml").resolve()),
+            split_by="run",
+            shards=[
+                ShardSpec(
+                    shard_id="aapl_breakout_channel",
+                    config_path=str((tmp_path / "work" / "shards" / "aapl_breakout_channel.yaml").resolve()),
+                    output_path=str(shard_output.resolve()),
+                )
+            ],
+        ),
+        manifest_path,
+    )
+
+    slim = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="0.1.0",
+        config_sha256="abc",
+        input_config={},
+        total_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        status="success",
+        results=[
+            RunResult(
+                run_id=run_id,
+                status="success",
+                strategy="breakout_channel",
+                symbol="AAPL",
+                data_source="alpaca",
+                summary=RunSummary(start_value=10000.0, end_value=10005.0, return_pct=0.05),
+                trades=[],
+            )
+        ],
+    )
+    paths = BacktestArtifactPaths(
+        report_json_path=str(tmp_path / "job-1.json"),
+        manifest_path=str(manifest_path.resolve()),
+        trades_parquet_path=str(tmp_path / "job-1.trades.parquet"),
+    )
+
+    hydrated = hydrate_report_from_artifacts(slim, paths=paths)
+
     assert len(hydrated.results[0].trades) == 1
     assert hydrated.results[0].trades[0].reason == "time_exit"
 
@@ -281,7 +354,7 @@ def test_merge_persist_writes_combined_sidecars_from_shards(tmp_path: Path) -> N
     manifest_path = work_dir / "manifest.json"
     write_shard_manifest(
         ShardPlan(
-            split_by="symbol_strategy",
+                split_by="symbol_trigger",
             config_path=str(work_dir / "config.yaml"),
             shards=[
                 ShardSpec(
@@ -584,7 +657,7 @@ def test_merge_persist_writes_combined_labels_and_features_from_shards(tmp_path:
     manifest_path = work_dir / "manifest.json"
     write_shard_manifest(
         ShardPlan(
-            split_by="symbol_strategy",
+                split_by="symbol_trigger",
             config_path=str(work_dir / "config.yaml"),
             shards=[
                 ShardSpec(

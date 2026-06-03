@@ -539,6 +539,7 @@ def _resolve_shard_sidecar_path(manifest_path: Path, shard_id: str, shard_output
     candidates = (
         _shard_sidecar_path(shard_output_path, kind),
         manifest_path.parent / "shards" / f"{shard_id}.{kind}.parquet",
+        manifest_path.parent / "shards" / shard_id / f"{shard_output_path.stem}.{kind}.parquet",
         manifest_path.parent / "shards" / f"{shard_output_path.stem}.{kind}.parquet",
     )
     for candidate in candidates:

@@ -13,9 +13,5 @@ runs:
       type: csv
       path: examples/data/sample_daily.csv
       date_format: "%Y-%m-%d"
-    strategy: buy_oco_atr_tp_trailing
-    strategy_params:
-      stake: 1
-      atr_period: 5
-      trail_atr_mult: 1.5
-      tp_atr_mult: 3.0
+    trigger_path: "examples/triggers/buy_oco_atr.yaml"
+    exit_rules_path: "examples/exit_rules/buy_oco_atr_tp_trailing.yaml"

@@ -62,6 +62,10 @@ def main(
     ),
 ) -> None:
     _write_text(terminal_command_out, _terminal_command(sys.argv))
+    # Pre-create output parameter files so Argo can always collect them, even on failure.
+    _write_text(dataset_path_out, "")
+    _write_text(manifest_path_out, "")
+    _write_text(feature_cols_out, "")
 
     backtest_ids = json.loads(backtest_ids_json)
     if not isinstance(backtest_ids, list) or not all(isinstance(x, str) and x for x in backtest_ids):
@@ -145,4 +149,3 @@ def main(
 
 if __name__ == "__main__":
     run_typer_app_with_argo_error_outputs(app)
-

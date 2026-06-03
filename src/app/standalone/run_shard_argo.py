@@ -44,6 +44,9 @@ def main(
     resolved_shard_id = shard_id.strip()
     if resolved_shard_id:
         typer.echo(f"Running shard {resolved_shard_id}")
+    typer.echo(f"Shard config: {config_path}")
+    typer.echo(f"Shard output: {output_path}")
+    typer.echo(f"Cache dir: {cache_dir}")
 
     rc = _cmd_run(
         config_path=config_path,

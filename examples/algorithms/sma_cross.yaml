@@ -7,8 +7,5 @@ runs:
     data:
       type: csv
       path: "examples/data/sample_daily.csv"
-    strategy: "sma_cross"
-    strategy_params:
-      fast: 3
-      slow: 5
-      stake: 10
+    trigger_path: "examples/triggers/sma_cross.yaml"
+    exit_rules_path: "examples/exit_rules/sma_cross_exits.yaml"

@@ -38,6 +38,8 @@ class RiskModelListItemResponse(BaseModel):
     argo_workflow_name: str | None = None
     backtest_ids: list[str] = Field(default_factory=list)
     targets: list[str] = Field(default_factory=list)
+    targets_total: int = 0
+    targets_done: int = 0
     summary_metrics: dict[str, Any] | None = None
     artifact_dir: str
 

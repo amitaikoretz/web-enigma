@@ -1,0 +1,6 @@
+rules:
+  - name: atr_take_profit
+    params:
+      atr_period: 14
+      tp_atr_mult: 2.5
+

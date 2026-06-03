@@ -1,0 +1,10 @@
+rules:
+  - name: atr_trailing
+    params:
+      atr_period: 14
+      trail_atr_mult: 1.0
+      tp_atr_mult: 2.5
+  - name: max_hold_bars
+    params:
+      max_hold_bars: 30
+

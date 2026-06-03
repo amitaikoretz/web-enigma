@@ -10,7 +10,7 @@ import pandas as pd
 from backtesting import Backtest
 
 from app import __version__
-from app.config.models import BacktestConfig, BacktestRunConfig, DataCacheConfig, StrategyConfig
+from app.config.models import BacktestConfig, BacktestRunConfig, DataCacheConfig
 from app.data.loaders import (
     build_alpaca_data_feed_with_cache,
     build_csv_data_feed,
@@ -39,7 +39,7 @@ from app.output.models import (
 from app.risk.build.run_auxiliary import build_risk_auxiliary_for_run
 from app.risk.models import RiskDatasetConfig, RunRiskAuxiliaryRows
 from app.strategies.implementations import build_portable_strategy_adapter
-from app.strategies.registry import get_strategy_definition
+from app.strategies.factory import build_strategy_core, composed_strategy_id
 
 
 @dataclass(frozen=True)
@@ -146,19 +146,8 @@ def _extract_trade_counts(trade_data: dict[str, Any]) -> tuple[int, int, int]:
     return total_trades, won_trades, lost_trades
 
 
-def _run_strategy_entries(run: BacktestRunConfig) -> list[StrategyConfig]:
-    if run.strategies:
-        return run.strategies
-    if run.strategy is None:
-        raise ValueError("Run has no strategy configuration")
-    return [StrategyConfig(name=run.strategy, params=run.strategy_params)]
-
-
-def _result_run_id(run: BacktestRunConfig, strategy_name: str) -> str:
-    strategy_entries = _run_strategy_entries(run)
-    if len(strategy_entries) == 1:
-        return run.run_id
-    return f"{run.run_id}:{strategy_name}"
+def _result_run_id(run: BacktestRunConfig) -> str:
+    return run.run_id
 
 
 def _build_trade_analyzer_like(closed_trades: pd.DataFrame) -> dict[str, Any]:
@@ -201,7 +190,7 @@ def run_backtests_with_hooks(
 ) -> BacktestExecutionResult:
     results: list[RunResult] = []
     risk_auxiliary_by_run: dict[str, tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]] = {}
-    total = sum(len(_run_strategy_entries(run)) for run in config.runs)
+    total = len(config.runs)
 
     effective_cache = config.global_config.data_cache.model_copy(deep=True)
     options = execution_options or RunExecutionOptions()
@@ -212,43 +201,41 @@ def run_backtests_with_hooks(
 
     idx = 0
     for run in config.runs:
-        strategy_entries = _run_strategy_entries(run)
-        for strategy_entry in strategy_entries:
-            idx += 1
-            if on_run_start:
-                on_run_start(run, idx, total)
-            try:
-                result, cache_status, risk_auxiliary = _run_single(
-                    run=run,
-                    strategy_entry=strategy_entry,
-                    config=config,
-                    cache_config=effective_cache,
-                    cache_refresh=options.cache_refresh,
-                    risk_dataset_config=options.risk_dataset_config,
-                    run_idx=idx,
-                    total_runs=total,
-                    on_run_bar_progress=options.on_run_bar_progress,
-                )
-            except Exception as exc:  # noqa: BLE001
-                result = RunResult(
-                    run_id=_result_run_id(run, strategy_entry.name),
-                    name=run.name,
-                    status="failed",
-                    strategy=strategy_entry.name,
-                    data_source=run.data.type,
-                    error=RunError(type=exc.__class__.__name__, message=str(exc)),
-                )
-                risk_auxiliary = RunRiskAuxiliaryRows()
-                if on_run_error:
-                    on_run_error(result, idx, total)
-            else:
-                if risk_auxiliary.labels or risk_auxiliary.features:
-                    risk_auxiliary_by_run[result.run_id] = (risk_auxiliary.labels, risk_auxiliary.features)
-                if on_run_cache_status and cache_status and run.data.type in {"yahoo", "alpaca"}:
-                    on_run_cache_status(run, cache_status)
-                if on_run_complete:
-                    on_run_complete(result, idx, total)
-            results.append(result)
+        idx += 1
+        if on_run_start:
+            on_run_start(run, idx, total)
+        try:
+            result, cache_status, risk_auxiliary = _run_single(
+                run=run,
+                config=config,
+                cache_config=effective_cache,
+                cache_refresh=options.cache_refresh,
+                risk_dataset_config=options.risk_dataset_config,
+                run_idx=idx,
+                total_runs=total,
+                on_run_bar_progress=options.on_run_bar_progress,
+            )
+        except Exception as exc:  # noqa: BLE001
+            trigger_name = run.trigger.name if run.trigger is not None else "unknown_trigger"
+            result = RunResult(
+                run_id=_result_run_id(run),
+                name=run.name,
+                status="failed",
+                strategy=trigger_name,
+                data_source=run.data.type,
+                error=RunError(type=exc.__class__.__name__, message=str(exc)),
+            )
+            risk_auxiliary = RunRiskAuxiliaryRows()
+            if on_run_error:
+                on_run_error(result, idx, total)
+        else:
+            if risk_auxiliary.labels or risk_auxiliary.features:
+                risk_auxiliary_by_run[result.run_id] = (risk_auxiliary.labels, risk_auxiliary.features)
+            if on_run_cache_status and cache_status and run.data.type in {"yahoo", "alpaca"}:
+                on_run_cache_status(run, cache_status)
+            if on_run_complete:
+                on_run_complete(result, idx, total)
+        results.append(result)
 
     successful = sum(1 for r in results if r.status == "success")
     failed = len(results) - successful
@@ -284,7 +271,6 @@ def run_backtests_with_hooks(
 
 def _run_single(
     run: BacktestRunConfig,
-    strategy_entry: StrategyConfig,
     config: BacktestConfig,
     cache_config: DataCacheConfig,
     cache_refresh: bool,
@@ -298,8 +284,9 @@ def _run_single(
     bar_progress_total = len(data_feed_result.feed)
 
     broker = run.broker or config.global_config.default_broker
-    strategy_def = get_strategy_definition(strategy_entry.name)
-    benchmark_symbol = _benchmark_symbol_for_strategy(strategy_entry.name, strategy_entry.params)
+    if run.trigger is None or run.exit_rules is None:
+        raise ValueError("Run is missing trigger/exit rules selection")
+    benchmark_symbol = _benchmark_symbol_for_strategy(run.trigger.name, run.trigger.params)
     benchmark_feed = None
     if benchmark_symbol:
         benchmark_feed = _load_benchmark_feed(run, benchmark_symbol, cache_config, cache_refresh)
@@ -311,9 +298,9 @@ def _run_single(
             on_run_bar_progress(run_idx, total_runs, bar_idx, bar_progress_total)
 
     strategy_cls = build_portable_strategy_adapter(
-        strategy_name=strategy_entry.name,
-        strategy_factory=strategy_def.factory,
-        strategy_params=strategy_entry.params,
+        strategy_name=composed_strategy_id(trigger=run.trigger, exit_rules=run.exit_rules),
+        strategy_factory=lambda _: build_strategy_core(trigger=run.trigger, exit_rules=run.exit_rules),
+        strategy_params={},
         symbol=_strategy_symbol(run),
         benchmark_feed=benchmark_feed,
         include_candidate_log=run.analyzers.include_candidate_log,
@@ -420,10 +407,10 @@ def _run_single(
     )
 
     result = RunResult(
-        run_id=_result_run_id(run, strategy_entry.name),
+        run_id=_result_run_id(run),
         name=run.name,
         status="success",
-        strategy=strategy_entry.name,
+        strategy=composed_strategy_id(trigger=run.trigger, exit_rules=run.exit_rules),
         symbol=_strategy_symbol(run),
         data_source=run.data.type,
         summary=summary,

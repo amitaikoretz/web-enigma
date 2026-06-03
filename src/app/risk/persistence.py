@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import RiskModelGroup, RiskModelSource, RiskModelTarget
@@ -24,6 +24,8 @@ class RiskModelListItem:
     argo_workflow_name: str | None
     backtest_ids: list[str]
     targets: list[str]
+    targets_total: int
+    targets_done: int
     summary_metrics: dict[str, Any] | None
     artifact_dir: str
 
@@ -175,6 +177,22 @@ class SqlAlchemyRiskModelRepository:
                 .filter(RiskModelTarget.group_id.in_(group_ids) if group_ids else False)  # type: ignore[arg-type]
                 .all()
             )
+            target_counts: dict[str, tuple[int, int]] = {}
+            if group_ids:
+                terminal = {"succeeded", "failed", "canceled"}
+                rows = session.execute(
+                    select(
+                        RiskModelTarget.group_id,
+                        func.count(RiskModelTarget.id).label("targets_total"),
+                        func.sum(
+                            case((RiskModelTarget.status.in_(terminal), 1), else_=0)
+                        ).label("targets_done"),
+                    )
+                    .where(RiskModelTarget.group_id.in_(group_ids))
+                    .group_by(RiskModelTarget.group_id)
+                ).all()
+                for group_id, total, done in rows:
+                    target_counts[str(group_id)] = (int(total or 0), int(done or 0))
 
             backtest_map: dict[str, list[str]] = {}
             for src in sources:
@@ -185,6 +203,7 @@ class SqlAlchemyRiskModelRepository:
 
             out: list[RiskModelListItem] = []
             for g in groups:
+                targets_total, targets_done = target_counts.get(g.id, (0, 0))
                 out.append(
                     RiskModelListItem(
                         group_id=g.id,
@@ -195,6 +214,8 @@ class SqlAlchemyRiskModelRepository:
                         argo_workflow_name=g.argo_workflow_name,
                         backtest_ids=sorted(backtest_map.get(g.id, [])),
                         targets=sorted(set(target_map.get(g.id, []))),
+                        targets_total=targets_total,
+                        targets_done=targets_done,
                         summary_metrics=g.summary_metrics_json,
                         artifact_dir=g.artifact_dir,
                     )
@@ -247,3 +268,33 @@ class SqlAlchemyRiskModelRepository:
     def count(self) -> int:
         with self._session_factory() as session:
             return int(session.scalar(select(func.count()).select_from(RiskModelGroup)) or 0)
+
+    def delete_group(self, group_id: str) -> RiskModelListItem | None:
+        with self._session_factory() as session:
+            g = session.get(RiskModelGroup, group_id)
+            if g is None:
+                return None
+            # Snapshot metadata for caller (e.g. artifact_dir) before delete.
+            list_item = RiskModelListItem(
+                group_id=g.id,
+                created_at=g.created_at,
+                updated_at=g.updated_at,
+                status=g.status,
+                argo_namespace=g.argo_namespace,
+                argo_workflow_name=g.argo_workflow_name,
+                backtest_ids=[],
+                targets=[],
+                targets_total=0,
+                targets_done=0,
+                summary_metrics=g.summary_metrics_json,
+                artifact_dir=g.artifact_dir,
+            )
+            session.query(RiskModelTarget).filter(RiskModelTarget.group_id == group_id).delete(
+                synchronize_session=False
+            )
+            session.query(RiskModelSource).filter(RiskModelSource.group_id == group_id).delete(
+                synchronize_session=False
+            )
+            session.query(RiskModelGroup).filter(RiskModelGroup.id == group_id).delete(synchronize_session=False)
+            session.commit()
+            return list_item

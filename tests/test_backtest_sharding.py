@@ -21,43 +21,26 @@ def _sample_config_raw() -> dict:
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "yahoo", "symbol": "AAPL", "interval": "1d"},
-                "strategy": "sma_cross",
-                "strategy_params": {"fast": 3, "slow": 8, "stake": 1},
+                "trigger": {"name": "sma_cross", "params": {"fast": 3, "slow": 8, "stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 24}}]},
             },
             {
                 "run_id": "msft_sma",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "yahoo", "symbol": "MSFT", "interval": "1d"},
-                "strategy": "sma_cross",
-                "strategy_params": {"fast": 3, "slow": 8, "stake": 1},
+                "trigger": {"name": "sma_cross", "params": {"fast": 3, "slow": 8, "stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 24}}]},
             },
             {
                 "run_id": "aapl_rsi",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "yahoo", "symbol": "AAPL", "interval": "1d"},
-                "strategy": "rsi_reversion",
-                "strategy_params": {"period": 7, "oversold": 30, "overbought": 60, "stake": 1},
+                "trigger": {"name": "rsi_reversion", "params": {"period": 7, "oversold": 30, "stake": 1}},
+                "exit_rules": {"rules": [{"name": "rsi_overbought", "params": {"period": 7, "overbought": 60}}]},
             },
         ],
-    }
-
-
-def _multi_strategy_config_raw() -> dict:
-    return {
-        "runs": [
-            {
-                "run_id": "csv_pack",
-                "start_date": "2024-01-01",
-                "end_date": "2024-01-19",
-                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategies": [
-                    {"name": "sma_cross", "params": {"fast": 3, "slow": 8, "stake": 1}},
-                    {"name": "rsi_reversion", "params": {"period": 7, "oversold": 30, "overbought": 60, "stake": 1}},
-                ],
-            }
-        ]
     }
 
 
@@ -85,7 +68,12 @@ def _fake_report(run_id: str, status: str = "success") -> BacktestReport:
 
 def test_resolve_split_by_yaml_override():
     raw = {"workflow": {"split_by": "symbol"}, "runs": []}
-    assert resolve_split_by(raw, platform_default="symbol_strategy") == "symbol"
+    assert resolve_split_by(raw, platform_default="symbol_trigger") == "symbol"
+
+
+def test_resolve_split_by_accepts_strategy_aliases():
+    raw = {"workflow": {"split_by": "symbol_strategy"}, "runs": []}
+    assert resolve_split_by(raw, platform_default="run") == "symbol_trigger"
 
 
 def test_resolve_split_by_platform_default():
@@ -109,7 +97,15 @@ def test_plan_shards_by_symbol(tmp_path: Path):
     assert counts == [1, 2]
 
 
-def test_plan_shards_by_strategy(tmp_path: Path):
+def test_plan_shards_by_trigger(tmp_path: Path):
+    raw = _sample_config_raw()
+    plan = plan_shards(raw, split_by="trigger", work_dir=tmp_path)
+    assert len(plan.shards) == 2
+    counts = sorted(len(yaml.safe_load(Path(s.config_path).read_text())["runs"]) for s in plan.shards)
+    assert counts == [1, 2]
+
+
+def test_plan_shards_by_strategy_alias(tmp_path: Path):
     raw = _sample_config_raw()
     plan = plan_shards(raw, split_by="strategy", work_dir=tmp_path)
     assert len(plan.shards) == 2
@@ -117,16 +113,16 @@ def test_plan_shards_by_strategy(tmp_path: Path):
     assert counts == [1, 2]
 
 
-def test_plan_shards_symbol_strategy(tmp_path: Path):
+def test_plan_shards_symbol_trigger(tmp_path: Path):
     raw = _sample_config_raw()
-    plan = plan_shards(raw, split_by="symbol_strategy", work_dir=tmp_path)
+    plan = plan_shards(raw, split_by="symbol_trigger", work_dir=tmp_path)
     assert len(plan.shards) == 3
 
 
-def test_plan_shards_expands_multi_strategy_run(tmp_path: Path):
-    raw = _multi_strategy_config_raw()
+def test_plan_shards_symbol_strategy_alias(tmp_path: Path):
+    raw = _sample_config_raw()
     plan = plan_shards(raw, split_by="symbol_strategy", work_dir=tmp_path)
-    assert len(plan.shards) == 2
+    assert len(plan.shards) == 3
 
 
 def test_merge_shard_reports(tmp_path: Path):

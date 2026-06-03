@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import random
+import socket
+import time
 from datetime import UTC
 from datetime import date
 from datetime import timedelta
@@ -16,6 +20,30 @@ import pandas as pd
 
 from app.config.models import AlpacaDataSource, CsvDataSource, DataCacheConfig, YahooDataSource
 from app.data.cache import CacheKey, ParquetDataCache
+
+logger = logging.getLogger(__name__)
+
+
+def _is_temporary_dns_failure(exc: URLError) -> bool:
+    """
+    Best-effort detection for transient DNS failures inside containers/K8s.
+    Common forms:
+      - socket.gaierror: [Errno -3] Temporary failure in name resolution
+      - OSError-like objects with errno -3
+    """
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, socket.gaierror):
+        return reason.errno == -3
+    errno = getattr(reason, "errno", None)
+    return errno == -3
+
+
+def _sleep_backoff(attempt_index: int, *, base_s: float = 1.0, cap_s: float = 30.0) -> float:
+    # Exponential backoff with jitter. attempt_index is 0-based.
+    delay = min(cap_s, base_s * (2**attempt_index))
+    jitter = random.uniform(0.0, min(1.0, delay * 0.2))
+    time.sleep(delay + jitter)
+    return delay + jitter
 
 
 def _normalize_ohlcv_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -227,14 +255,31 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
                 "accept": "application/json",
             },
         )
-        try:
-            with urlopen(req, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"Alpaca request failed ({exc.code}): {body or exc.reason}") from exc
-        except URLError as exc:
-            raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
+        last_exc: URLError | None = None
+        for attempt in range(6):
+            try:
+                with urlopen(req, timeout=30) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                last_exc = None
+                break
+            except HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="ignore")
+                raise RuntimeError(f"Alpaca request failed ({exc.code}): {body or exc.reason}") from exc
+            except URLError as exc:
+                last_exc = exc
+                if not _is_temporary_dns_failure(exc) or attempt == 5:
+                    raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
+                delay_s = _sleep_backoff(attempt)
+                logger.warning(
+                    "Alpaca DNS lookup failed (temporary). Retrying in %.2fs (attempt %d/%d). Error=%r",
+                    delay_s,
+                    attempt + 1,
+                    6,
+                    exc.reason,
+                )
+        if last_exc is not None:
+            # Defensive: should only happen if the loop exits unexpectedly.
+            raise RuntimeError(f"Failed to reach Alpaca data API: {last_exc.reason}") from last_exc
 
         bars.extend(payload.get("bars") or [])
         page_token = payload.get("next_page_token")

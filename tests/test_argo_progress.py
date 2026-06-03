@@ -103,16 +103,16 @@ def test_cmd_run_writes_progress_file(tmp_path: Path, monkeypatch: pytest.Monkey
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             },
             {
                 "run_id": "run_b",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             },
         ]
     }
@@ -157,8 +157,8 @@ def test_cmd_run_does_not_write_progress_without_config(tmp_path: Path) -> None:
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }

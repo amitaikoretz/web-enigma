@@ -12,11 +12,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import typer
-from sklearn.calibration import calibration_curve
-from sklearn.isotonic import IsotonicRegression
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
-from sklearn.model_selection import train_test_split
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 
@@ -68,6 +63,15 @@ def main(
     ),
 ) -> None:
     _write_text(terminal_command_out, _terminal_command(sys.argv))
+    # Pre-create output parameter files so Argo can always collect them, even on failure.
+    _write_text(model_path_out, "")
+    _write_text(metrics_path_out, "")
+
+    from sklearn.calibration import calibration_curve
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
+    from sklearn.model_selection import train_test_split
 
     train_cfg = json.loads(train_config_json or "{}")
     random_seed = int(train_cfg.get("random_seed", 7))
@@ -151,4 +155,3 @@ def main(
 
 if __name__ == "__main__":
     run_typer_app_with_argo_error_outputs(app)
-

@@ -10,7 +10,7 @@ spec:
   serviceAccountName: backtest-workflow
   # Argo validates this as an integer at admission time; template expressions are treated as strings.
   # To override parallelism per-run, use `argo submit --parallelism N ...` (or set it in the Workflow spec).
-  parallelism: 8
+  parallelism: "{{workflow.parameters.shard-parallelism}}"
   ttlStrategy:
     secondsAfterCompletion: 604800
   arguments:
@@ -25,6 +25,8 @@ spec:
         value: ""
       - name: config-b64
         value: ""
+      - name: shard-parallelism
+        value: "8"
   volumeClaimTemplates:
     - metadata:
         name: workspace
@@ -74,6 +76,7 @@ spec:
                   value: "{{workflow.parameters.backtest-id}}"
         - - name: run-shards
             template: run-shard
+            parallelism: "{{workflow.parameters.shard-parallelism}}"
             arguments:
               parameters:
                 - name: shard-id
@@ -220,6 +223,18 @@ spec:
           - name: shard-id
           - name: shard-config-path
           - name: shard-output-path
+      retryStrategy:
+        limit: 3
+        retryPolicy: Always
+        expression: "{{=lastRetry.exitCode == 137}}"
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+              limits:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
@@ -240,6 +255,11 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
+        resources:
+          requests:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+          limits:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -258,15 +278,19 @@ spec:
           - name: error-exception
             valueFrom:
               path: /tmp/error-exception.txt
+              default: ""
           - name: error-code-location
             valueFrom:
               path: /tmp/error-code-location.txt
+              default: ""
           - name: error-call-stack
             valueFrom:
               path: /tmp/error-call-stack.txt
+              default: ""
           - name: error-traceback
             valueFrom:
               path: /tmp/error-traceback.txt
+              default: ""
 
     - name: merge-reports
       inputs:

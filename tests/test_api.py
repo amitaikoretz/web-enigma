@@ -128,8 +128,8 @@ def _csv_backtest_payload() -> dict[str, object]:
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -176,10 +176,10 @@ def test_get_server_info_returns_backtest_storage_paths(tmp_path):
     assert response.status_code == 200
     body = response.json()
     assert body["backtest_results_dir"] == str(expected_results_dir)
-    assert body["backtest_cache_dir"] == str(tmp_path.resolve())
+    assert body["backtest_cache_dir"] == str((tmp_path / "cache").resolve())
     assert body["platform_settings_path"] == str(expected_results_dir / "settings" / "platform-settings.json")
     assert body["argo_workflows_enabled"] is False
-    assert body["backtest_execution_backend"] == "argo"
+    assert body["backtest_execution_backend"] == "local"
 
 
 def test_get_settings_returns_defaults_when_file_missing(tmp_path):
@@ -362,8 +362,8 @@ def test_run_backtest_failure_report_still_returns_200(tmp_path):
             "start_date": "2024-01-01",
             "end_date": "2024-01-19",
             "data": {"type": "csv", "path": "examples/data/does-not-exist.csv"},
-            "strategy": "buy_and_hold",
-            "strategy_params": {"stake": 1},
+            "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+            "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
         }
     )
 
@@ -401,23 +401,25 @@ def test_get_strategies_returns_all_built_in_strategies_and_parameter_metadata(t
     response = client.get("/strategies")
 
     assert response.status_code == 200
-    body = response.json()
-    assert [item["name"] for item in body] == [
+    triggers = response.json()
+    assert [item["name"] for item in triggers] == [
         "sma_cross",
         "rsi_reversion",
         "buy_and_hold",
         "breakout_channel",
-        "buy_oco_atr_tp_sl",
-        "buy_oco_atr_tp_trailing",
+        "buy_oco_atr",
         "volume_rally",
     ]
 
-    sma_cross = next(item for item in body if item["name"] == "sma_cross")
-    assert sma_cross["description"] == "Intraday SMA momentum with fixed stop-loss and take-profit."
+    sma_cross = next(item for item in triggers if item["name"] == "sma_cross")
     assert sma_cross["parameters"]["fast"] == {
         "type": "integer",
         "default": 8,
         "required": False,
+        "title": "Fast",
+        "description": None,
+        "enum": None,
+        "multipleOf": None,
         "minimum": 2,
         "maximum": None,
         "exclusiveMinimum": None,
@@ -426,8 +428,17 @@ def test_get_strategies_returns_all_built_in_strategies_and_parameter_metadata(t
         "maxLength": None,
         "pattern": None,
     }
-    assert sma_cross["parameters"]["stop_loss_pct"]["exclusiveMinimum"] == 0
-    assert sma_cross["parameters"]["stop_loss_pct"]["exclusiveMaximum"] == 0.5
+
+    exit_response = client.get("/strategies/exit-rules")
+    assert exit_response.status_code == 200
+    exit_rules = exit_response.json()
+    assert any(item["name"] == "fixed_pct_oco" for item in exit_rules)
+    fixed_pct = next(item for item in exit_rules if item["name"] == "fixed_pct_oco")
+    assert "stop_loss_pct" not in fixed_pct["parameters"]
+    assert "take_profit_pct" not in fixed_pct["parameters"]
+    assert fixed_pct["parameters"]["atr_period"]["type"] == "integer"
+    assert fixed_pct["parameters"]["sl_atr_mult"]["type"] == "number"
+    assert fixed_pct["parameters"]["tp_atr_mult"]["type"] == "number"
 
 
 def test_get_strategies_does_not_invent_cross_field_constraints(tmp_path):
@@ -747,8 +758,8 @@ def _single_day_request(**overrides) -> dict[str, object]:
         "symbol": "AAPL",
         "date": "2024-01-15",
         "resolution": "1m",
-        "strategy": "buy_and_hold",
-        "strategy_params": {"stake": 1},
+        "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+        "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
     }
     payload.update(overrides)
     return payload
@@ -791,11 +802,11 @@ def test_run_single_day_backtest_unknown_strategy_returns_422(tmp_path, monkeypa
 
     response = client.post(
         "/backtests/single-day",
-        json=_single_day_request(strategy="missing_strategy"),
+        json=_single_day_request(trigger={"name": "missing_trigger", "params": {}}),
     )
 
     assert response.status_code == 422
-    assert "Unknown strategy" in response.text
+    assert "Unknown trigger" in response.text
 
 
 def test_run_single_day_backtest_invalid_strategy_params_returns_422(tmp_path, monkeypatch):
@@ -809,11 +820,11 @@ def test_run_single_day_backtest_invalid_strategy_params_returns_422(tmp_path, m
 
     response = client.post(
         "/backtests/single-day",
-        json=_single_day_request(strategy="sma_cross", strategy_params={"fast": 20, "slow": 10}),
+        json=_single_day_request(trigger={"name": "sma_cross", "params": {"fast": 20, "slow": 10, "stake": 1}}),
     )
 
     assert response.status_code == 422
-    assert "Invalid params for strategy 'sma_cross'" in response.text
+    assert "Invalid params for trigger 'sma_cross'" in response.text
 
 
 def test_run_single_day_backtest_invalid_resolution_returns_422(tmp_path):
@@ -1195,8 +1206,8 @@ def test_launch_argo_backtest_with_inline_config(tmp_path):
                     "start_date": "2024-01-01",
                     "end_date": "2024-01-19",
                     "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                    "strategy": "buy_and_hold",
-                    "strategy_params": {"stake": 1},
+                    "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                    "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                 }
             ]
         }
@@ -1241,8 +1252,8 @@ def test_launch_argo_backtest_with_config_path(tmp_path):
                         "start_date": "2024-01-01",
                         "end_date": "2024-01-19",
                         "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                        "strategy": "buy_and_hold",
-                        "strategy_params": {"stake": 1},
+                        "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                        "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                     }
                 ]
             }
@@ -1291,8 +1302,8 @@ def test_launch_argo_backtest_uses_workflow_mount_when_api_results_dir_differs(t
                     "start_date": "2024-01-01",
                     "end_date": "2024-01-19",
                     "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                    "strategy": "buy_and_hold",
-                    "strategy_params": {"stake": 1},
+                    "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                    "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                 }
             ]
         }
@@ -1322,8 +1333,8 @@ def test_launch_argo_backtest_rejects_unshared_results_when_required(tmp_path, m
                     "start_date": "2024-01-01",
                     "end_date": "2024-01-19",
                     "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                    "strategy": "buy_and_hold",
-                    "strategy_params": {"stake": 1},
+                    "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                    "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                 }
             ]
         }
@@ -1458,7 +1469,7 @@ def test_relaunch_argo_backtest_for_existing_config(tmp_path):
     fake = _FakeArgoSubmitter()
     client.app.state.deps.backtest_jobs.argo_submitter = fake
     backtest_id = "abc123"
-    config_path = tmp_path / "api-results" / f"{backtest_id}.yaml"
+    config_path = tmp_path / "api-results" / backtest_id / f"{backtest_id}.yaml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         yaml.safe_dump(
@@ -1469,8 +1480,8 @@ def test_relaunch_argo_backtest_for_existing_config(tmp_path):
                         "start_date": "2024-01-01",
                         "end_date": "2024-01-19",
                         "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                        "strategy": "buy_and_hold",
-                        "strategy_params": {"stake": 1},
+                        "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                        "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                     }
                 ]
             }
@@ -1484,4 +1495,3 @@ def test_relaunch_argo_backtest_for_existing_config(tmp_path):
     assert response.json()["backtest_id"] == backtest_id
     assert fake.last_submit is not None
     assert fake.last_submit["backtest_id"] == backtest_id
-

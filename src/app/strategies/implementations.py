@@ -1076,7 +1076,7 @@ def build_portable_strategy_adapter(
 ) -> type[PortableBacktestingStrategy]:
     attrs: dict[str, Any] = {
         "strategy_name": strategy_name,
-        "strategy_factory": strategy_factory,
+        "strategy_factory": staticmethod(strategy_factory),
         "strategy_params": dict(strategy_params),
         "strategy_symbol": symbol,
         "benchmark_feed": benchmark_feed,

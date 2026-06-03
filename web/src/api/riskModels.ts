@@ -38,3 +38,12 @@ export async function fetchRiskModelDetail(groupId: string): Promise<RiskModelDe
   return response.json() as Promise<RiskModelDetail>
 }
 
+export async function deleteRiskModel(groupId: string): Promise<void> {
+  const response = await fetch(`/api/risk-models/${groupId}`, { method: 'DELETE' })
+  if (response.status === 204) {
+    return
+  }
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to delete risk model'))
+  }
+}

@@ -7,6 +7,5 @@ runs:
     data:
       type: csv
       path: "examples/data/sample_daily.csv"
-    strategy: "buy_and_hold"
-    strategy_params:
-      stake: 10
+    trigger_path: "examples/triggers/buy_and_hold.yaml"
+    exit_rules_path: "examples/exit_rules/basic_sl_tp_time.yaml"

@@ -20,6 +20,7 @@ from app.backtests.artifacts import (
     default_artifact_paths,
     hydrate_report_from_artifacts,
     inventory_backtest_artifacts,
+    resolve_results_root,
     summarize_backtest_artifacts,
     write_report_artifacts,
 )
@@ -77,8 +78,42 @@ class ArgoResultsNotSharedError(RuntimeError):
 logger = logging.getLogger(__name__)
 
 
+def _exit_rules_id_from_raw(raw: object) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        blob = json.dumps(raw, sort_keys=True, default=str).encode("utf-8")
+    except TypeError:
+        return None
+    import hashlib
+
+    return hashlib.sha1(blob).hexdigest()[:10]  # noqa: S324
+
+
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _merge_artifact_paths(
+    preferred: BacktestArtifactPaths | None,
+    fallback: BacktestArtifactPaths,
+) -> BacktestArtifactPaths:
+    if preferred is None:
+        return fallback
+    return BacktestArtifactPaths(
+        config_path=preferred.config_path or fallback.config_path,
+        report_json_path=preferred.report_json_path or fallback.report_json_path,
+        report_parquet_path=preferred.report_parquet_path or fallback.report_parquet_path,
+        candidates_json_path=preferred.candidates_json_path or fallback.candidates_json_path,
+        candidates_parquet_path=preferred.candidates_parquet_path or fallback.candidates_parquet_path,
+        equity_parquet_path=preferred.equity_parquet_path or fallback.equity_parquet_path,
+        orders_parquet_path=preferred.orders_parquet_path or fallback.orders_parquet_path,
+        trades_parquet_path=preferred.trades_parquet_path or fallback.trades_parquet_path,
+        rejections_parquet_path=preferred.rejections_parquet_path or fallback.rejections_parquet_path,
+        labels_parquet_path=preferred.labels_parquet_path or fallback.labels_parquet_path,
+        features_parquet_path=preferred.features_parquet_path or fallback.features_parquet_path,
+        manifest_path=preferred.manifest_path or fallback.manifest_path,
+    )
 
 
 def _mark_running(item: BacktestListItem) -> BacktestListItem:
@@ -112,7 +147,8 @@ def _build_selection_summary(payload: BacktestCreateRequest) -> BacktestSelectio
         resolution=payload.resolution,
         feed=payload.feed,
         symbols=payload.symbols,
-        strategies=[strategy.name for strategy in payload.strategies],
+        triggers=[trigger.name for trigger in payload.triggers],
+        exit_rules=[rules.stable_id() for rules in payload.exit_rules],
     )
 
 
@@ -120,7 +156,8 @@ def _selection_from_report(report: BacktestReport) -> BacktestSelectionSummary:
     input_config = report.input_config
     runs = input_config.get("runs", []) if isinstance(input_config, dict) else []
     symbols: list[str] = []
-    strategies: list[str] = []
+    triggers: list[str] = []
+    exit_rules: list[str] = []
     start_date = None
     end_date = None
     resolution = "1d"
@@ -139,9 +176,15 @@ def _selection_from_report(report: BacktestReport) -> BacktestSelectionSummary:
                 symbols.append(symbol)
             resolution = data.get("interval", resolution)
             feed = data.get("feed", feed)
-        strategy = run.get("strategy")
-        if isinstance(strategy, str) and strategy not in strategies:
-            strategies.append(strategy)
+        trigger = run.get("trigger")
+        if isinstance(trigger, dict):
+            name = trigger.get("name")
+            if isinstance(name, str) and name not in triggers:
+                triggers.append(name)
+        exits = run.get("exit_rules")
+        rules_id = _exit_rules_id_from_raw(exits)
+        if rules_id and rules_id not in exit_rules:
+            exit_rules.append(rules_id)
 
     return BacktestSelectionSummary(
         start_date=start_date,
@@ -149,7 +192,8 @@ def _selection_from_report(report: BacktestReport) -> BacktestSelectionSummary:
         resolution=resolution,
         feed=feed,
         symbols=symbols,
-        strategies=strategies,
+        triggers=triggers,
+        exit_rules=exit_rules,
     )
 
 
@@ -158,7 +202,8 @@ def _selection_from_config_raw(config_raw: dict[str, Any]) -> BacktestSelectionS
     if not isinstance(runs, list) or not runs:
         return None
     symbols: list[str] = []
-    strategies: list[str] = []
+    triggers: list[str] = []
+    exit_rules: list[str] = []
     start_date = None
     end_date = None
     resolution = "1d"
@@ -177,16 +222,15 @@ def _selection_from_config_raw(config_raw: dict[str, Any]) -> BacktestSelectionS
                 symbols.append(symbol)
             resolution = data.get("interval", resolution)
             feed = data.get("feed", feed)
-        strategy = run.get("strategy")
-        if isinstance(strategy, str) and strategy not in strategies:
-            strategies.append(strategy)
-        multi = run.get("strategies")
-        if isinstance(multi, list):
-            for entry in multi:
-                if isinstance(entry, dict):
-                    name = entry.get("name")
-                    if isinstance(name, str) and name not in strategies:
-                        strategies.append(name)
+        trigger = run.get("trigger")
+        if isinstance(trigger, dict):
+            name = trigger.get("name")
+            if isinstance(name, str) and name not in triggers:
+                triggers.append(name)
+        exits = run.get("exit_rules")
+        rules_id = _exit_rules_id_from_raw(exits)
+        if rules_id and rules_id not in exit_rules:
+            exit_rules.append(rules_id)
 
     if start_date is None or end_date is None:
         return None
@@ -196,7 +240,8 @@ def _selection_from_config_raw(config_raw: dict[str, Any]) -> BacktestSelectionS
         resolution=resolution,
         feed=feed,  # type: ignore[arg-type]
         symbols=symbols or ["UNKNOWN"],
-        strategies=strategies or ["unknown"],
+        triggers=triggers or ["unknown"],
+        exit_rules=exit_rules or ["unknown"],
     )
 
 
@@ -220,29 +265,31 @@ def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) 
     execution = payload.execution
     runs: list[dict[str, Any]] = []
 
-    for strategy in payload.strategies:
-        for symbol in payload.symbols:
-            run_index = len(runs) + 1
-            run_id = f"{backtest_id}:{run_index:03d}:{symbol}:{strategy.name}"
-            run_payload: dict[str, Any] = {
-                "run_id": run_id,
-                "name": f"{symbol} {strategy.name}",
-                "start_date": payload.start_date.isoformat(),
-                "end_date": payload.end_date.isoformat(),
-                "data": {
-                    "type": "alpaca",
-                    "symbol": symbol,
-                    "interval": payload.resolution,
-                    "feed": payload.feed,
-                },
-                "strategy": strategy.name,
-                "strategy_params": strategy.params,
-                "broker": broker.model_dump(mode="json"),
-                "analyzers": analyzers.model_dump(mode="json"),
-            }
-            if execution is not None:
-                run_payload["execution"] = execution.model_dump(mode="json")
-            runs.append(run_payload)
+    for trigger in payload.triggers:
+        for exit_rules in payload.exit_rules:
+            exits_id = exit_rules.stable_id()
+            for symbol in payload.symbols:
+                run_index = len(runs) + 1
+                run_id = f"{backtest_id}:{run_index:03d}:{symbol}:{trigger.name}:exits:{exits_id}"
+                run_payload: dict[str, Any] = {
+                    "run_id": run_id,
+                    "name": f"{symbol} {trigger.name} exits:{exits_id}",
+                    "start_date": payload.start_date.isoformat(),
+                    "end_date": payload.end_date.isoformat(),
+                    "data": {
+                        "type": "alpaca",
+                        "symbol": symbol,
+                        "interval": payload.resolution,
+                        "feed": payload.feed,
+                    },
+                    "trigger": trigger.model_dump(mode="json"),
+                    "exit_rules": exit_rules.model_dump(mode="json"),
+                    "broker": broker.model_dump(mode="json"),
+                    "analyzers": analyzers.model_dump(mode="json"),
+                }
+                if execution is not None:
+                    run_payload["execution"] = execution.model_dump(mode="json")
+                runs.append(run_payload)
 
     return {"runs": runs}
 
@@ -260,11 +307,13 @@ def _run_symbol_from_config(run: dict[str, Any]) -> str:
     return "UNKNOWN"
 
 
-def _run_strategy_from_config(run: dict[str, Any]) -> str:
-    strategy = run.get("strategy")
-    if isinstance(strategy, str) and strategy:
-        return strategy
-    return "unknown"
+def _run_trigger_from_config(run: dict[str, Any]) -> str:
+    trigger = run.get("trigger")
+    if isinstance(trigger, dict):
+        name = trigger.get("name")
+        if isinstance(name, str) and name:
+            return name
+    return "unknown_trigger"
 
 
 def _rewrite_run_ids(config_raw: dict[str, Any], new_backtest_id: str) -> dict[str, Any]:
@@ -276,8 +325,8 @@ def _rewrite_run_ids(config_raw: dict[str, Any], new_backtest_id: str) -> dict[s
         if not isinstance(run, dict):
             continue
         symbol = _run_symbol_from_config(run)
-        strategy = _run_strategy_from_config(run)
-        run["run_id"] = f"{new_backtest_id}:{run_index:03d}:{symbol}:{strategy}"
+        trigger = _run_trigger_from_config(run)
+        run["run_id"] = f"{new_backtest_id}:{run_index:03d}:{symbol}:{trigger}"
     return cloned
 
 
@@ -978,13 +1027,20 @@ class BacktestJobService:
             return None
         paths = self.job_repository.get_paths(backtest_id)
         report_path = self.resolve_report_file_path(backtest_id)
+        hydrate_paths = paths
+        if report_path is not None and (paths is None or not paths.manifest_path):
+            fallback_paths = default_artifact_paths(resolve_results_root(report_path, backtest_id), backtest_id)
+            hydrate_paths = _merge_artifact_paths(paths, fallback_paths)
         report = (
             self.repository.load_report(backtest_id, report_json_path=str(report_path))
             if report_path is not None
             else None
         )
-        if report is not None and paths is not None:
-            report = hydrate_report_from_artifacts(report, paths=paths)
+        if report is not None:
+            report = hydrate_report_from_artifacts(
+                report,
+                paths=hydrate_paths or default_artifact_paths(self.repository.output_dir, backtest_id),
+            )
         artifacts = inventory_backtest_artifacts(
             backtest_id,
             self.repository.output_dir,

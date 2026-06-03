@@ -1,0 +1,6 @@
+rules:
+  - name: atr_trailing_stop
+    params:
+      atr_period: 14
+      trail_atr_mult: 1.0
+

@@ -50,6 +50,8 @@ def list_risk_models(
             argo_workflow_name=i.argo_workflow_name,
             backtest_ids=i.backtest_ids,
             targets=i.targets,
+            targets_total=i.targets_total,
+            targets_done=i.targets_done,
             summary_metrics=i.summary_metrics,
             artifact_dir=i.artifact_dir,
         )
@@ -112,3 +114,15 @@ def get_risk_model_status(
         argo_phase=phase,
     )
 
+
+@router.delete("/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_risk_model(
+    group_id: str,
+    deps: ApiDependencies = Depends(get_deps),
+) -> None:
+    try:
+        ok = deps.risk_models.delete_group(group_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not ok:
+        raise HTTPException(status_code=404, detail=f"Risk model '{group_id}' not found")

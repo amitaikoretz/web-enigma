@@ -32,6 +32,15 @@ def test_build_argo_launch_payload_with_config_text() -> None:
     }
 
 
+def test_build_argo_launch_payload_allows_strategy_aliases() -> None:
+    payload = build_argo_launch_payload(
+        config_text="runs:\n  - run_id: demo\n",
+        split_by="strategy",
+        backtest_id="job2",
+    )
+    assert payload["split_by"] == "strategy"
+
+
 def test_build_argo_launch_payload_omits_empty_optional_fields() -> None:
     payload = build_argo_launch_payload(config_path="/data/config.yaml")
 

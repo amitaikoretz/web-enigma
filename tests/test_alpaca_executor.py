@@ -57,8 +57,8 @@ def _run(**overrides) -> AlpacaTradingRunConfig:
         "symbol": "AAPL",
         "interval": "1m",
         "feed": "iex",
-        "strategy": "buy_and_hold",
-        "strategy_params": {"stake": 1},
+        "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+        "exit_rules": {"rules": [{"name": "fixed_pct_oco", "params": {"atr_period": 2, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}]},
     }
     payload.update(overrides)
     return AlpacaTradingRunConfig.model_validate(payload)
@@ -112,7 +112,7 @@ def test_executor_recovers_open_position_and_submits_close(tmp_path: Path):
                 entry_time=entry_bar.iso_timestamp,
                 bars_held=0,
             ),
-            core_state={"has_entered": True},
+            core_state={"trigger": {"has_entered": True}, "exit_rules": {}},
         ),
     )
     client = FakeTradingClient(position=AlpacaPosition(symbol="AAPL", qty=1.0, avg_entry_price=100.0))
@@ -132,7 +132,7 @@ def test_executor_recovers_open_position_and_submits_close(tmp_path: Path):
 
 def test_executor_skips_resubmitting_when_open_order_already_exists(tmp_path: Path):
     bar = _bars(closes=[100, 101])[-1]
-    order_id = f"live-demo-buy_and_hold-buy-{bar.timestamp.strftime('%Y%m%dT%H%M%S')}"
+    order_id = f"live-demo-buy_and_hold|exits:{_run().exit_rules.stable_id()}-buy-{bar.timestamp.strftime('%Y%m%dT%H%M%S')}"
     client = FakeTradingClient(open_orders=[AlpacaOpenOrder(client_order_id=order_id, side="buy", status="accepted")])
     executor = build_alpaca_executor(
         run=_run(),

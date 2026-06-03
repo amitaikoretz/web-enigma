@@ -81,6 +81,13 @@ def main(
     work_dir = _resolve_work_dir(resolved_backtest_id)
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    # Pre-create Argo output parameter files so emissary can always collect them,
+    # even when shard planning fails early.
+    manifest_path = work_dir / "manifest.json"
+    _write_text(manifest_path_out, str(manifest_path))
+    _write_text(work_dir_out, str(work_dir))
+    _write_text(shards_param_out, "[]\n")
+
     resolved_config_b64 = config_b64.strip()
     if resolved_config_b64:
         try:
@@ -98,7 +105,6 @@ def main(
             raise typer.Exit(code=2)
         config_file = Path(resolved_config_path)
 
-    manifest_path = work_dir / "manifest.json"
     rc = _cmd_plan_shards(
         str(config_file),
         str(work_dir),
@@ -108,9 +114,6 @@ def main(
     )
     if rc != 0:
         raise typer.Exit(code=rc)
-
-    _write_text(manifest_path_out, str(manifest_path))
-    _write_text(work_dir_out, str(work_dir))
 
 
 if __name__ == "__main__":

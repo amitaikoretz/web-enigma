@@ -59,8 +59,9 @@ function formatSelectionCounts(selection: BacktestListItem['selection']): string
     return '—'
   }
   const symbolCount = selection.symbols?.length ?? 0
-  const strategyCount = selection.strategies?.length ?? 0
-  return `${symbolCount} symbols / ${strategyCount} strategies`
+  const triggerCount = selection.triggers?.length ?? 0
+  const exitRulesCount = selection.exit_rules?.length ?? 0
+  return `${symbolCount} symbols / ${triggerCount} triggers / ${exitRulesCount} exit sets`
 }
 
 export interface BacktestResultsColumnDefinition {

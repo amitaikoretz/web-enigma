@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 
 from app.db.models import BacktestJob
 from app.db.models import RiskModelGroup
+from app.db.models import RiskModelSource
+from app.db.models import RiskModelTarget
 from app.db.session import get_db_session
 
 from tests.conftest import build_backtest_client
@@ -212,3 +214,114 @@ def test_risk_models_create_writes_params_json_when_artifact_dir_writable(tmp_pa
     assert group is not None
     assert Path(group.artifact_dir, "params.json").exists()
     session.close()
+
+
+def test_risk_models_delete_removes_db_rows_and_artifacts(tmp_path, monkeypatch) -> None:
+    client = build_backtest_client(tmp_path)
+
+    # Avoid any Argo HTTP calls inside delete().
+    monkeypatch.setenv("BACKTEST_ARGO_ENABLED", "0")
+    monkeypatch.setenv("ARGO_SERVER_URL", "")
+
+    artifact_dir = tmp_path / "risk-artifacts" / "g1"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "dummy.txt").write_text("x", encoding="utf-8")
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    now = datetime.now(UTC)
+    session.add(
+        RiskModelGroup(
+            id="g1",
+            status="running",
+            argo_namespace="ns",
+            argo_workflow_name="wf",
+            params_json={},
+            artifact_dir=str(artifact_dir),
+            summary_metrics_json=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    session.add(RiskModelSource(group_id="g1", backtest_id="b1", source_report_path=None))
+    session.add(
+        RiskModelTarget(
+            group_id="g1",
+            target_key="t1",
+            task_type="classification",
+            status="running",
+            model_artifact_path=None,
+            metrics_json=None,
+            dataset_manifest_path=None,
+            feature_columns_json=None,
+        )
+    )
+    session.commit()
+    session.close()
+
+    response = client.delete("/risk-models/g1")
+    assert response.status_code == 204
+    assert not artifact_dir.exists()
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    assert session.get(RiskModelGroup, "g1") is None
+    assert session.query(RiskModelSource).filter(RiskModelSource.group_id == "g1").count() == 0
+    assert session.query(RiskModelTarget).filter(RiskModelTarget.group_id == "g1").count() == 0
+    session.close()
+
+
+def test_risk_models_list_includes_progress_counts(tmp_path) -> None:
+    client = build_backtest_client(tmp_path)
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    now = datetime.now(UTC)
+    session.add(
+        RiskModelGroup(
+            id="g1",
+            status="running",
+            argo_namespace=None,
+            argo_workflow_name=None,
+            params_json={},
+            artifact_dir=str(tmp_path / "g1"),
+            summary_metrics_json=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    session.add(
+        RiskModelTarget(
+            group_id="g1",
+            target_key="t1",
+            task_type="classification",
+            status="running",
+            model_artifact_path=None,
+            metrics_json=None,
+            dataset_manifest_path=None,
+            feature_columns_json=None,
+        )
+    )
+    session.add(
+        RiskModelTarget(
+            group_id="g1",
+            target_key="t2",
+            task_type="classification",
+            status="succeeded",
+            model_artifact_path=None,
+            metrics_json=None,
+            dataset_manifest_path=None,
+            feature_columns_json=None,
+        )
+    )
+    session.commit()
+    session.close()
+
+    response = client.get("/risk-models")
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    item = payload[0]
+    assert item["group_id"] == "g1"
+    assert item["targets_total"] == 2
+    assert item["targets_done"] == 1

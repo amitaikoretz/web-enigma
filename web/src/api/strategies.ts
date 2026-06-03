@@ -8,3 +8,11 @@ export async function fetchStrategies(): Promise<StrategyMetadata[]> {
   }
   return response.json() as Promise<StrategyMetadata[]>
 }
+
+export async function fetchExitRules(): Promise<StrategyMetadata[]> {
+  const response = await fetch('/api/strategies/exit-rules')
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to load exit rules'))
+  }
+  return response.json() as Promise<StrategyMetadata[]>
+}

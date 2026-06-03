@@ -485,7 +485,8 @@ export function BacktestDetailPage() {
                   </Stack>
                 }
               />
-              <Metric label="Strategies" value={metadata.selection.strategies.join(', ')} />
+              <Metric label="Triggers" value={metadata.selection.triggers.join(', ')} />
+              <Metric label="Exit rules" value={metadata.selection.exit_rules.join(', ')} />
             </Stack>
           ) : (
             <Typography color="text.secondary">Selection summary unavailable.</Typography>
@@ -692,7 +693,7 @@ export function BacktestDetailPage() {
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
                 {metadata.selection
-                  ? `${metadata.selection.symbols?.length ?? 0} symbols · ${metadata.selection.strategies?.length ?? 0} strategies`
+                  ? `${metadata.selection.symbols?.length ?? 0} symbols · ${metadata.selection.triggers?.length ?? 0} triggers`
                   : '—'}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>

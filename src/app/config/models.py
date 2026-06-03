@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
-from app.strategies.registry import STRATEGY_REGISTRY, validate_strategy_params
+from app.strategies.exit_rules import ExitRulesSelection
+from app.strategies.triggers import TriggerSelection
+from app.strategies.yaml_io import load_exit_rules_selection, load_trigger_selection
 
 
 class BrokerConfig(BaseModel):
@@ -77,28 +80,16 @@ class AlpacaDataSource(BaseModel):
 DataSource = CsvDataSource | YahooDataSource | AlpacaDataSource
 
 
-class StrategyConfig(BaseModel):
-    name: str
-    params: dict[str, Any] = Field(default_factory=dict)
-
-    @model_validator(mode="after")
-    def validate_strategy(self) -> "StrategyConfig":
-        if self.name not in STRATEGY_REGISTRY:
-            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
-            raise ValueError(f"Unknown strategy '{self.name}'. Available: {available}")
-        self.params = validate_strategy_params(self.name, self.params)
-        return self
-
-
 class BacktestRunConfig(BaseModel):
     run_id: str
     name: str | None = None
     start_date: date
     end_date: date
     data: DataSource
-    strategy: str | None = None
-    strategy_params: dict[str, Any] = Field(default_factory=dict)
-    strategies: list[StrategyConfig] | None = None
+    trigger_path: str | None = None
+    exit_rules_path: str | None = None
+    trigger: TriggerSelection | None = None
+    exit_rules: ExitRulesSelection | None = None
     broker: BrokerConfig | None = None
     analyzers: AnalyzerConfig = Field(default_factory=AnalyzerConfig)
     execution: BacktestExecutionConfig = Field(default_factory=BacktestExecutionConfig)
@@ -110,23 +101,22 @@ class BacktestRunConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_strategy(self) -> "BacktestRunConfig":
-        has_single = self.strategy is not None
-        has_multi = bool(self.strategies)
-        if not has_single and not has_multi:
-            raise ValueError("Run must define either 'strategy' or a non-empty 'strategies' list")
+    def resolve_components(self, info: ValidationInfo) -> "BacktestRunConfig":
+        base_dir = info.context.get("config_base_dir") if info.context else None
+        if base_dir is None:
+            base_dir = Path(".").resolve()
+        elif not isinstance(base_dir, Path):
+            base_dir = Path(str(base_dir)).resolve()
 
-        if has_single:
-            assert self.strategy is not None
-            if self.strategy not in STRATEGY_REGISTRY:
-                available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
-                raise ValueError(f"Unknown strategy '{self.strategy}'. Available: {available}")
-            self.strategy_params = validate_strategy_params(self.strategy, self.strategy_params)
+        if self.trigger is None:
+            if not self.trigger_path:
+                raise ValueError("Run must define either 'trigger' or 'trigger_path'")
+            self.trigger = load_trigger_selection(self.trigger_path, base_dir=base_dir)
 
-        if has_multi and self.strategies is not None:
-            names = [s.name for s in self.strategies]
-            if len(names) != len(set(names)):
-                raise ValueError("strategy names in 'strategies' must be unique within a run")
+        if self.exit_rules is None:
+            if not self.exit_rules_path:
+                raise ValueError("Run must define either 'exit_rules' or 'exit_rules_path'")
+            self.exit_rules = load_exit_rules_selection(self.exit_rules_path, base_dir=base_dir)
         return self
 
 
@@ -137,7 +127,7 @@ class GlobalConfig(BaseModel):
 
 
 class WorkflowConfig(BaseModel):
-    split_by: Literal["run", "symbol", "strategy", "symbol_strategy"] | None = None
+    split_by: Literal["run", "symbol", "trigger", "symbol_trigger"] | None = None
 
 
 class BacktestConfig(BaseModel):
@@ -168,15 +158,28 @@ class AlpacaTradingRunConfig(BaseModel):
     symbol: str
     interval: str = "1m"
     feed: Literal["iex", "sip", "otc"] = "iex"
-    strategy: str
-    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    trigger_path: str | None = None
+    exit_rules_path: str | None = None
+    trigger: TriggerSelection | None = None
+    exit_rules: ExitRulesSelection | None = None
 
     @model_validator(mode="after")
-    def validate_strategy(self) -> "AlpacaTradingRunConfig":
-        if self.strategy not in STRATEGY_REGISTRY:
-            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
-            raise ValueError(f"Unknown strategy '{self.strategy}'. Available: {available}")
-        self.strategy_params = validate_strategy_params(self.strategy, self.strategy_params)
+    def resolve_components(self, info: ValidationInfo) -> "AlpacaTradingRunConfig":
+        base_dir = info.context.get("config_base_dir") if info.context else None
+        if base_dir is None:
+            base_dir = Path(".").resolve()
+        elif not isinstance(base_dir, Path):
+            base_dir = Path(str(base_dir)).resolve()
+
+        if self.trigger is None:
+            if not self.trigger_path:
+                raise ValueError("Run must define either 'trigger' or 'trigger_path'")
+            self.trigger = load_trigger_selection(self.trigger_path, base_dir=base_dir)
+
+        if self.exit_rules is None:
+            if not self.exit_rules_path:
+                raise ValueError("Run must define either 'exit_rules' or 'exit_rules_path'")
+            self.exit_rules = load_exit_rules_selection(self.exit_rules_path, base_dir=base_dir)
         return self
 
 
@@ -271,15 +274,12 @@ class LiveTradingContractConfig(BaseModel):
     symbol: str
     interval: str = "1m"
     feed: Literal["iex", "sip", "otc"] = "iex"
-    strategy: str
-    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    trigger: TriggerSelection
+    exit_rules: ExitRulesSelection
 
     @model_validator(mode="after")
-    def validate_strategy(self) -> "LiveTradingContractConfig":
-        if self.strategy not in STRATEGY_REGISTRY:
-            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
-            raise ValueError(f"Unknown strategy '{self.strategy}'. Available: {available}")
-        self.strategy_params = validate_strategy_params(self.strategy, self.strategy_params)
+    def normalize_symbol(self) -> "LiveTradingContractConfig":
+        self.symbol = self.symbol.strip().upper()
         return self
 
 

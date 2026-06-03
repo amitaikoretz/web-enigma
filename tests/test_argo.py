@@ -37,11 +37,15 @@ def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
         "split-by": "symbol",
         "backtest-id": "abc123",
         "config-b64": "",
+        "shard-parallelism": "8",
     }
 
     batch_template = next(item for item in spec["templates"] if item["name"] == "backtest-batch")
     step_names = [step["name"] for group in batch_template["steps"] for step in group]
     assert step_names == ["print-payload", "plan", "run-shards", "merge"]
+    assert spec["parallelism"] == 8
+    run_shards_step = batch_template["steps"][2][0]
+    assert "parallelism" not in run_shards_step
 
     merge_step = batch_template["steps"][3][0]
     merge_params = {item["name"]: item["value"] for item in merge_step["arguments"]["parameters"]}
@@ -82,18 +86,18 @@ def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
         "work-dir": "/tmp/work-dir.txt",
         "terminal-command": "/tmp/terminal-command.txt",
     }
-    plan_script = plan_template["container"]["args"][0]
-    assert f'{workflow_results_mount()}/{{{{inputs.parameters.backtest-id}}}}' in plan_script
-    assert "/tmp/manifest-path.txt" in plan_script
+    plan_args = " ".join(plan_template["container"]["args"])
+    assert "{{inputs.parameters.backtest-id}}" in plan_args
+    assert "/tmp/manifest-path.txt" in plan_args
     run_shard = next(item for item in spec["templates"] if item["name"] == "run-shard")
     run_inputs = {item["name"] for item in run_shard["inputs"]["parameters"]}
     assert run_inputs == {"shard-id", "shard-config-path", "shard-output-path"}
     mount_names = {mount["name"] for mount in run_shard["container"]["volumeMounts"]}
     assert "backtest-results" in mount_names
     merge_template = next(item for item in spec["templates"] if item["name"] == "merge-reports")
-    merge_script = merge_template["container"]["args"][0]
-    assert '{{inputs.parameters.manifest-path}}' in merge_script
-    assert "/tmp/merged-output-path.txt" in merge_script
+    merge_args = " ".join(merge_template["container"]["args"])
+    assert "{{inputs.parameters.manifest-path}}" in merge_args
+    assert "/tmp/merged-output-path.txt" in merge_args
 
 
 def test_build_backtest_workflow_spec_uses_configured_service_account(

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import random
+import socket
+import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -15,7 +19,24 @@ from app.strategies.candidates import CandidateEvent, record_candidate
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyRuntimeSnapshot
 from app.strategies.auditor_logging import log_auditor_rejection
 from app.strategies.implementations import _benchmark_bars_as_of
-from app.strategies.registry import get_strategy_definition, resolve_warmup_bars
+from app.strategies.factory import build_strategy_core, composed_strategy_id, resolve_warmup_bars
+
+logger = logging.getLogger(__name__)
+
+
+def _is_temporary_dns_failure(exc: URLError) -> bool:
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, socket.gaierror):
+        return reason.errno == -3
+    errno = getattr(reason, "errno", None)
+    return errno == -3
+
+
+def _sleep_backoff(attempt_index: int, *, base_s: float = 1.0, cap_s: float = 30.0) -> float:
+    delay = min(cap_s, base_s * (2**attempt_index))
+    jitter = random.uniform(0.0, min(1.0, delay * 0.2))
+    time.sleep(delay + jitter)
+    return delay + jitter
 
 
 @dataclass(frozen=True)
@@ -183,14 +204,30 @@ class HttpAlpacaBarSource:
                 "accept": "application/json",
             },
         )
-        try:
-            with urlopen(req, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"Alpaca data request failed ({exc.code}): {body or exc.reason}") from exc
-        except URLError as exc:
-            raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
+        last_exc: URLError | None = None
+        for attempt in range(6):
+            try:
+                with urlopen(req, timeout=30) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                last_exc = None
+                break
+            except HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="ignore")
+                raise RuntimeError(f"Alpaca data request failed ({exc.code}): {body or exc.reason}") from exc
+            except URLError as exc:
+                last_exc = exc
+                if not _is_temporary_dns_failure(exc) or attempt == 5:
+                    raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
+                delay_s = _sleep_backoff(attempt)
+                logger.warning(
+                    "Alpaca DNS lookup failed (temporary). Retrying in %.2fs (attempt %d/%d). Error=%r",
+                    delay_s,
+                    attempt + 1,
+                    6,
+                    exc.reason,
+                )
+        if last_exc is not None:
+            raise RuntimeError(f"Failed to reach Alpaca data API: {last_exc.reason}") from last_exc
 
         bars: list[Bar] = []
         now = datetime.now(UTC)
@@ -226,9 +263,11 @@ class AlpacaStrategyExecutor:
         self.trading_client = trading_client
         self.bar_source = bar_source
         self.state_store = state_store
-        self.strategy_definition = get_strategy_definition(run.strategy)
-        self.core: StrategyCore = self.strategy_definition.factory(dict(run.strategy_params))
-        self.warmup_bars = max(2, resolve_warmup_bars(run.strategy, run.strategy_params))
+        if run.trigger is None or run.exit_rules is None:
+            raise ValueError("Live run is missing trigger/exit rules selection")
+        self.strategy_id = composed_strategy_id(trigger=run.trigger, exit_rules=run.exit_rules)
+        self.core: StrategyCore = build_strategy_core(trigger=run.trigger, exit_rules=run.exit_rules)
+        self.warmup_bars = max(2, resolve_warmup_bars(trigger=run.trigger, exit_rules=run.exit_rules))
         self.snapshot = self.state_store.load(run.run_id)
         self.core.load_state(self.snapshot.core_state)
         self.seen_client_order_ids = {order.client_order_id for order in self.trading_client.list_open_orders(run.symbol)}
@@ -292,7 +331,7 @@ class AlpacaStrategyExecutor:
         )
 
     def _client_order_id(self, action: str, bar: Bar) -> str:
-        return f"{self.run.run_id}-{self.run.strategy}-{action}-{bar.timestamp.strftime('%Y%m%dT%H%M%S')}"
+        return f"{self.run.run_id}-{self.strategy_id}-{action}-{bar.timestamp.strftime('%Y%m%dT%H%M%S')}"
 
     def _save_snapshot(self) -> None:
         self.snapshot = StrategyRuntimeSnapshot(
@@ -321,7 +360,7 @@ class AlpacaStrategyExecutor:
 
         self._sync_position_from_broker()
         position = self._position_for_history(complete_bars)
-        benchmark_symbol = str(self.run.strategy_params.get("benchmark_symbol", "")).strip().upper()
+        benchmark_symbol = str(self.run.trigger.params.get("benchmark_symbol", "")).strip().upper() if self.run.trigger else ""
         benchmark_bars: tuple[Bar, ...] | None = None
         if benchmark_symbol:
             raw_benchmark_bars = self.bar_source.get_recent_bars(
@@ -347,7 +386,7 @@ class AlpacaStrategyExecutor:
             self.candidate_log,
             decision,
             enabled=self.execution.include_candidate_log,
-            strategy_id=self.run.strategy,
+            strategy_id=self.strategy_id,
             symbol=self.run.symbol,
             timestamp=latest.iso_timestamp,
             entry_type="MARKET",

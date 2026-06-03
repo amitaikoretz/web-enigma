@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.api.constants import SUPPORTED_RESOLUTIONS
 from app.config.models import BrokerConfig
 from app.output.models import OrderRecord, RunError, RunSummary, TradeRecord
+from app.strategies.exit_rules import ExitRulesSelection
+from app.strategies.triggers import TriggerSelection
 
 from .market_data import MarketDataRow
 
@@ -30,8 +32,8 @@ class SingleDayBacktestRequest(BaseModel):
     date: date
     resolution: str = Field(description="Bar resolution such as 1m, 5m, 15m, 1h, or 1d")
     feed: Literal["iex", "sip", "otc"] = "iex"
-    strategy: str
-    strategy_params: dict[str, Any] = Field(default_factory=dict)
+    trigger: TriggerSelection
+    exit_rules: ExitRulesSelection
     broker: BrokerConfig | None = None
 
     @field_validator("symbol")

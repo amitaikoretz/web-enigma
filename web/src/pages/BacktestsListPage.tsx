@@ -22,9 +22,10 @@ import {
   Tooltip,
   TextField,
   Typography,
+  Link,
 } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
 import { deleteBacktest, fetchBacktests, retryBacktest, retryBacktestForce } from '../api/backtests'
@@ -33,6 +34,12 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
 import { canRetryBacktest } from '../utils/backtestConfigPrefill'
+
+interface LaunchResultState {
+  status: 'success' | 'failed'
+  message: string
+  backtestId?: string
+}
 
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -66,6 +73,7 @@ function searchParamsFromPagination(page: number, pageSize: number): URLSearchPa
 
 export function BacktestsListPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const { platformSettings, appearance } = useSettings()
   const page = parsePage(searchParams.get('page'))
@@ -86,6 +94,7 @@ export function BacktestsListPage() {
   const [riskDialogOpen, setRiskDialogOpen] = useState(false)
   const [riskSubmitting, setRiskSubmitting] = useState(false)
   const [riskRandomSeed, setRiskRandomSeed] = useState('7')
+  const [launchResult, setLaunchResult] = useState<LaunchResultState | null>(null)
 
   const visibleColumns = useMemo(
     () =>
@@ -160,6 +169,17 @@ export function BacktestsListPage() {
       cancelled = true
     }
   }, [loadPage, page, pageSize])
+
+  useEffect(() => {
+    const state = location.state as { launchResult?: LaunchResultState } | null
+    if (!state?.launchResult) {
+      return
+    }
+
+    setLaunchResult(state.launchResult)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+    navigate(location.pathname + location.search, { replace: true, state: null })
+  }, [location.pathname, location.search, location.state, navigate])
 
   useEffect(() => {
     if (!hasActiveJobs) {
@@ -351,6 +371,53 @@ export function BacktestsListPage() {
       </Stack>
 
       {error && <Alert severity="error">{error}</Alert>}
+
+      <Dialog
+        open={launchResult !== null}
+        onClose={() => setLaunchResult(null)}
+        aria-labelledby="launch-result-title"
+        aria-describedby="launch-result-description"
+        slotProps={{
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(6px)',
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            },
+          },
+          paper: {
+            sx: {
+              width: '100%',
+              maxWidth: 520,
+              p: 0.5,
+            },
+          },
+        }}
+      >
+        <DialogTitle id="launch-result-title" sx={{ pb: 1 }}>
+          {launchResult?.status === 'success' ? 'Backtest launched' : 'Backtest launch failed'}
+        </DialogTitle>
+        <DialogContent id="launch-result-description" sx={{ pt: 0 }}>
+          <Stack spacing={1.5}>
+            <Alert severity={launchResult?.status === 'success' ? 'success' : 'error'}>
+              {launchResult?.message}
+            </Alert>
+            {launchResult?.status === 'success' && launchResult.backtestId && (
+              <Typography color="text.secondary">
+                You can open the new job from{' '}
+                <Link component={RouterLink} to={`/backtests/${launchResult.backtestId}`}>
+                  backtest {launchResult.backtestId}
+                </Link>
+                .
+              </Typography>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+          <Button onClick={() => setLaunchResult(null)} variant="contained">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Paper sx={{ p: 0, overflow: 'hidden' }}>
         {loading ? (
@@ -559,7 +626,7 @@ export function BacktestsListPage() {
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {retryTarget.selection
-                    ? `${retryTarget.selection.symbols?.length ?? 0} symbols · ${retryTarget.selection.strategies?.length ?? 0} strategies`
+                    ? `${retryTarget.selection.symbols?.length ?? 0} symbols · ${retryTarget.selection.triggers?.length ?? 0} triggers`
                     : '—'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
@@ -611,7 +678,7 @@ export function BacktestsListPage() {
                 </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {deleteTarget.selection
-                    ? `${deleteTarget.selection.symbols?.length ?? 0} symbols · ${deleteTarget.selection.strategies?.length ?? 0} strategies`
+                    ? `${deleteTarget.selection.symbols?.length ?? 0} symbols · ${deleteTarget.selection.triggers?.length ?? 0} triggers`
                     : '—'}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>

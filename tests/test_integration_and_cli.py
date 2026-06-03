@@ -17,8 +17,8 @@ def test_csv_single_run_integration():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -61,8 +61,12 @@ def test_csv_oco_atr_tp_sl_integration():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_oco_atr_tp_sl",
-                "strategy_params": {"stake": 1, "atr_period": 5, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0},
+                "trigger": {"name": "buy_oco_atr", "params": {"stake": 1, "atr_period": 5, "entry_sma": 2}},
+                "exit_rules": {
+                    "rules": [
+                        {"name": "atr_oco", "params": {"atr_period": 5, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}
+                    ]
+                },
             }
         ]
     }
@@ -81,8 +85,12 @@ def test_csv_oco_atr_tp_trailing_integration():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_oco_atr_tp_trailing",
-                "strategy_params": {"stake": 1, "atr_period": 5, "trail_atr_mult": 1.2, "tp_atr_mult": 3.0},
+                "trigger": {"name": "buy_oco_atr", "params": {"stake": 1, "atr_period": 5, "entry_sma": 2}},
+                "exit_rules": {
+                    "rules": [
+                        {"name": "atr_trailing", "params": {"atr_period": 5, "trail_atr_mult": 1.2, "tp_atr_mult": 3.0}}
+                    ]
+                },
             }
         ]
     }
@@ -93,18 +101,30 @@ def test_csv_oco_atr_tp_trailing_integration():
     assert report.results[0].status == "success"
 
 
-def test_csv_single_run_multiple_strategies_integration():
+def test_csv_multiple_runs_integration():
     raw = {
         "runs": [
             {
-                "run_id": "csv_multi",
+                "run_id": "csv_multi_buy_hold",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategies": [
-                    {"name": "buy_and_hold", "params": {"stake": 1}},
-                    {"name": "sma_cross", "params": {"fast": 3, "slow": 8, "stake": 1}},
-                ],
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
+            },
+            {
+                "run_id": "csv_multi_sma_cross",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "trigger": {"name": "sma_cross", "params": {"fast": 3, "slow": 8, "stake": 1}},
+                "exit_rules": {
+                    "rules": [
+                        {"name": "sma_cross_down", "params": {"fast": 3, "slow": 8}},
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                        {"name": "max_hold_bars", "params": {"max_hold_bars": 24}},
+                    ]
+                },
             }
         ]
     }
@@ -112,9 +132,7 @@ def test_csv_single_run_multiple_strategies_integration():
     report = run_backtests(config, raw)
     assert report.total_runs == 2
     assert report.successful_runs == 2
-    assert report.results[0].run_id in {"csv_multi:buy_and_hold", "csv_multi:sma_cross"}
-    assert report.results[1].run_id in {"csv_multi:buy_and_hold", "csv_multi:sma_cross"}
-    assert report.results[0].run_id != report.results[1].run_id
+    assert {r.run_id for r in report.results} == {"csv_multi_buy_hold", "csv_multi_sma_cross"}
 
 
 def test_mixed_batch_partial_failure():
@@ -125,16 +143,16 @@ def test_mixed_batch_partial_failure():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             },
             {
                 "run_id": "bad_file",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/missing.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             },
         ]
     }
@@ -170,8 +188,8 @@ def test_yahoo_path_mocked(monkeypatch):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "yahoo", "symbol": "AAPL", "interval": "1d"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -205,8 +223,8 @@ def test_alpaca_path_mocked(monkeypatch):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "alpaca", "symbol": "AAPL", "interval": "1d"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -230,8 +248,8 @@ def test_cli_run_exits_nonzero_on_run_failure(tmp_path: Path):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/missing.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -253,8 +271,8 @@ def test_cli_run_writes_output(tmp_path: Path):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -369,8 +387,8 @@ def test_cli_run_cache_flags_with_yahoo(capsys, monkeypatch, tmp_path: Path):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "yahoo", "symbol": "AAPL", "interval": "1d"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -421,8 +439,8 @@ def test_cli_run_cache_flags_with_alpaca(capsys, monkeypatch, tmp_path: Path):
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "alpaca", "symbol": "AAPL", "interval": "1d"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -457,8 +475,8 @@ def test_backtest_fill_model_next_bar_changes_fill_timing():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                 "execution": {"fill_model": "close"},
             }
         ]
@@ -470,8 +488,8 @@ def test_backtest_fill_model_next_bar_changes_fill_timing():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
                 "execution": {"fill_model": "next_bar"},
             }
         ]
@@ -505,8 +523,8 @@ def test_backtest_closes_positions_before_overnight(tmp_path: Path):
                     "path": str(csv_path),
                     "date_format": "%Y-%m-%dT%H:%M:%S",
                 },
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
@@ -527,8 +545,8 @@ def test_cli_alpaca_run_uses_separate_config(monkeypatch, tmp_path: Path, capsys
                 "run_id": "alpaca_cli",
                 "symbol": "AAPL",
                 "interval": "1m",
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}]},
             }
         ],
     }

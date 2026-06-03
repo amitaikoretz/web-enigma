@@ -4,14 +4,30 @@ import json
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, Field
 
-from app.config.models import BacktestConfig, BacktestRunConfig, StrategyConfig
+from app.config.models import BacktestConfig, BacktestRunConfig
 
-SplitBy = Literal["run", "symbol", "strategy", "symbol_strategy"]
+SplitBy = Literal["run", "symbol", "trigger", "symbol_trigger", "strategy", "symbol_strategy"]
+
+
+def normalize_split_by(value: str) -> SplitBy:
+    """
+    Accept user-facing Argo/UI names and normalize to internal sharding semantics.
+
+    Policy:
+    - "strategy" is an alias for "trigger"
+    - "symbol_strategy" is an alias for "symbol_trigger"
+    """
+    value = value.strip()
+    if value == "strategy":
+        return "trigger"
+    if value == "symbol_strategy":
+        return "symbol_trigger"
+    return cast(SplitBy, value)
 
 
 class ShardSpec(BaseModel):
@@ -37,24 +53,6 @@ def _symbol_from_run(run: BacktestRunConfig) -> str:
     return "unknown"
 
 
-def _expand_run_to_atomic_runs(run: BacktestRunConfig) -> list[BacktestRunConfig]:
-    if run.strategies:
-        expanded: list[BacktestRunConfig] = []
-        for entry in run.strategies:
-            expanded.append(
-                run.model_copy(
-                    update={
-                        "strategy": entry.name,
-                        "strategy_params": entry.params,
-                        "strategies": None,
-                        "run_id": f"{run.run_id}:{entry.name}",
-                    }
-                )
-            )
-        return expanded
-    return [run]
-
-
 def _sanitize_shard_id(value: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9._-]+", "_", value.strip().lower())
     return normalized or "shard"
@@ -65,24 +63,20 @@ def _group_key_for_run(run: BacktestRunConfig, split_by: SplitBy) -> str:
         return run.run_id
     if split_by == "symbol":
         return _symbol_from_run(run)
-    if split_by == "strategy":
-        assert run.strategy is not None
-        return run.strategy
+    if split_by == "trigger":
+        assert run.trigger is not None
+        return run.trigger.name
     symbol = _symbol_from_run(run)
-    assert run.strategy is not None
-    return f"{symbol}:{run.strategy}"
+    assert run.trigger is not None
+    return f"{symbol}:{run.trigger.name}"
 
 
 def _collect_runs_by_split(config: BacktestConfig, split_by: SplitBy) -> dict[str, list[BacktestRunConfig]]:
     if split_by == "run":
         return {run.run_id: [run] for run in config.runs}
 
-    atomic_runs: list[BacktestRunConfig] = []
-    for run in config.runs:
-        atomic_runs.extend(_expand_run_to_atomic_runs(run))
-
     grouped: dict[str, list[BacktestRunConfig]] = {}
-    for run in atomic_runs:
+    for run in config.runs:
         key = _group_key_for_run(run, split_by)
         grouped.setdefault(key, []).append(run)
     return grouped
@@ -92,16 +86,16 @@ def resolve_split_by(
     config_raw: dict[str, Any],
     *,
     override: SplitBy | None = None,
-    platform_default: SplitBy = "symbol_strategy",
+    platform_default: SplitBy = "symbol_trigger",
 ) -> SplitBy:
     if override is not None and override != "":
-        return override
+        return normalize_split_by(override)
     workflow = config_raw.get("workflow")
     if isinstance(workflow, dict):
         split_by = workflow.get("split_by")
-        if split_by in {"run", "symbol", "strategy", "symbol_strategy"}:
-            return split_by  # type: ignore[return-value]
-    return platform_default
+        if split_by in {"run", "symbol", "trigger", "symbol_trigger", "strategy", "symbol_strategy"}:
+            return normalize_split_by(split_by)
+    return normalize_split_by(platform_default)
 
 
 def plan_shards(
@@ -111,7 +105,9 @@ def plan_shards(
     work_dir: Path,
     config_path: str | None = None,
 ) -> ShardPlan:
-    config = BacktestConfig.model_validate(config_raw)
+    split_by = normalize_split_by(split_by)
+    base_dir = Path(config_path).resolve().parent if config_path else work_dir.resolve()
+    config = BacktestConfig.model_validate(config_raw, context={"config_base_dir": base_dir})
     resolved_config_path = str(config_path or work_dir / "original.yaml")
     shards_dir = work_dir / "shards"
     shards_dir.mkdir(parents=True, exist_ok=True)

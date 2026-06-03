@@ -11,15 +11,22 @@ def _base_run():
         "start_date": "2024-01-01",
         "end_date": "2024-01-19",
         "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-        "strategy": "sma_cross",
-        "strategy_params": {"fast": 3, "slow": 5, "stake": 1},
+        "trigger": {"name": "sma_cross", "params": {"fast": 3, "slow": 5, "stake": 1}},
+        "exit_rules": {
+            "rules": [
+                {"name": "sma_cross_down", "params": {"fast": 3, "slow": 5}},
+                {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                {"name": "max_hold_bars", "params": {"max_hold_bars": 24}},
+            ]
+        },
     }
 
 
 def test_valid_config():
     config = {"runs": [_base_run()]}
     parsed = BacktestConfig.model_validate(config)
-    assert parsed.runs[0].strategy == "sma_cross"
+    assert parsed.runs[0].trigger is not None
+    assert parsed.runs[0].trigger.name == "sma_cross"
 
 
 def test_invalid_date_range():
@@ -32,15 +39,22 @@ def test_invalid_date_range():
 
 def test_invalid_strategy_name():
     run = _base_run()
-    run["strategy"] = "not_real"
+    run["trigger"]["name"] = "not_real"
     with pytest.raises(Exception):
         BacktestConfig.model_validate({"runs": [run]})
 
 
 def test_invalid_strategy_params():
     run = _base_run()
-    run["strategy_params"] = {"fast": -1, "slow": 5}
+    run["trigger"]["params"] = {"fast": -1, "slow": 5}
     with pytest.raises(Exception):
+        BacktestConfig.model_validate({"runs": [run]})
+
+
+def test_fixed_pct_oco_rejects_legacy_pct_params():
+    run = _base_run()
+    run["exit_rules"]["rules"][1]["params"] = {"stop_loss_pct": 0.02, "take_profit_pct": 0.04}
+    with pytest.raises(Exception, match=r"fixed_pct_oco now expects ATR params"):
         BacktestConfig.model_validate({"runs": [run]})
 
 
@@ -48,23 +62,9 @@ def test_csv_path_present_in_example():
     assert Path("examples/data/sample_daily.csv").exists()
 
 
-def test_valid_config_with_multiple_strategies():
+def test_invalid_config_without_trigger_or_exit_rules():
     run = _base_run()
-    run.pop("strategy")
-    run.pop("strategy_params")
-    run["strategies"] = [
-        {"name": "sma_cross", "params": {"fast": 3, "slow": 5, "stake": 1}},
-        {"name": "rsi_reversion", "params": {"period": 7, "oversold": 30, "overbought": 60, "stake": 1}},
-    ]
-    parsed = BacktestConfig.model_validate({"runs": [run]})
-    assert parsed.runs[0].strategies is not None
-    assert len(parsed.runs[0].strategies) == 2
-
-
-def test_invalid_config_without_strategy_or_strategies():
-    run = _base_run()
-    run.pop("strategy")
-    run.pop("strategy_params")
+    run.pop("trigger")
     with pytest.raises(Exception):
         BacktestConfig.model_validate({"runs": [run]})
 
@@ -83,8 +83,8 @@ def test_valid_alpaca_trading_config():
                 "run_id": "live_r1",
                 "symbol": "AAPL",
                 "interval": "1m",
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}]},
             }
         ]
     }
@@ -105,8 +105,8 @@ def test_valid_live_trading_config():
                 "contract_id": "aa0d74d7-7a8d-4fe4-a20f-b5d30e935001",
                 "symbol": "AAPL",
                 "interval": "1m",
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}]},
             }
         ],
     }
@@ -121,14 +121,14 @@ def test_live_trading_config_rejects_duplicate_contract_ids():
             {
                 "contract_id": "aa0d74d7-7a8d-4fe4-a20f-b5d30e935001",
                 "symbol": "AAPL",
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}]},
             },
             {
                 "contract_id": "aa0d74d7-7a8d-4fe4-a20f-b5d30e935001",
                 "symbol": "MSFT",
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}}]},
             },
         ]
     }

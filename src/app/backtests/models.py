@@ -8,14 +8,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config.models import AnalyzerConfig, BacktestExecutionConfig, BrokerConfig
 from app.output.models import BacktestReport
-from app.strategies.registry import STRATEGY_REGISTRY, validate_strategy_params
+from app.strategies.exit_rules import ExitRulesSelection
+from app.strategies.triggers import TRIGGER_REGISTRY, TriggerSelection, validate_trigger_params
 
 
 SUPPORTED_RESOLUTIONS = ("1m", "5m", "15m", "1h", "1d")
 
 BacktestJobStatus = Literal["pending", "running", "completed", "failed"]
 BacktestExecutionBackend = Literal["local", "argo"]
-ArgoSplitBy = Literal["run", "symbol", "strategy", "symbol_strategy"]
+ArgoSplitBy = Literal["run", "symbol", "trigger", "symbol_trigger"]
 
 
 def _sanitize_strategy_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -31,16 +32,13 @@ def _sanitize_strategy_params(params: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
-class BacktestStrategySelection(BaseModel):
-    name: str
-    params: dict[str, Any] = Field(default_factory=dict)
-
+class BacktestTriggerSelection(TriggerSelection):
     @model_validator(mode="after")
-    def validate_strategy(self) -> "BacktestStrategySelection":
-        if self.name not in STRATEGY_REGISTRY:
-            available = ", ".join(sorted(STRATEGY_REGISTRY.keys()))
-            raise ValueError(f"Unknown strategy '{self.name}'. Available: {available}")
-        self.params = validate_strategy_params(self.name, _sanitize_strategy_params(self.params))
+    def sanitize_params(self) -> "BacktestTriggerSelection":
+        if self.name not in TRIGGER_REGISTRY:
+            available = ", ".join(sorted(TRIGGER_REGISTRY.keys()))
+            raise ValueError(f"Unknown trigger '{self.name}'. Available: {available}")
+        self.params = validate_trigger_params(self.name, _sanitize_strategy_params(self.params))
         return self
 
 
@@ -51,7 +49,8 @@ class BacktestCreateRequest(BaseModel):
     resolution: str = Field(description="Bar resolution such as 1m, 5m, 15m, 1h, or 1d")
     feed: Literal["iex", "sip", "otc"] = "iex"
     symbols: list[str] = Field(min_length=1)
-    strategies: list[BacktestStrategySelection] = Field(min_length=1)
+    triggers: list[BacktestTriggerSelection] = Field(min_length=1)
+    exit_rules: list[ExitRulesSelection] = Field(min_length=1)
     broker: BrokerConfig | None = None
     analyzers: AnalyzerConfig | None = None
     execution: BacktestExecutionConfig | None = None
@@ -105,7 +104,36 @@ class BacktestSelectionSummary(BaseModel):
     resolution: str
     feed: Literal["iex", "sip", "otc"]
     symbols: list[str]
-    strategies: list[str]
+    triggers: list[str]
+    exit_rules: list[str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_fields(cls, data: Any) -> Any:
+        """
+        Backward-compat for persisted DB rows created before the trigger/exit_rules split.
+
+        Note: user-facing backtest config does not support legacy strategy fields; this
+        is only for reading old selection summaries already stored in the database.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        # Legacy: "strategies": ["sma_cross", ...] -> "triggers": [...]
+        if "triggers" not in data:
+            legacy_strategies = data.get("strategies")
+            if isinstance(legacy_strategies, list) and all(isinstance(x, str) for x in legacy_strategies):
+                data = {**data, "triggers": legacy_strategies}
+            else:
+                legacy_strategy = data.get("strategy")
+                if isinstance(legacy_strategy, str) and legacy_strategy.strip():
+                    data = {**data, "triggers": [legacy_strategy.strip()]}
+
+        # Exit rules didn't exist previously; keep validation happy with a sentinel.
+        if "exit_rules" not in data:
+            data = {**data, "exit_rules": ["unknown"]}
+
+        return data
 
 
 class BacktestArtifactSummaryItem(BaseModel):

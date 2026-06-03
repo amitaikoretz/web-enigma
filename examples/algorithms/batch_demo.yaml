@@ -15,11 +15,8 @@ runs:
       type: alpaca
       symbol: AAPL
       interval: 1m
-    strategy: "sma_cross"
-    strategy_params:
-      fast: 3
-      slow: 5
-      stake: 10
+    trigger_path: "examples/triggers/sma_cross.yaml"
+    exit_rules_path: "examples/exit_rules/sma_cross_exits.yaml"
     analyzers:
       include_equity_curve: true
       include_trade_log: true
@@ -32,12 +29,8 @@ runs:
     data:
       type: csv
       path: "examples/data/sample_daily.csv"
-    strategy: "rsi_reversion"
-    strategy_params:
-      period: 5
-      oversold: 35
-      overbought: 65
-      stake: 5
+    trigger_path: "examples/triggers/rsi_reversion.yaml"
+    exit_rules_path: "examples/exit_rules/rsi_reversion_exits.yaml"
 
   - run_id: "yahoo_buy_and_hold"
     name: "Yahoo Buy & Hold Demo"
@@ -47,6 +40,5 @@ runs:
       type: yahoo
       symbol: AAPL
       interval: 1d
-    strategy: "buy_and_hold"
-    strategy_params:
-      stake: 2
+    trigger_path: "examples/triggers/buy_and_hold.yaml"
+    exit_rules_path: "examples/exit_rules/basic_sl_tp_time.yaml"

@@ -8,7 +8,8 @@ export interface BacktestWizardPrefill {
   resolution: Resolution
   feed: BacktestFeed
   symbols: string[]
-  strategies: Array<{ name: string; params: Record<string, unknown> }>
+  triggers: Array<{ name: string; params: Record<string, unknown> }>
+  exitRules: Array<{ name: string; params: Record<string, unknown> }>
   broker?: BacktestCreateRequest['broker']
   analyzers?: BacktestCreateRequest['analyzers']
   execution?: BacktestCreateRequest['execution']
@@ -80,8 +81,10 @@ export function parseInputConfigToPrefill(
   }
 
   const symbols: string[] = []
-  const strategyNames: string[] = []
-  const strategyParamsByName = new Map<string, Record<string, unknown>>()
+  const triggerNames: string[] = []
+  const triggerParamsByName = new Map<string, Record<string, unknown>>()
+  const exitRuleNames: string[] = []
+  const exitRuleParamsByName = new Map<string, Record<string, unknown>>()
   let startDate: string | null = null
   let endDate: string | null = null
   let resolution: Resolution | null = null
@@ -118,13 +121,42 @@ export function parseInputConfigToPrefill(
       }
     }
 
-    const strategy = runRaw.strategy
-    if (typeof strategy === 'string' && !strategyNames.includes(strategy)) {
-      strategyNames.push(strategy)
-      if (isRecord(runRaw.strategy_params)) {
-        strategyParamsByName.set(strategy, runRaw.strategy_params)
-      } else {
-        strategyParamsByName.set(strategy, {})
+    // New config: "trigger" + "exit_rules"
+    const trigger = runRaw.trigger
+    if (isRecord(trigger) && typeof trigger.name === 'string') {
+      const name = trigger.name
+      if (!triggerNames.includes(name)) {
+        triggerNames.push(name)
+        triggerParamsByName.set(name, isRecord(trigger.params) ? trigger.params : {})
+      }
+    } else {
+      // Legacy config: "strategy" + "strategy_params"
+      const legacyStrategy = runRaw.strategy
+      if (typeof legacyStrategy === 'string' && !triggerNames.includes(legacyStrategy)) {
+        triggerNames.push(legacyStrategy)
+        if (isRecord(runRaw.strategy_params)) {
+          triggerParamsByName.set(legacyStrategy, runRaw.strategy_params)
+        } else {
+          triggerParamsByName.set(legacyStrategy, {})
+        }
+      }
+    }
+
+    // New config: exit_rules is a selection object: { rules: [{name, params}, ...] }
+    // Wizard supports a single ordered rule set; we prefill from the first run that provides one.
+    if (exitRuleNames.length === 0) {
+      const exitRules = runRaw.exit_rules
+      if (isRecord(exitRules) && Array.isArray(exitRules.rules)) {
+        for (const rule of exitRules.rules) {
+          if (!isRecord(rule) || typeof rule.name !== 'string') {
+            continue
+          }
+          if (exitRuleNames.includes(rule.name)) {
+            continue
+          }
+          exitRuleNames.push(rule.name)
+          exitRuleParamsByName.set(rule.name, isRecord(rule.params) ? rule.params : {})
+        }
       }
     }
 
@@ -145,7 +177,8 @@ export function parseInputConfigToPrefill(
     resolution === null ||
     feed === null ||
     symbols.length === 0 ||
-    strategyNames.length === 0
+    triggerNames.length === 0 ||
+    exitRuleNames.length === 0
   ) {
     return null
   }
@@ -156,9 +189,13 @@ export function parseInputConfigToPrefill(
     resolution,
     feed,
     symbols,
-    strategies: strategyNames.map((name) => ({
+    triggers: triggerNames.map((name) => ({
       name,
-      params: strategyParamsByName.get(name) ?? {},
+      params: triggerParamsByName.get(name) ?? {},
+    })),
+    exitRules: exitRuleNames.map((name) => ({
+      name,
+      params: exitRuleParamsByName.get(name) ?? {},
     })),
     broker,
     analyzers,

@@ -353,6 +353,7 @@ def build_backtest_workflow_spec(
     backtest_id: str,
     config_yaml: str | None = None,
     api_base_url: str | None = None,
+    shard_parallelism: int = 8,
 ) -> dict[str, Any]:
     parameters: list[dict[str, str]] = [
         {"name": "api-base-url", "value": api_base_url or _api_base_url()},
@@ -364,10 +365,12 @@ def build_backtest_workflow_spec(
             "name": "config-b64",
             "value": base64.b64encode(config_yaml.encode()).decode() if config_yaml else "",
         },
+        {"name": "shard-parallelism", "value": str(shard_parallelism)},
     ]
     return {
         "entrypoint": "backtest-batch",
         "serviceAccountName": _workflow_service_account(),
+        "parallelism": shard_parallelism,
         "ttlStrategy": {"secondsAfterCompletion": WORKFLOW_TTL_SECONDS},
         "arguments": {
             "parameters": parameters,

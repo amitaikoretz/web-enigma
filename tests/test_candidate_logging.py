@@ -131,10 +131,40 @@ def test_breakout_channel_attaches_entry_intent_on_signal():
 
 
 def test_volume_rally_attaches_entry_intent_on_rejected_signal():
-    from test_strategy_core import _context, _volume_rally_breakout_bars, _volume_rally_params
+    from app.strategies.registry import validate_strategy_params
 
-    core = VolumeRallyCore(_volume_rally_params(min_confirmations=2, session_start_minutes=9999))
-    decision = core.on_bar(_context(_volume_rally_breakout_bars()))
+    bars = [
+        Bar(timestamp=datetime(2024, 1, 1, tzinfo=UTC), open=10, high=10.2, low=9.8, close=10, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 2, tzinfo=UTC), open=10.5, high=10.7, low=10.2, close=10.5, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 3, tzinfo=UTC), open=11, high=11.1, low=10.7, close=11, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 4, tzinfo=UTC), open=11.4, high=11.5, low=11.0, close=11.4, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 5, tzinfo=UTC), open=11.7, high=11.8, low=11.3, close=11.7, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 6, tzinfo=UTC), open=11.8, high=12.6, low=11.8, close=12.4, volume=3000),
+    ]
+    params = validate_strategy_params(
+        "volume_rally",
+        {
+            "stake": 1.0,
+            "volume_window": 3,
+            "volume_spike_mult": 1.5,
+            "breakout_lookback": 3,
+            "atr_period": 2,
+            "atr_expansion_mult": 0.5,
+            "macd_fast": 2,
+            "macd_slow": 3,
+            "macd_signal": 2,
+            "adx_period": 2,
+            "adx_min": 10.0,
+            "sl_atr_mult": 1.0,
+            "tp_atr_mult": 2.0,
+            "trail_atr_mult": 1.0,
+            "max_hold_bars": 3,
+            "min_confirmations": 2,
+            "session_start_minutes": 9999,
+        },
+    )
+    core = VolumeRallyCore(params)
+    decision = core.on_bar(_context(*bars))
     assert decision.action == "hold"
     assert decision.entry_intent is not None
     assert decision.reason == "session_window"
@@ -142,17 +172,41 @@ def test_volume_rally_attaches_entry_intent_on_rejected_signal():
 
 
 def test_volume_rally_logs_partial_confirmation_as_rejected_candidate():
-    from test_strategy_core import _context, _volume_rally_breakout_bars, _volume_rally_params
+    from app.strategies.registry import validate_strategy_params
 
-    core = VolumeRallyCore(
-        _volume_rally_params(
-            min_confirmations=6,
-            adx_min=101.0,
-            session_start_minutes=0,
-            session_end_minutes=0,
-        )
+    bars = [
+        Bar(timestamp=datetime(2024, 1, 1, tzinfo=UTC), open=10, high=10.2, low=9.8, close=10, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 2, tzinfo=UTC), open=10.5, high=10.7, low=10.2, close=10.5, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 3, tzinfo=UTC), open=11, high=11.1, low=10.7, close=11, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 4, tzinfo=UTC), open=11.4, high=11.5, low=11.0, close=11.4, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 5, tzinfo=UTC), open=11.7, high=11.8, low=11.3, close=11.7, volume=1000),
+        Bar(timestamp=datetime(2024, 1, 6, tzinfo=UTC), open=11.8, high=12.6, low=11.8, close=12.4, volume=3000),
+    ]
+    params = validate_strategy_params(
+        "volume_rally",
+        {
+            "stake": 1.0,
+            "volume_window": 3,
+            "volume_spike_mult": 1.5,
+            "breakout_lookback": 3,
+            "atr_period": 2,
+            "atr_expansion_mult": 0.5,
+            "macd_fast": 2,
+            "macd_slow": 3,
+            "macd_signal": 2,
+            "adx_period": 2,
+            "adx_min": 101.0,
+            "sl_atr_mult": 1.0,
+            "tp_atr_mult": 2.0,
+            "trail_atr_mult": 1.0,
+            "max_hold_bars": 3,
+            "min_confirmations": 6,
+            "session_start_minutes": 0,
+            "session_end_minutes": 0,
+        },
     )
-    decision = core.on_bar(_context(_volume_rally_breakout_bars()))
+    core = VolumeRallyCore(params)
+    decision = core.on_bar(_context(*bars))
     assert decision.action == "hold"
     assert decision.reason == "insufficient_confirmations"
     assert decision.entry_intent is not None
@@ -236,13 +290,22 @@ def test_backtest_runner_persists_candidates_when_enabled():
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-19",
                 "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
-                "strategy": "breakout_channel",
-                "strategy_params": {
-                    "lookback": 3,
-                    "stake": 1.0,
-                    "stop_loss_pct": 0.01,
-                    "take_profit_pct": 0.02,
-                    "max_hold_bars": 5,
+                "trigger": {
+                    "name": "breakout_channel",
+                    "params": {
+                        "lookback": 3,
+                        "stake": 1.0,
+                        "stop_loss_pct": 0.01,
+                        "take_profit_pct": 0.02,
+                        "max_hold_bars": 5,
+                    },
+                },
+                "exit_rules": {
+                    "rules": [
+                        {"name": "channel_break", "params": {"lookback": 3}},
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                        {"name": "max_hold_bars", "params": {"max_hold_bars": 5}},
+                    ]
                 },
                 "analyzers": {"include_candidate_log": True},
             }
@@ -312,8 +375,8 @@ def test_live_executor_writes_candidate_jsonl(tmp_path: Path):
     run = AlpacaTradingRunConfig(
         run_id="run-1",
         symbol="AAPL",
-        strategy="breakout_channel",
-        strategy_params={"lookback": 5, "stake": 1.0, "stop_loss_pct": 0.01, "take_profit_pct": 0.02, "max_hold_bars": 10},
+        trigger={"name": "buy_and_hold", "params": {"stake": 1}},
+        exit_rules={"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
     )
     execution = AlpacaExecutionConfig(state_directory=str(tmp_path), include_candidate_log=True)
     executor = build_alpaca_executor(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -159,3 +160,35 @@ class RiskModelService:
         if not detail.argo_workflow_name:
             return None
         return self._argo_submitter.get_workflow_phase(detail.argo_workflow_name)
+
+    def delete_group(self, group_id: str) -> bool:
+        detail = self._risk_repo.get_detail(group_id)
+        if detail is None:
+            return False
+
+        if detail.status in {"pending", "running"} and detail.argo_workflow_name:
+            try:
+                self._argo_submitter.terminate_workflow(
+                    detail.argo_workflow_name,
+                    namespace=detail.argo_namespace or None,
+                )
+            except Exception:  # noqa: BLE001
+                self._logger.exception(
+                    "Failed to terminate risk model workflow; continuing with deletion. group_id=%s",
+                    group_id,
+                )
+
+        deleted = self._risk_repo.delete_group(group_id)
+        if deleted is None:
+            return False
+
+        artifact_dir = deleted.artifact_dir
+        try:
+            shutil.rmtree(artifact_dir)
+        except FileNotFoundError:
+            return True
+        except PermissionError as exc:
+            raise RuntimeError(f"Risk model artifact_dir is not deletable: {artifact_dir}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"Failed to delete risk model artifact_dir: {artifact_dir}") from exc
+        return True

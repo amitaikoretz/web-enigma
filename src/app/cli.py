@@ -34,7 +34,8 @@ from app.backtests.artifacts import persist_backtest_report
 from app.reporting import generate_html_report
 from app.risk.data.report_loader import CandidateLoadError
 from app.risk.dataset.builder import build_risk_dataset
-from app.strategies.registry import list_strategies
+from app.strategies.exit_rules import list_exit_rules
+from app.strategies.triggers import list_triggers
 from app.terminal_command import format_terminal_command
 from app.db.session import get_session_factory
 from app.universes.service import SymbolUniverseService
@@ -93,7 +94,7 @@ def _cmd_run(
     config_file = Path(config_path)
     try:
         raw = _load_yaml(config_file)
-        config = BacktestConfig.model_validate(raw)
+        config = BacktestConfig.model_validate(raw, context={"config_base_dir": config_file.parent.resolve()})
     except FileNotFoundError:
         print(f"Config file not found: {config_path}")
         return 2
@@ -116,7 +117,7 @@ def _cmd_run(
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        total_backtests = sum(len(r.strategies) if r.strategies else 1 for r in config.runs)
+        total_backtests = len(config.runs)
         task_id = progress.add_task("Running backtests", total=total_backtests)
 
         def on_run_start(run, idx: int, total: int) -> None:
@@ -187,7 +188,7 @@ def _cmd_alpaca_run(config_path: str) -> int:
     config_file = Path(config_path)
     try:
         raw = _load_yaml(config_file)
-        config = AlpacaTradingConfig.model_validate(raw)
+        config = AlpacaTradingConfig.model_validate(raw, context={"config_base_dir": config_file.parent.resolve()})
     except FileNotFoundError:
         print(f"Config file not found: {config_path}")
         return 2
@@ -226,9 +227,12 @@ def _cmd_alpaca_run(config_path: str) -> int:
 
 
 def _cmd_list_strategies() -> int:
-    specs = list_strategies()
-    for spec in specs:
-        console.print(f"{spec.name}: {spec.description}")
+    console.print("Triggers:")
+    for spec in list_triggers():
+        console.print(f"  {spec.name}: {spec.description}")
+    console.print("Exit rules:")
+    for spec in list_exit_rules():
+        console.print(f"  {spec.name}: {spec.description}")
     return 0
 
 
@@ -479,7 +483,7 @@ def plan_shards_command(
     split_by: str | None = typer.Option(
         None,
         "--split-by",
-        help="Shard grouping: run, symbol, strategy, or symbol_strategy",
+        help="Shard grouping: run, symbol, trigger, symbol_trigger (aliases: strategy, symbol_strategy)",
     ),
 ) -> int:
     return _cmd_plan_shards(config, work_dir, manifest, shards_param, split_by)

@@ -1,0 +1,6 @@
+name: rsi_reversion
+params:
+  period: 14
+  oversold: 30
+  stake: 10
+

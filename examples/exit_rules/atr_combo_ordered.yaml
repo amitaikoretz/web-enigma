@@ -1,0 +1,13 @@
+rules:
+  # YAML order matters: first exit rule that triggers closes the trade.
+  - name: atr_take_profit
+    params:
+      atr_period: 14
+      tp_atr_mult: 3.0
+  - name: atr_profit_protect_stop
+    params:
+      atr_period: 14
+      sl_atr_mult: 1.5
+      arm_atr_mult: 2.0
+      trail_atr_mult: 1.0
+

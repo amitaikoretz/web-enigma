@@ -30,6 +30,8 @@ export interface RiskModelListItem {
   argo_workflow_name?: string | null
   backtest_ids: string[]
   targets: string[]
+  targets_total: number
+  targets_done: number
   summary_metrics?: Record<string, unknown> | null
   artifact_dir: string
 }
@@ -61,4 +63,3 @@ export interface RiskModelDetail {
   sources: Array<Record<string, unknown>>
   targets: RiskModelTargetRow[]
 }
-

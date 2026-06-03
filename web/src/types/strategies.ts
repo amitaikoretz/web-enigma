@@ -2,6 +2,10 @@ export interface StrategyParameterMetadata {
   type: string
   default: unknown
   required: boolean
+  title?: string | null
+  description?: string | null
+  enum?: unknown[] | null
+  multipleOf?: number | null
   minimum?: number | null
   maximum?: number | null
   exclusiveMinimum?: number | null

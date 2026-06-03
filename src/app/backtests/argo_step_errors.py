@@ -98,4 +98,14 @@ def run_typer_app_with_argo_error_outputs(typer_app: Callable[[], Any], tmp_dir:
         raise
     except BaseException as exc:
         write_exception_outputs(exc, tmp_dir=tmp_dir)
+        # Also emit details to logs (stderr) so Argo UI shows the error context immediately.
+        exc_type = type(exc).__name__
+        message = str(exc).strip()
+        one_liner = f"{exc_type}: {message}" if message else exc_type
+        try:
+            typer.echo(one_liner, err=True)
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+        except Exception:
+            # Never block error propagation due to logging issues.
+            pass
         raise

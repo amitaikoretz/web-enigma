@@ -7,9 +7,5 @@ runs:
     data:
       type: csv
       path: "examples/data/sample_daily.csv"
-    strategy: "rsi_reversion"
-    strategy_params:
-      period: 5
-      oversold: 35
-      overbought: 65
-      stake: 5
+    trigger_path: "examples/triggers/rsi_reversion.yaml"
+    exit_rules_path: "examples/exit_rules/rsi_reversion_exits.yaml"

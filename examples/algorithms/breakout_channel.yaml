@@ -7,7 +7,5 @@ runs:
     data:
       type: csv
       path: "examples/data/sample_daily.csv"
-    strategy: "breakout_channel"
-    strategy_params:
-      lookback: 4
-      stake: 10
+    trigger_path: "examples/triggers/breakout_channel.yaml"
+    exit_rules_path: "examples/exit_rules/breakout_channel_exits.yaml"

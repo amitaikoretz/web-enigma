@@ -1,0 +1,6 @@
+name: sma_cross
+params:
+  fast: 3
+  slow: 5
+  stake: 10
+

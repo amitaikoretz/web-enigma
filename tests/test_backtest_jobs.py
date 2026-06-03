@@ -26,9 +26,17 @@ def _wizard_payload() -> dict[str, object]:
         "end_date": "2024-01-10",
         "resolution": "1d",
         "symbols": ["aapl", "msft"],
-        "strategies": [
+        "triggers": [
             {"name": "buy_and_hold", "params": {"stake": 1}},
-            {"name": "sma_cross", "params": {"fast": 5, "slow": 10}},
+            {"name": "sma_cross", "params": {"fast": 5, "slow": 10, "stake": 1}},
+        ],
+        "exit_rules": [
+            {
+                "rules": [
+                    {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                    {"name": "max_hold_bars", "params": {"max_hold_bars": 24}},
+                ]
+            }
         ],
     }
 
@@ -53,7 +61,7 @@ def _fake_runner(config, config_raw, on_run_complete=None, on_run_error=None, **
             run_id=run.run_id,
             name=run.name,
             status="success",
-            strategy=run.strategy or "",
+            strategy=(run.trigger.name if run.trigger else ""),
             symbol=run.data.symbol if hasattr(run.data, "symbol") else None,
             data_source=run.data.type,
             summary=RunSummary(
@@ -107,7 +115,7 @@ def _fake_runner(config, config_raw, on_run_complete=None, on_run_error=None, **
     )
 
 
-def test_build_backtest_config_expands_symbols_and_strategies_cartesian() -> None:
+def test_build_backtest_config_expands_symbols_and_triggers_cartesian() -> None:
     config = build_backtest_config(
         payload=BacktestCreateRequest.model_validate(
             {
@@ -115,9 +123,17 @@ def test_build_backtest_config_expands_symbols_and_strategies_cartesian() -> Non
                 "end_date": "2024-01-03",
                 "resolution": "1d",
                 "symbols": ["aapl", "msft"],
-                "strategies": [
+                "triggers": [
                     {"name": "buy_and_hold", "params": {"stake": 1}},
-                    {"name": "sma_cross", "params": {"fast": 5, "slow": 10}},
+                    {"name": "sma_cross", "params": {"fast": 5, "slow": 10, "stake": 1}},
+                ],
+                "exit_rules": [
+                    {
+                        "rules": [
+                            {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                            {"name": "max_hold_bars", "params": {"max_hold_bars": 24}},
+                        ]
+                    }
                 ],
             }
         ),
@@ -126,7 +142,7 @@ def test_build_backtest_config_expands_symbols_and_strategies_cartesian() -> Non
 
     assert len(config.runs) == 4
     assert [run.data.symbol for run in config.runs] == ["AAPL", "MSFT", "AAPL", "MSFT"]
-    assert [run.strategy for run in config.runs] == [
+    assert [run.trigger.name for run in config.runs if run.trigger] == [
         "buy_and_hold",
         "buy_and_hold",
         "sma_cross",
@@ -229,7 +245,7 @@ def test_get_detail_hydrates_candidates_from_parquet(tmp_path, monkeypatch):
                 run_id=run.run_id,
                 name=run.name,
                 status="success",
-                strategy=run.strategy or "",
+                strategy=run.trigger.name if run.trigger else "",
                 symbol=run.data.symbol if hasattr(run.data, "symbol") else None,
                 data_source=run.data.type,
                 summary=RunSummary(start_value=10000.0, end_value=10500.0, return_pct=5.0),
@@ -244,7 +260,7 @@ def test_get_detail_hydrates_candidates_from_parquet(tmp_path, monkeypatch):
                 candidates=[
                     CandidateRecord(
                         candidate_id="cand-1",
-                        strategy_id=run.strategy or "",
+                        strategy_id=run.trigger.name if run.trigger else "",
                         symbol=run.data.symbol if hasattr(run.data, "symbol") else "UNKNOWN",
                         timestamp="2024-01-02T00:00:00+00:00",
                         entry_price=100.0,
@@ -282,7 +298,14 @@ def test_get_detail_hydrates_candidates_from_parquet(tmp_path, monkeypatch):
             "end_date": "2024-01-10",
             "resolution": "1d",
             "symbols": ["aapl"],
-            "strategies": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "exit_rules": [
+                {
+                    "rules": [
+                        {"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}},
+                    ]
+                }
+            ],
             "analyzers": {"include_candidate_log": True},
         },
     )
@@ -403,7 +426,7 @@ def test_local_backtest_status_reports_incremental_progress(tmp_path, monkeypatc
                 run_id=run.run_id,
                 name=run.name,
                 status="success",
-                strategy=run.strategy or "",
+                strategy=run.trigger.name if run.trigger else "",
                 symbol=run.data.symbol if hasattr(run.data, "symbol") else None,
                 data_source=run.data.type,
                 summary=RunSummary(
@@ -855,7 +878,8 @@ def test_create_backtest_rejects_invalid_dates_and_empty_selections(tmp_path):
             "end_date": "2024-01-12",
             "resolution": "1d",
             "symbols": [],
-            "strategies": [],
+            "triggers": [],
+            "exit_rules": [],
         },
     )
     invalid_dates_response = client.post(
@@ -865,7 +889,10 @@ def test_create_backtest_rejects_invalid_dates_and_empty_selections(tmp_path):
             "end_date": "2024-01-01",
             "resolution": "1d",
             "symbols": ["AAPL"],
-            "strategies": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "exit_rules": [
+                {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
+            ],
         },
     )
 
@@ -885,12 +912,15 @@ def test_create_backtest_rejects_invalid_strategy_overrides(tmp_path):
             "end_date": "2024-01-10",
             "resolution": "1d",
             "symbols": ["AAPL"],
-            "strategies": [{"name": "sma_cross", "params": {"fast": 20, "slow": 10}}],
+            "triggers": [{"name": "sma_cross", "params": {"fast": 20, "slow": 10, "stake": 1}}],
+            "exit_rules": [
+                {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
+            ],
         },
     )
 
     assert response.status_code == 422
-    assert "Invalid params for strategy 'sma_cross'" in response.text
+    assert "Invalid params for trigger 'sma_cross'" in response.text
 
 
 def test_get_backtest_and_status_return_404_for_unknown_id(tmp_path):
@@ -1007,7 +1037,8 @@ def test_build_backtest_config_risk_auxiliary_enables_candidate_log() -> None:
                 "end_date": "2024-01-03",
                 "resolution": "1d",
                 "symbols": ["AAPL"],
-                "strategies": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+                "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+                "exit_rules": [{"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]}],
                 "analyzers": {
                     "include_equity_curve": False,
                     "include_trade_log": True,
@@ -1044,8 +1075,8 @@ def _sample_retry_config(source_id: str) -> dict[str, object]:
                     "interval": "1d",
                     "feed": "iex",
                 },
-                "strategy": "buy_and_hold",
-                "strategy_params": {"stake": 1},
+                "trigger": {"name": "buy_and_hold", "params": {"stake": 1}},
+                "exit_rules": {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 10_000}}]},
             }
         ]
     }
