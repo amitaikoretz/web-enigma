@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
 from app.strategies.exit_rules import ExitRulesSelection
+from app.strategies.exit_rules import get_exit_rule_spec
 from app.strategies.triggers import TriggerSelection
 from app.strategies.yaml_io import load_exit_rules_selection, load_trigger_selection
 
@@ -94,6 +95,56 @@ class BacktestRunConfig(BaseModel):
     analyzers: AnalyzerConfig = Field(default_factory=AnalyzerConfig)
     execution: BacktestExecutionConfig = Field(default_factory=BacktestExecutionConfig)
 
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_legacy_strategy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        raw = dict(data)
+
+        # Legacy single-strategy shape: `strategy` + `strategy_params`.
+        strategy = raw.get("strategy")
+        if raw.get("trigger") is None and isinstance(strategy, str) and strategy.strip():
+            legacy_params = raw.get("strategy_params")
+            if not isinstance(legacy_params, dict):
+                legacy_params = {}
+            trigger_name = _legacy_trigger_name_for_strategy(strategy.strip())
+            if trigger_name is None:
+                trigger_name = strategy.strip()
+            raw["trigger"] = {"name": trigger_name, "params": legacy_params}
+            if raw.get("exit_rules") is None:
+                exit_rules = _legacy_exit_rules_for_strategy(strategy.strip(), legacy_params)
+                if exit_rules is not None:
+                    raw["exit_rules"] = exit_rules.model_dump(mode="json")
+            raw.pop("strategy", None)
+            raw.pop("strategy_params", None)
+
+        # Legacy multi-strategy shape: `strategies` is a list of strategy selections.
+        strategies = raw.get("strategies")
+        if raw.get("trigger") is None and isinstance(strategies, list):
+            entries = [entry for entry in strategies if isinstance(entry, dict)]
+            if len(entries) == 1:
+                entry = entries[0]
+                strategy_name = entry.get("name")
+                legacy_params = entry.get("params")
+                if isinstance(strategy_name, str) and strategy_name.strip():
+                    if not isinstance(legacy_params, dict):
+                        legacy_params = {}
+                    raw["trigger"] = {"name": strategy_name.strip(), "params": legacy_params}
+                    if raw.get("exit_rules") is None:
+                        exit_rules = _legacy_exit_rules_for_strategy(strategy_name.strip(), legacy_params)
+                        if exit_rules is not None:
+                            raw["exit_rules"] = exit_rules.model_dump(mode="json")
+                    raw.pop("strategies", None)
+            elif len(entries) > 1:
+                raise ValueError(
+                    "Legacy multi-strategy runs are no longer supported; split each strategy into its own "
+                    "run with trigger/exit_rules."
+                )
+
+        return raw
+
     @model_validator(mode="after")
     def validate_dates(self) -> "BacktestRunConfig":
         if self.start_date > self.end_date:
@@ -163,6 +214,30 @@ class AlpacaTradingRunConfig(BaseModel):
     trigger: TriggerSelection | None = None
     exit_rules: ExitRulesSelection | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def coerce_legacy_strategy_fields(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        raw = dict(data)
+        strategy = raw.get("strategy")
+        if raw.get("trigger") is None and isinstance(strategy, str) and strategy.strip():
+            legacy_params = raw.get("strategy_params")
+            if not isinstance(legacy_params, dict):
+                legacy_params = {}
+            trigger_name = _legacy_trigger_name_for_strategy(strategy.strip())
+            if trigger_name is None:
+                trigger_name = strategy.strip()
+            raw["trigger"] = {"name": trigger_name, "params": legacy_params}
+            if raw.get("exit_rules") is None:
+                exit_rules = _legacy_exit_rules_for_strategy(strategy.strip(), legacy_params)
+                if exit_rules is not None:
+                    raw["exit_rules"] = exit_rules.model_dump(mode="json")
+            raw.pop("strategy", None)
+            raw.pop("strategy_params", None)
+        return raw
+
     @model_validator(mode="after")
     def resolve_components(self, info: ValidationInfo) -> "AlpacaTradingRunConfig":
         base_dir = info.context.get("config_base_dir") if info.context else None
@@ -181,6 +256,40 @@ class AlpacaTradingRunConfig(BaseModel):
                 raise ValueError("Run must define either 'exit_rules' or 'exit_rules_path'")
             self.exit_rules = load_exit_rules_selection(self.exit_rules_path, base_dir=base_dir)
         return self
+
+
+_LEGACY_STRATEGY_EXIT_RULES: dict[str, list[str]] = {
+    "sma_cross": ["sma_cross_down", "fixed_pct_oco", "max_hold_bars"],
+    "rsi_reversion": ["rsi_overbought", "fixed_pct_oco", "max_hold_bars"],
+    "buy_and_hold": ["fixed_pct_oco", "max_hold_bars"],
+    "breakout_channel": ["channel_break", "fixed_pct_oco", "max_hold_bars"],
+    "buy_oco_atr_tp_sl": ["atr_oco", "max_hold_bars"],
+    "buy_oco_atr_tp_trailing": ["atr_trailing", "max_hold_bars"],
+    "volume_rally": ["volume_rally_atr"],
+}
+
+_LEGACY_STRATEGY_TRIGGER_NAMES: dict[str, str] = {
+    "buy_oco_atr_tp_sl": "buy_oco_atr",
+    "buy_oco_atr_tp_trailing": "buy_oco_atr",
+}
+
+
+def _legacy_trigger_name_for_strategy(strategy_name: str) -> str | None:
+    return _LEGACY_STRATEGY_TRIGGER_NAMES.get(strategy_name)
+
+
+def _legacy_exit_rules_for_strategy(strategy_name: str, params: dict[str, Any]) -> ExitRulesSelection | None:
+    rule_names = _LEGACY_STRATEGY_EXIT_RULES.get(strategy_name)
+    if not rule_names:
+        return None
+
+    rules: list[dict[str, Any]] = []
+    for rule_name in rule_names:
+        spec = get_exit_rule_spec(rule_name)
+        rule_params = {key: value for key, value in params.items() if key in spec.params_model.model_fields}
+        rules.append({"name": rule_name, "params": rule_params})
+
+    return ExitRulesSelection.model_validate({"rules": rules})
 
 
 class AlpacaTradingGlobalConfig(BaseModel):

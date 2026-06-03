@@ -24,6 +24,7 @@ from app.backtests.artifacts import (
     summarize_backtest_artifacts,
     write_report_artifacts,
 )
+from app.backtests.replay import build_trade_replay_capsule, build_trade_replay_launch_config
 from app.backtests.models import (
     ArgoSplitBy,
     BacktestArgoLaunchRequest,
@@ -37,6 +38,7 @@ from app.backtests.models import (
     BacktestListPageResponse,
     BacktestRetryRequest,
     BacktestSelectionSummary,
+    BacktestTradeReplayResponse,
     BacktestStatusResponse,
 )
 from app.backtests.persistence import (
@@ -100,19 +102,27 @@ def _merge_artifact_paths(
 ) -> BacktestArtifactPaths:
     if preferred is None:
         return fallback
+
+    def _prefer_existing(value: str | None, default: str | None) -> str | None:
+        if value and Path(value).is_file():
+            return value
+        if default and Path(default).is_file():
+            return default
+        return value or default
+
     return BacktestArtifactPaths(
-        config_path=preferred.config_path or fallback.config_path,
-        report_json_path=preferred.report_json_path or fallback.report_json_path,
-        report_parquet_path=preferred.report_parquet_path or fallback.report_parquet_path,
-        candidates_json_path=preferred.candidates_json_path or fallback.candidates_json_path,
-        candidates_parquet_path=preferred.candidates_parquet_path or fallback.candidates_parquet_path,
-        equity_parquet_path=preferred.equity_parquet_path or fallback.equity_parquet_path,
-        orders_parquet_path=preferred.orders_parquet_path or fallback.orders_parquet_path,
-        trades_parquet_path=preferred.trades_parquet_path or fallback.trades_parquet_path,
-        rejections_parquet_path=preferred.rejections_parquet_path or fallback.rejections_parquet_path,
-        labels_parquet_path=preferred.labels_parquet_path or fallback.labels_parquet_path,
-        features_parquet_path=preferred.features_parquet_path or fallback.features_parquet_path,
-        manifest_path=preferred.manifest_path or fallback.manifest_path,
+        config_path=_prefer_existing(preferred.config_path, fallback.config_path),
+        report_json_path=_prefer_existing(preferred.report_json_path, fallback.report_json_path),
+        report_parquet_path=_prefer_existing(preferred.report_parquet_path, fallback.report_parquet_path),
+        candidates_json_path=_prefer_existing(preferred.candidates_json_path, fallback.candidates_json_path),
+        candidates_parquet_path=_prefer_existing(preferred.candidates_parquet_path, fallback.candidates_parquet_path),
+        equity_parquet_path=_prefer_existing(preferred.equity_parquet_path, fallback.equity_parquet_path),
+        orders_parquet_path=_prefer_existing(preferred.orders_parquet_path, fallback.orders_parquet_path),
+        trades_parquet_path=_prefer_existing(preferred.trades_parquet_path, fallback.trades_parquet_path),
+        rejections_parquet_path=_prefer_existing(preferred.rejections_parquet_path, fallback.rejections_parquet_path),
+        labels_parquet_path=_prefer_existing(preferred.labels_parquet_path, fallback.labels_parquet_path),
+        features_parquet_path=_prefer_existing(preferred.features_parquet_path, fallback.features_parquet_path),
+        manifest_path=_prefer_existing(preferred.manifest_path, fallback.manifest_path),
     )
 
 
@@ -194,6 +204,40 @@ def _selection_from_report(report: BacktestReport) -> BacktestSelectionSummary:
         symbols=symbols,
         triggers=triggers,
         exit_rules=exit_rules,
+    )
+
+
+def _file_timestamp(path: Path | None) -> datetime:
+    if path is None or not path.exists():
+        return _utc_now()
+    return datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+
+
+def _metadata_from_report(
+    backtest_id: str,
+    report: BacktestReport,
+    *,
+    report_path: Path | None,
+    config_path: Path | None,
+) -> BacktestListItem:
+    timestamp = max(_file_timestamp(report_path), _file_timestamp(config_path))
+    status = "completed" if report.status != "failure" else "failed"
+    error_message = None if report.failed_runs == 0 else f"{report.failed_runs} run(s) failed"
+    return BacktestListItem(
+        id=backtest_id,
+        created_at=timestamp,
+        updated_at=timestamp,
+        status=status,
+        report_status=report.status,
+        total_runs=report.total_runs,
+        completed_runs=report.total_runs,
+        successful_runs=report.successful_runs,
+        failed_runs=report.failed_runs,
+        selection=_selection_from_report(report),
+        error_message=error_message,
+        execution_backend="local",
+        started_at=report.generated_at,
+        finished_at=report.generated_at,
     )
 
 
@@ -979,6 +1023,22 @@ class BacktestJobService:
     def get_status(self, backtest_id: str) -> BacktestStatusResponse | None:
         metadata = self.job_repository.get(backtest_id)
         if metadata is None:
+            report_path = self.resolve_report_file_path(backtest_id)
+            report = (
+                self.repository.load_report(backtest_id, report_json_path=str(report_path))
+                if report_path is not None
+                else None
+            )
+            if report is None:
+                return None
+            config_path = self.job_repository.get_paths(backtest_id)
+            metadata = _metadata_from_report(
+                backtest_id,
+                report,
+                report_path=report_path,
+                config_path=Path(config_path.config_path) if config_path and config_path.config_path else None,
+            )
+        if metadata is None:
             return None
 
         workflow = None
@@ -1023,12 +1083,24 @@ class BacktestJobService:
 
     def get_detail(self, backtest_id: str) -> BacktestDetailResponse | None:
         metadata = self.job_repository.get(backtest_id)
-        if metadata is None:
-            return None
         paths = self.job_repository.get_paths(backtest_id)
         report_path = self.resolve_report_file_path(backtest_id)
+        if metadata is None:
+            report = (
+                self.repository.load_report(backtest_id, report_json_path=str(report_path))
+                if report_path is not None
+                else None
+            )
+            if report is None:
+                return None
+            metadata = _metadata_from_report(
+                backtest_id,
+                report,
+                report_path=report_path,
+                config_path=Path(paths.config_path) if paths and paths.config_path else None,
+            )
         hydrate_paths = paths
-        if report_path is not None and (paths is None or not paths.manifest_path):
+        if report_path is not None:
             fallback_paths = default_artifact_paths(resolve_results_root(report_path, backtest_id), backtest_id)
             hydrate_paths = _merge_artifact_paths(paths, fallback_paths)
         report = (
@@ -1052,6 +1124,16 @@ class BacktestJobService:
             output_path=str(report_path) if report_path is not None else None,
             report=report,
             artifacts=artifacts,
+        )
+
+    def get_trade_replay(self, backtest_id: str, run_id: str, trade_index: int) -> BacktestTradeReplayResponse:
+        detail = self.get_detail(backtest_id)
+        if detail is None:
+            raise FileNotFoundError(f"Backtest '{backtest_id}' not found")
+        capsule = build_trade_replay_capsule(detail, run_id=run_id, trade_index=trade_index)
+        return BacktestTradeReplayResponse(
+            capsule=capsule,
+            launch_config=build_trade_replay_launch_config(capsule),
         )
 
     def update_name(self, backtest_id: str, name: str | None) -> BacktestListItem:

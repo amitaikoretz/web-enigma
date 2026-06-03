@@ -24,6 +24,13 @@ export function chartTimeToMs(time: Time): number {
   return Date.parse(`${time}T00:00:00Z`)
 }
 
+export function msToChartTime(ms: number, resolution: string): Time {
+  if (resolution === '1d') {
+    return new Date(ms).toISOString().slice(0, 10) as Time
+  }
+  return Math.floor(ms / 1000) as UTCTimestamp
+}
+
 function formatDailyChartDate(time: Time): string {
   if (typeof time === 'string') {
     return time

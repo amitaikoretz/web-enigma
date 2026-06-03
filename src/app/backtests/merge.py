@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from app import __version__
+from app.backtests.artifacts import default_artifact_paths, hydrate_report_from_artifacts, resolve_results_root
 from app.engine.aggregates import compute_report_aggregates
 from app.backtests.sharding import ShardPlan, load_shard_manifest
 from app.output.models import BacktestReport, RunResult
@@ -31,6 +32,9 @@ def merge_shard_reports(
         if not shard_path.exists():
             raise FileNotFoundError(f"Shard report not found: {shard_path}")
         shard_report = BacktestReport.model_validate_json(shard_path.read_text(encoding="utf-8"))
+        shard_artifact_root = resolve_results_root(shard_path, shard_path.stem)
+        shard_paths = default_artifact_paths(shard_artifact_root, shard_path.stem)
+        shard_report = hydrate_report_from_artifacts(shard_report, paths=shard_paths)
         results.extend(shard_report.results)
 
     successful = sum(1 for result in results if result.status == "success")

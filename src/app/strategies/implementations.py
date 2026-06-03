@@ -9,6 +9,7 @@ import numpy as np
 from backtesting import Strategy
 
 from app.strategies.auditor_logging import log_auditor_rejection
+from app.replay_debug import maybe_break_for_trade_replay
 from app.strategies.candidates import CandidateEvent, record_candidate
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyDecision
 from app.strategies.entry_plans import atr_entry_intent, fixed_pct_entry_intent
@@ -1010,6 +1011,11 @@ class PortableBacktestingStrategy(Strategy):
         self._record_entry_events()
         self._record_closed_trade_events()
         current_bar = self._bars_history[-1]
+        maybe_break_for_trade_replay(
+            "app.strategies.implementations.PortableBacktestingStrategy.next",
+            bar_index=data_index,
+            timestamp=current_bar.iso_timestamp,
+        )
         benchmark_bars = (
             _benchmark_bars_as_of(current_bar, self._all_benchmark_bars) if self._all_benchmark_bars else None
         )

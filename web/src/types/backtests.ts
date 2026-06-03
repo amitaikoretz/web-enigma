@@ -108,6 +108,8 @@ export interface BacktestOrderRecord {
 
 export interface BacktestTradeRecord {
   datetime: string | null
+  entry_bar_index?: number | null
+  exit_bar_index?: number | null
   size: number
   price: number
   value: number
@@ -117,6 +119,32 @@ export interface BacktestTradeRecord {
   entry_datetime?: string | null
   hold_minutes?: number | null
   hold_bars?: number | null
+  regime_label?: string | null
+}
+
+export interface BacktestTradeReplayCapsule {
+  capsule_version: number
+  backtest_id: string
+  run_id: string
+  run_name: string | null
+  run_symbol: string | null
+  run_strategy: string
+  trade_index: number
+  target_methods: string[]
+  break_at: 'entry' | 'exit'
+  trade: BacktestTradeRecord
+  trade_entry_time: string | null
+  trade_exit_time: string | null
+  focus_window_start: string | null
+  focus_window_end: string | null
+  config_format: 'yaml'
+  config_text: string
+  config_sha256: string | null
+}
+
+export interface BacktestTradeReplayResponse {
+  capsule: BacktestTradeReplayCapsule
+  launch_config: Record<string, unknown>
 }
 
 export interface BacktestRejectionRecord {

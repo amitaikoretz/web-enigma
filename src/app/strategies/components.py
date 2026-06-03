@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Sequence
 
+from app.replay_debug import maybe_break_for_trade_replay
 from app.strategies.core import StrategyContext, StrategyCore, StrategyDecision
 
 
@@ -86,6 +87,11 @@ class ComposableStrategyCore(StrategyCore):
         }
 
     def on_bar(self, context: StrategyContext) -> StrategyDecision:
+        maybe_break_for_trade_replay(
+            "app.strategies.components.ComposableStrategyCore.on_bar",
+            bar_index=len(context.bars) - 1,
+            timestamp=context.bar.iso_timestamp,
+        )
         if context.position.is_open:
             for rule_name, rule in self._exit_rules:
                 decision = _ensure_exit_rule_decision(rule.on_bar(context), rule_name=rule_name)

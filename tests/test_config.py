@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+import yaml
 
 from app.config.models import BacktestConfig, LiveTradingConfig
 
@@ -69,6 +70,26 @@ def test_invalid_config_without_trigger_or_exit_rules():
         BacktestConfig.model_validate({"runs": [run]})
 
 
+def test_legacy_strategy_config_is_coerced():
+    config = {
+        "runs": [
+            {
+                "run_id": "legacy",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "strategy": "buy_and_hold",
+                "strategy_params": {"stake": 1},
+            }
+        ]
+    }
+    parsed = BacktestConfig.model_validate(config)
+    assert parsed.runs[0].trigger is not None
+    assert parsed.runs[0].trigger.name == "buy_and_hold"
+    assert parsed.runs[0].exit_rules is not None
+    assert [rule.name for rule in parsed.runs[0].exit_rules.rules] == ["fixed_pct_oco", "max_hold_bars"]
+
+
 def test_valid_backtest_fill_model():
     run = _base_run()
     run["execution"] = {"fill_model": "next_bar"}
@@ -92,6 +113,13 @@ def test_valid_alpaca_trading_config():
 
     parsed = AlpacaTradingConfig.model_validate(config)
     assert parsed.runs[0].symbol == "AAPL"
+
+
+def test_legacy_example_config_substantial_parses():
+    raw = yaml.safe_load(Path("examples/algorithms/substantial.yaml").read_text(encoding="utf-8"))
+    parsed = BacktestConfig.model_validate(raw)
+    assert len(parsed.runs) == 3
+    assert [run.trigger.name for run in parsed.runs] == ["buy_oco_atr", "buy_oco_atr", "buy_oco_atr"]
 
 
 def test_valid_live_trading_config():

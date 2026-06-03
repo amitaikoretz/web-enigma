@@ -9,6 +9,8 @@ from app.backtests.models import (
     BacktestListPageResponse,
     BacktestRetryRequest,
     BacktestSelectionSummary,
+    BacktestTradeReplayCapsule,
+    BacktestTradeReplayResponse,
     BacktestStatusResponse,
     BacktestUpdateRequest,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "BacktestResultRepository",
     "BacktestRetryRequest",
     "BacktestSelectionSummary",
+    "BacktestTradeReplayCapsule",
+    "BacktestTradeReplayResponse",
     "BacktestStatusResponse",
     "BacktestUpdateRequest",
     "SqlAlchemyBacktestJobRepository",

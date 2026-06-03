@@ -16,19 +16,32 @@ import {
   type SeriesMarker,
   type Time,
 } from 'lightweight-charts'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useSettings } from '../settings/useSettings'
 import type { OrderRecord, TradeRecord } from '../types/dayBacktest'
 import type { MarketDataResponse } from '../types/marketData'
-import { toChartTime, createChartTimeFormatter, createChartTickMarkFormatter } from '../utils/chartTime'
+import { clampTradeChartFocusWindowMs, type TradeChartFocusWindowMs } from '../utils/backtestChartFocus'
+import {
+  chartTimeToMs,
+  msToChartTime,
+  toChartTime,
+  createChartTimeFormatter,
+  createChartTickMarkFormatter,
+} from '../utils/chartTime'
+import { getTradingDayBoundaryTimes } from '../utils/tradingDayBoundaries'
 import { ChartViewportWindow } from './ChartViewportWindow'
+
+export type ChartThemeMode = 'light' | 'dark'
 
 interface CandlestickChartProps {
   data: MarketDataResponse | null
   orders?: OrderRecord[]
   trades?: TradeRecord[]
+  focusWindow?: TradeChartFocusWindowMs | null
+  onResetFocusWindow?: () => void
   showViewportWindow?: boolean
+  themeMode?: ChartThemeMode
 }
 
 const BUY_MARKER_COLOR = '#58a6ff'
@@ -37,6 +50,65 @@ const WIN_TRADE_COLOR = '#3fb950'
 const LOSS_TRADE_COLOR = '#f85149'
 const MIN_SELECTION_PX = 8
 const VOLUME_PANE_STRETCH = 0.28
+
+const CHART_THEME: Record<
+  ChartThemeMode,
+  {
+    background: string
+    border: string
+    controlBackground: string
+    controlBorder: string
+    grid: string
+    labelBackground: string
+    mutedText: string
+    paneSeparator: string
+    paneSeparatorHover: string
+    dayBoundary: string
+    selectionBackground: string
+    selectionBorder: string
+    text: string
+    tooltipBackground: string
+    tooltipBorder: string
+    tooltipText: string
+  }
+> = {
+  dark: {
+    background: '#0d1117',
+    border: '#30363d',
+    controlBackground: 'rgba(22, 27, 34, 0.88)',
+    controlBorder: '#30363d',
+    grid: '#30363d',
+    labelBackground: '#30363d',
+    mutedText: '#c9d1d9',
+    paneSeparator: '#30363d',
+    paneSeparatorHover: '#484f58',
+    dayBoundary: 'rgba(148, 163, 184, 0.35)',
+    selectionBackground: 'rgba(88, 166, 255, 0.12)',
+    selectionBorder: 'rgba(88, 166, 255, 0.55)',
+    text: '#f0f6fc',
+    tooltipBackground: 'rgba(22, 27, 34, 0.96)',
+    tooltipBorder: '#30363d',
+    tooltipText: '#c9d1d9',
+  },
+  light: {
+    background: '#ffffff',
+    border: '#d0d7de',
+    controlBackground: 'rgba(255, 255, 255, 0.92)',
+    controlBorder: '#d0d7de',
+    grid: '#e5e7eb',
+    labelBackground: '#64748b',
+    mutedText: '#4b5563',
+    paneSeparator: '#d0d7de',
+    paneSeparatorHover: '#94a3b8',
+    dayBoundary: 'rgba(100, 116, 139, 0.35)',
+    selectionBackground: 'rgba(37, 99, 235, 0.10)',
+    selectionBorder: 'rgba(37, 99, 235, 0.45)',
+    text: '#0f172a',
+    tooltipBackground: 'rgba(255, 255, 255, 0.98)',
+    tooltipBorder: '#d0d7de',
+    tooltipText: '#111827',
+  },
+}
 
 function toCandlestickData(data: MarketDataResponse): CandlestickData<Time>[] {
   return data.rows.map((row) => ({
@@ -212,6 +284,7 @@ function buildTooltipHtml(
   tradesAtBar: TradeRecord[],
   timezone: string,
   timeDisplayFormat: '12h' | '24h',
+  borderColor: string,
 ): string {
   const lines = [
     `<div style="font-weight:600;margin-bottom:4px">${formatBarTime(bar.timestamp, resolution, timezone, timeDisplayFormat)}</div>`,
@@ -220,7 +293,7 @@ function buildTooltipHtml(
   ]
 
   if (ordersAtBar.length > 0 || tradesAtBar.length > 0) {
-    lines.push('<div style="margin-top:6px;border-top:1px solid #30363d;padding-top:6px">')
+    lines.push(`<div style="margin-top:6px;border-top:1px solid ${borderColor};padding-top:6px">`)
     lines.push(ordersAtBar.map(formatOrderLine).join(''))
     lines.push(tradesAtBar.map(formatTradeLine).join(''))
     lines.push('</div>')
@@ -233,7 +306,10 @@ export function CandlestickChart({
   data,
   orders = [],
   trades = [],
+  focusWindow = null,
+  onResetFocusWindow,
   showViewportWindow = false,
+  themeMode,
 }: CandlestickChartProps) {
   const { appearance, platformSettings } = useSettings()
   const theme = useTheme()
@@ -253,6 +329,66 @@ export function CandlestickChart({
 
   const [zoomSelectMode, setZoomSelectMode] = useState(false)
   const [chartInstance, setChartInstance] = useState<IChartApi | null>(null)
+  const [boundaryPositions, setBoundaryPositions] = useState<number[]>([])
+  const resolvedThemeMode: ChartThemeMode = themeMode ?? (theme.palette.mode === 'light' ? 'light' : 'dark')
+  const chartTheme = CHART_THEME[resolvedThemeMode]
+  const dataRange = useMemo(() => {
+    if (!data || data.rows.length === 0) {
+      return null
+    }
+
+    return {
+      from: toChartTime(data.rows[0].timestamp, data.resolution),
+      to: toChartTime(data.rows.at(-1)!.timestamp, data.resolution),
+    }
+  }, [data])
+  const boundaryTimes = useMemo(
+    () => (data ? getTradingDayBoundaryTimes(data, platformSettings.platform_behavior.timezone) : []),
+    [data, platformSettings.platform_behavior.timezone],
+  )
+  const focusRange = useMemo(() => {
+    if (!data || !focusWindow || !dataRange || data.resolution === '1d') {
+      return null
+    }
+
+    const clamped = clampTradeChartFocusWindowMs(focusWindow, {
+      fromMs: chartTimeToMs(dataRange.from),
+      toMs: chartTimeToMs(dataRange.to),
+    })
+
+    if (!clamped) {
+      return null
+    }
+
+    return {
+      from: msToChartTime(clamped.fromMs, data.resolution),
+      to: msToChartTime(clamped.toMs, data.resolution),
+    }
+  }, [data, dataRange, focusWindow])
+
+  const updateBoundaryPositions = useCallback(() => {
+    const chart = chartRef.current
+    if (!chart || boundaryTimes.length === 0) {
+      setBoundaryPositions([])
+      return
+    }
+
+    const timeScale = chart.timeScale()
+    const nextPositions = boundaryTimes
+      .map((time) => timeScale.timeToCoordinate(time))
+      .filter((coordinate): coordinate is NonNullable<typeof coordinate> => coordinate !== null)
+      .map((coordinate) => Number(coordinate))
+
+    setBoundaryPositions((current) => {
+      if (
+        current.length === nextPositions.length &&
+        current.every((value, index) => value === nextPositions[index])
+      ) {
+        return current
+      }
+      return nextPositions
+    })
+  }, [boundaryTimes])
 
   useEffect(() => {
     dataRef.current = data
@@ -271,7 +407,8 @@ export function CandlestickChart({
 
   const resetZoom = useCallback(() => {
     chartRef.current?.timeScale().fitContent()
-  }, [])
+    onResetFocusWindow?.()
+  }, [onResetFocusWindow])
 
   useEffect(() => {
     const container = chartContainerRef.current
@@ -284,25 +421,27 @@ export function CandlestickChart({
       layout: {
         background: {
           type: ColorType.Solid,
-          color: theme.palette.background.paper,
+          color: chartTheme.background,
         },
-        textColor:
-          appearance.indicator_contrast === 'high' ? theme.palette.text.primary : '#c9d1d9',
+        textColor: appearance.indicator_contrast === 'high' ? chartTheme.text : chartTheme.mutedText,
         panes: {
-          separatorColor: appearance.indicator_contrast === 'high' ? '#556170' : '#30363d',
-          separatorHoverColor: appearance.indicator_contrast === 'high' ? '#7d8898' : '#484f58',
+          separatorColor: appearance.indicator_contrast === 'high' ? chartTheme.paneSeparatorHover : chartTheme.paneSeparator,
+          separatorHoverColor:
+            appearance.indicator_contrast === 'high'
+              ? chartTheme.paneSeparatorHover
+              : chartTheme.paneSeparatorHover,
           enableResize: true,
         },
       },
       grid: {
-        vertLines: { color: appearance.chart_grid_visible ? '#30363d' : 'transparent' },
-        horzLines: { color: appearance.chart_grid_visible ? '#30363d' : 'transparent' },
+        vertLines: { color: appearance.chart_grid_visible ? chartTheme.grid : 'transparent' },
+        horzLines: { color: appearance.chart_grid_visible ? chartTheme.grid : 'transparent' },
       },
       rightPriceScale: {
-        borderColor: '#30363d',
+        borderColor: chartTheme.border,
       },
       timeScale: {
-        borderColor: '#30363d',
+        borderColor: chartTheme.border,
         timeVisible: true,
         secondsVisible: false,
         tickMarkFormatter: createChartTickMarkFormatter(
@@ -317,8 +456,8 @@ export function CandlestickChart({
         ),
       },
       crosshair: {
-        vertLine: { labelBackgroundColor: '#30363d' },
-        horzLine: { labelBackgroundColor: '#30363d' },
+        vertLine: { labelBackgroundColor: chartTheme.labelBackground },
+        horzLine: { labelBackgroundColor: chartTheme.labelBackground },
       },
       handleScroll: {
         mouseWheel: true,
@@ -402,6 +541,7 @@ export function CandlestickChart({
         tradesAtBar,
         platformSettings.platform_behavior.timezone,
         appearance.time_display_format,
+        chartTheme.tooltipBorder,
       )
       tooltip.style.display = 'block'
 
@@ -421,6 +561,11 @@ export function CandlestickChart({
     }
 
     chart.subscribeCrosshairMove(onCrosshairMove)
+    const timeScale = chart.timeScale()
+    const onVisibleTimeRangeChange = () => {
+      updateBoundaryPositions()
+    }
+    timeScale.subscribeVisibleTimeRangeChange(onVisibleTimeRangeChange)
 
     const hideSelection = () => {
       const selection = selectionRef.current
@@ -514,8 +659,11 @@ export function CandlestickChart({
       }
       const { width, height } = entry.contentRect
       chart.applyOptions({ width, height })
+      updateBoundaryPositions()
     })
     observer.observe(container)
+
+    updateBoundaryPositions()
 
     return () => {
       wrapper.removeEventListener('pointerdown', onPointerDown, true)
@@ -523,6 +671,7 @@ export function CandlestickChart({
       wrapper.removeEventListener('pointerup', onPointerUp, true)
       wrapper.removeEventListener('pointercancel', onPointerUp, true)
       chart.unsubscribeCrosshairMove(onCrosshairMove)
+      timeScale.unsubscribeVisibleTimeRangeChange(onVisibleTimeRangeChange)
       observer.disconnect()
       markersRef.current?.detach()
       markersRef.current = null
@@ -539,8 +688,17 @@ export function CandlestickChart({
     appearance.indicator_contrast,
     appearance.time_display_format,
     platformSettings.platform_behavior.timezone,
-    theme.palette.background.paper,
-    theme.palette.text.primary,
+    chartTheme.background,
+    chartTheme.border,
+    chartTheme.grid,
+    chartTheme.labelBackground,
+    chartTheme.mutedText,
+    chartTheme.paneSeparator,
+    chartTheme.paneSeparatorHover,
+    chartTheme.text,
+    chartTheme.tooltipBorder,
+    resolvedThemeMode,
+    updateBoundaryPositions,
   ])
 
   useEffect(() => {
@@ -562,16 +720,20 @@ export function CandlestickChart({
     series.setData(toCandlestickData(data))
     volumeSeries.setData(toVolumeData(data, appearance.chart_up_color, appearance.chart_down_color))
     markers.setMarkers(toAnnotationMarkers(data, orders, trades))
-    chart.timeScale().fitContent()
-  }, [appearance.chart_down_color, appearance.chart_up_color, data, orders, trades])
+    if (!focusRange) {
+      chart.timeScale().fitContent()
+    }
+    updateBoundaryPositions()
+  }, [appearance.chart_down_color, appearance.chart_up_color, data, focusRange, orders, trades, updateBoundaryPositions])
 
-  const dataRange =
-    data && data.rows.length > 0
-      ? {
-          from: toChartTime(data.rows[0].timestamp, data.resolution),
-          to: toChartTime(data.rows.at(-1)!.timestamp, data.resolution),
-        }
-      : null
+  useEffect(() => {
+    const chart = chartRef.current
+    if (!chart || !focusRange) {
+      return
+    }
+
+    chart.timeScale().setVisibleRange(focusRange)
+  }, [focusRange])
 
   return (
     <Box
@@ -600,79 +762,99 @@ export function CandlestickChart({
           }}
         />
 
-      <Box
-        ref={selectionRef}
-        sx={{
-          display: 'none',
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          pointerEvents: 'none',
-          bgcolor: 'rgba(88, 166, 255, 0.12)',
-          border: '1px solid rgba(88, 166, 255, 0.55)',
-          zIndex: 1,
-        }}
-      />
+        {boundaryPositions.map((left, index) => (
+          <Box
+            key={`${left}-${index}`}
+            sx={{
+              position: 'absolute',
+              top: 0,
+              bottom: 0,
+              left,
+              borderLeft: `1px dashed ${chartTheme.dayBoundary}`,
+              opacity: 0.9,
+              pointerEvents: 'none',
+              zIndex: 1,
+            }}
+          />
+        ))}
 
-      <Box
-        ref={tooltipRef}
-        sx={{
-          display: 'none',
-          position: 'absolute',
-          zIndex: 2,
-          pointerEvents: 'none',
-          px: 1.25,
-          py: 1,
-          fontSize: 12,
-          lineHeight: 1.5,
-          color: '#c9d1d9',
-          bgcolor: 'rgba(22, 27, 34, 0.96)',
-          border: '1px solid #30363d',
-          borderRadius: 1,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
-          maxWidth: 280,
-        }}
-      />
+        <Box
+          ref={selectionRef}
+          sx={{
+            display: 'none',
+            position: 'absolute',
+            top: 0,
+            bottom: 0,
+            pointerEvents: 'none',
+            bgcolor: chartTheme.selectionBackground,
+            border: `1px solid ${chartTheme.selectionBorder}`,
+            zIndex: 1,
+          }}
+        />
 
-      <Stack
-        direction="row"
-        spacing={0.5}
-        sx={{
-          position: 'absolute',
-          top: 8,
-          left: 8,
-          zIndex: 2,
-          alignItems: 'center',
-          bgcolor: 'rgba(22, 27, 34, 0.88)',
-          border: '1px solid #30363d',
-          borderRadius: 1,
-          p: 0.5,
-        }}
-      >
-        <Tooltip title={zoomSelectMode ? 'Drag to select a range' : 'Enable drag-to-zoom mode'}>
-          <ToggleButton
-            value="zoom"
-            selected={zoomSelectMode}
-            size="small"
-            onChange={() => setZoomSelectMode((current) => !current)}
-            aria-label="Toggle range zoom"
-            sx={{ px: 1 }}
+        <Box
+          ref={tooltipRef}
+          sx={{
+            display: 'none',
+            position: 'absolute',
+            zIndex: 2,
+            pointerEvents: 'none',
+            px: 1.25,
+            py: 1,
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: chartTheme.tooltipText,
+            bgcolor: chartTheme.tooltipBackground,
+            border: `1px solid ${chartTheme.tooltipBorder}`,
+            borderRadius: 1,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
+            maxWidth: 280,
+          }}
+        />
+
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{
+            position: 'absolute',
+            top: 8,
+            left: 8,
+            zIndex: 2,
+            alignItems: 'center',
+            bgcolor: chartTheme.controlBackground,
+            border: `1px solid ${chartTheme.controlBorder}`,
+            borderRadius: 1,
+            p: 0.5,
+          }}
+        >
+          <Tooltip title={zoomSelectMode ? 'Drag to select a range' : 'Enable drag-to-zoom mode'}>
+            <ToggleButton
+              value="zoom"
+              selected={zoomSelectMode}
+              size="small"
+              onChange={() => setZoomSelectMode((current) => !current)}
+              aria-label="Toggle range zoom"
+              sx={{ px: 1 }}
+            >
+              <ZoomInMapIcon fontSize="small" />
+            </ToggleButton>
+          </Tooltip>
+          <Tooltip title="Reset zoom">
+            <IconButton size="small" onClick={resetZoom} aria-label="Reset zoom">
+              <RestartAltIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ px: 0.5, display: { xs: 'none', sm: 'block' } }}
           >
-            <ZoomInMapIcon fontSize="small" />
-          </ToggleButton>
-        </Tooltip>
-        <Tooltip title="Reset zoom">
-          <IconButton size="small" onClick={resetZoom} aria-label="Reset zoom">
-            <RestartAltIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Typography variant="caption" color="text.secondary" sx={{ px: 0.5, display: { xs: 'none', sm: 'block' } }}>
-          {zoomSelectMode ? 'Drag to zoom' : 'Shift+drag to zoom'}
-        </Typography>
-      </Stack>
+            {zoomSelectMode ? 'Drag to zoom' : 'Shift+drag to zoom'}
+          </Typography>
+        </Stack>
       </Box>
 
-      {showViewportWindow && (
+      {showViewportWindow && !focusRange && (
         <ChartViewportWindow
           key={data ? `${data.symbol}-${data.start_date}-${data.stop_date}-${data.rows.length}` : 'empty'}
           chart={chartInstance}

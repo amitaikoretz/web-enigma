@@ -10,6 +10,7 @@ import type {
   BacktestListItem,
   BacktestStatusResponse,
   BacktestUpdateRequest,
+  BacktestTradeReplayResponse,
 } from '../types/backtests'
 
 export interface FetchBacktestsParams {
@@ -160,6 +161,20 @@ export async function fetchBacktestStatus(backtestId: string): Promise<BacktestS
     throw new Error(await readApiError(response, 'Failed to load backtest status'))
   }
   return response.json() as Promise<BacktestStatusResponse>
+}
+
+export async function fetchBacktestTradeReplayCapsule(
+  backtestId: string,
+  runId: string,
+  tradeIndex: number,
+): Promise<BacktestTradeReplayResponse> {
+  const response = await fetch(
+    `/api/backtests/${encodeURIComponent(backtestId)}/runs/${encodeURIComponent(runId)}/trades/${tradeIndex}/replay-capsule`,
+  )
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to load trade replay capsule'))
+  }
+  return response.json() as Promise<BacktestTradeReplayResponse>
 }
 
 export function backtestReportUrl(backtestId: string): string {

@@ -216,6 +216,62 @@ def test_risk_models_create_writes_params_json_when_artifact_dir_writable(tmp_pa
     session.close()
 
 
+def test_risk_models_retry_creates_new_group_from_failed_model(tmp_path, monkeypatch) -> None:
+    client = build_backtest_client(tmp_path)
+
+    labels_path = tmp_path / "labels.parquet"
+    feats_path = tmp_path / "features.parquet"
+    pd.DataFrame(
+        [
+            {"candidate_id": "c1", "label_hit_stop": 0, "label_mae": 0.1},
+        ]
+    ).to_parquet(labels_path, index=False)
+    pd.DataFrame([{"candidate_id": "c1", "f1": 1.0}]).to_parquet(feats_path, index=False)
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    _insert_backtest_job(session, "b1", labels_path=str(labels_path), features_path=str(feats_path))
+    now = datetime.now(UTC)
+    session.add(
+        RiskModelGroup(
+            id="g1",
+            status="failed",
+            argo_namespace="ns",
+            argo_workflow_name="wf",
+            params_json={
+                "requested_at": now.isoformat(),
+                "backtest_ids": ["b1"],
+                "targets": [{"target_key": "stop_prob", "task_type": "classification"}],
+                "dataset_config": {},
+                "train_config": {"random_seed": 7},
+            },
+            artifact_dir=str(tmp_path / "risk-artifacts" / "g1"),
+            summary_metrics_json=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    session.add(RiskModelSource(group_id="g1", backtest_id="b1", source_report_path=None))
+    session.commit()
+    session.close()
+
+    monkeypatch.setenv("BACKTEST_ARGO_ENABLED", "0")
+    monkeypatch.setenv("ARGO_SERVER_URL", "")
+    monkeypatch.setenv("BACKTEST_WORKFLOW_RESULTS_MOUNT", str(tmp_path / "shared-results"))
+
+    response = client.post("/risk-models/g1/retry")
+    assert response.status_code in {202, 503}
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    groups = session.query(RiskModelGroup).order_by(RiskModelGroup.created_at.asc()).all()
+    assert len(groups) == 2
+    assert groups[-1].id != "g1"
+    assert groups[-1].params_json["backtest_ids"] == ["b1"]
+    assert groups[-1].params_json["train_config"] == {"random_seed": 7}
+    session.close()
+
+
 def test_risk_models_delete_removes_db_rows_and_artifacts(tmp_path, monkeypatch) -> None:
     client = build_backtest_client(tmp_path)
 

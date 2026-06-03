@@ -23,7 +23,7 @@ from app.live.assignments import RedisAssignmentStore, get_shared_redis_backend,
 from app.live.control_flags import RedisControlFlagStore
 from app.live.leases import RedisLeaseStore
 from app.live.models import LeaseAcquireRequest, RuntimeContractState
-from app.output.models import BacktestReport
+from app.output.models import BacktestReport, RunResult, RunSummary, TradeRecord
 from app.backtests.models import BacktestListItem
 from app.backtests.persistence import BacktestArtifactPaths
 
@@ -1392,6 +1392,72 @@ def test_get_detail_loads_report_from_db_paths(tmp_path):
     assert detail["report"] is not None
     assert detail["report"]["total_runs"] == 1
     assert detail["output_path"] == str(report_path.resolve())
+
+
+def test_get_detail_ignores_embedded_legacy_trades_json(tmp_path):
+    client = _build_client(tmp_path)
+    backtest_id = "legacy-trades"
+    report_path = tmp_path / "external" / f"{backtest_id}.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="1.0",
+        config_sha256="abc",
+        total_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        status="success",
+        results=[
+            RunResult(
+                run_id="r1",
+                status="success",
+                strategy="sma_cross",
+                symbol="AAPL",
+                data_source="csv",
+                summary=RunSummary(
+                    start_value=10000.0,
+                    end_value=10010.0,
+                    return_pct=0.1,
+                    total_trades=1,
+                    won_trades=1,
+                    lost_trades=0,
+                ),
+                trades=[
+                    TradeRecord(
+                        datetime="2024-01-02T00:00:00+00:00",
+                        size=1.0,
+                        price=100.0,
+                        value=100.0,
+                        pnl=10.0,
+                        pnlcomm=10.0,
+                        reason="legacy_json",
+                    )
+                ],
+            )
+        ],
+    )
+    report_path.write_text(report.model_dump_json(), encoding="utf-8")
+
+    metadata = BacktestListItem(
+        id=backtest_id,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+        status="completed",
+        total_runs=1,
+        completed_runs=1,
+        successful_runs=1,
+        failed_runs=0,
+        report_status="success",
+    )
+    client.app.state.deps.backtest_jobs.job_repository.create(
+        metadata,
+        paths=BacktestArtifactPaths(report_json_path=str(report_path.resolve())),
+    )
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+
+    assert detail["report"] is not None
+    assert detail["report"]["results"][0]["trades"] == []
 
 
 def test_get_detail_falls_back_to_output_dir_when_db_path_missing(tmp_path):

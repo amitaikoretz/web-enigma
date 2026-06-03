@@ -6,10 +6,11 @@ from pathlib import Path
 
 import yaml
 
+from app.backtests.artifacts import persist_backtest_report
 from app.backtests.merge import merge_exit_code, merge_shard_reports
 from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_manifest
 from app.config.models import BacktestConfig
-from app.output.models import BacktestReport, RunResult, RunSummary
+from app.output.models import BacktestReport, CandidateRecord, RunResult, RunSummary
 
 
 def _sample_config_raw() -> dict:
@@ -136,6 +137,49 @@ def test_merge_shard_reports(tmp_path: Path):
     assert merged.successful_runs == 3
     assert merged.status == "success"
     assert merge_exit_code(merged) == 0
+
+
+def test_merge_shard_reports_hydrates_candidates_from_shard_sidecars(tmp_path: Path):
+    raw = _sample_config_raw()
+    plan = plan_shards(raw, split_by="run", work_dir=tmp_path)
+    for shard in plan.shards:
+        report = BacktestReport(
+            generated_at=datetime.now(UTC),
+            app_version="test",
+            config_sha256="abc",
+            total_runs=1,
+            successful_runs=1,
+            failed_runs=0,
+            status="success",
+            results=[
+                RunResult(
+                    run_id=shard.shard_id,
+                    status="success",
+                    strategy="sma_cross",
+                    symbol="AAPL",
+                    data_source="csv",
+                    summary=RunSummary(start_value=10000, end_value=10050, return_pct=0.5),
+                    candidates=[
+                        CandidateRecord(
+                            candidate_id=f"{shard.shard_id}-cand",
+                            strategy_id="sma_cross",
+                            symbol="AAPL",
+                            timestamp="2024-01-02T00:00:00+00:00",
+                            entry_price=100.0,
+                            planned_stop_pct=0.02,
+                            planned_horizon_bars=10,
+                            was_traded=True,
+                        )
+                    ],
+                )
+            ],
+        )
+        persist_backtest_report(report, Path(shard.output_path))
+
+    merged = merge_shard_reports(plan, original_config_raw=raw)
+    assert len(merged.results) == 3
+    assert merged.results[0].candidates
+    assert merged.results[0].candidates[0].candidate_id.endswith("-cand")
 
 
 def test_merge_partial_failure(tmp_path: Path):

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import base64
+import json
 import sys
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -26,11 +29,17 @@ from app.backtests.argo_progress import (
 )
 from app.backtests.merge import merge_exit_code, merge_from_manifest
 from app.backtests.sharding import plan_shards, resolve_split_by, write_shard_manifest, write_shards_param
+from app.backtests.models import BacktestTradeReplayCapsule
 from app.engine.runner import RunExecutionOptions, run_backtests_with_hooks
 from app.settings import PlatformSettingsService
 from app.live import runtime as live_runtime
 from app.live import build_alpaca_executor
 from app.backtests.artifacts import persist_backtest_report
+from app.backtests.replay import (
+    clear_trade_replay_debug_target,
+    resolve_trade_replay_target_bar_index,
+    install_trade_replay_debug_target,
+)
 from app.reporting import generate_html_report
 from app.risk.data.report_loader import CandidateLoadError
 from app.risk.dataset.builder import build_risk_dataset
@@ -177,6 +186,92 @@ def _cmd_run(
         f"Status={report.report.status}. Output={output}"
     )
 
+    if report.report.status == "success":
+        return 0
+    if report.report.status == "partial_failure":
+        return 10
+    return 20
+
+
+def _load_trade_replay_capsule(*, capsule_b64: str | None, capsule_path: str | None) -> BacktestTradeReplayCapsule:
+    if capsule_b64 and capsule_b64.strip():
+        resolved = capsule_b64.strip()
+        if resolved.startswith("@"):
+            capsule_file = Path(resolved[1:].strip())
+            if not capsule_file.exists():
+                raise FileNotFoundError(f"Replay capsule file not found: {capsule_file}")
+            raw_text = capsule_file.read_text(encoding="utf-8")
+        else:
+            raw_text = base64.b64decode(resolved, validate=True).decode("utf-8")
+    elif capsule_path and capsule_path.strip():
+        capsule_file = Path(capsule_path.strip())
+        if not capsule_file.exists():
+            raise FileNotFoundError(f"Replay capsule file not found: {capsule_file}")
+        raw_text = capsule_file.read_text(encoding="utf-8")
+    else:
+        raise ValueError("Provide --capsule-b64 or --capsule-file")
+
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        raise ValueError("Replay capsule JSON must be an object")
+    return BacktestTradeReplayCapsule.model_validate(payload)
+
+
+def _cmd_replay_trade(
+    capsule_b64: str | None,
+    capsule_file: str | None,
+    output: str | None,
+) -> int:
+    try:
+        capsule = _load_trade_replay_capsule(capsule_b64=capsule_b64, capsule_path=capsule_file)
+    except (FileNotFoundError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        console.print(f"[red]Replay capsule load failed[/red]: {exc}")
+        return 2
+
+    config_text = capsule.config_text
+    try:
+        raw = yaml.safe_load(config_text)
+        if not isinstance(raw, dict):
+            raise ValueError("Replay config must parse to a mapping")
+        config = BacktestConfig.model_validate(raw)
+    except (ValueError, ValidationError, yaml.YAMLError) as exc:
+        console.print(f"[red]Replay config validation failed[/red]: {exc}")
+        return 2
+
+    replay_output = Path(output) if output else Path(tempfile.gettempdir()) / (
+        f"replay-{capsule.backtest_id}-{capsule.run_id.replace(':', '_')}-{uuid.uuid4().hex}.json"
+    )
+
+    try:
+        resolved_target_bar_index = resolve_trade_replay_target_bar_index(config, capsule)
+        if resolved_target_bar_index is not None:
+            capsule = capsule.model_copy(
+                update={
+                    "trade": capsule.trade.model_copy(
+                        update={
+                            "entry_bar_index": resolved_target_bar_index
+                            if capsule.break_at == "entry"
+                            else capsule.trade.entry_bar_index,
+                            "exit_bar_index": resolved_target_bar_index
+                            if capsule.break_at == "exit"
+                            else capsule.trade.exit_bar_index,
+                        }
+                    )
+                }
+            )
+        install_trade_replay_debug_target(capsule)
+        report = run_backtests_with_hooks(config, raw)
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Replay run failed[/red]: {exc}")
+        return 20
+    finally:
+        clear_trade_replay_debug_target()
+
+    persist_backtest_report(report.report, replay_output, risk_auxiliary_by_run=report.risk_auxiliary_by_run)
+    console.print(
+        f"Replayed trade {capsule.backtest_id} / {capsule.run_id} trade={capsule.trade_index + 1} "
+        f"status={report.report.status} output={replay_output}"
+    )
     if report.report.status == "success":
         return 0
     if report.report.status == "partial_failure":
@@ -438,6 +533,28 @@ def run_command(
     return _cmd_run(config, output, cache_dir, cache_refresh, no_cache, progress_file)
 
 
+@app.command("replay-trade", help="Replay a specific backtest trade under the debugger")
+def replay_trade_command(
+    capsule_b64: str | None = typer.Option(
+        None,
+        "--capsule-b64",
+        envvar="KALYX_REPLAY_CAPSULE_B64",
+        help="Base64-encoded replay capsule JSON.",
+    ),
+    capsule_file: str | None = typer.Option(
+        None,
+        "--capsule-file",
+        help="Path to a replay capsule JSON file.",
+    ),
+    output: str | None = typer.Option(
+        None,
+        "--output",
+        help="Optional JSON output path for the replay run.",
+    ),
+) -> int:
+    return _cmd_replay_trade(capsule_b64, capsule_file, output)
+
+
 @app.command("alpaca-run", help="Evaluate latest completed Alpaca bars and submit paper/live orders")
 def alpaca_run_command(
     config: str = typer.Option(..., "--config", help="Alpaca trading YAML config path"),
@@ -691,4 +808,4 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

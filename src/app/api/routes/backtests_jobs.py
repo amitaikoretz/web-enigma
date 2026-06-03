@@ -15,6 +15,7 @@ from app.backtests import (
     BacktestListItem,
     BacktestListPageResponse,
     BacktestRetryRequest,
+    BacktestTradeReplayResponse,
     BacktestStatusResponse,
     BacktestUpdateRequest,
 )
@@ -131,6 +132,24 @@ def get_backtest_config(
         media_type="application/x-yaml",
         headers={"Content-Disposition": f'inline; filename="{backtest_id}.yaml"'},
     )
+
+
+@router.get(
+    "/{backtest_id}/runs/{run_id}/trades/{trade_index}/replay-capsule",
+    response_model=BacktestTradeReplayResponse,
+)
+def get_trade_replay_capsule(
+    backtest_id: str,
+    run_id: str,
+    trade_index: int,
+    deps: ApiDependencies = Depends(get_deps),
+) -> BacktestTradeReplayResponse:
+    try:
+        return deps.backtest_jobs.get_trade_replay(backtest_id, run_id, trade_index)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.patch("/{backtest_id}/config", response_model=BacktestListItem)

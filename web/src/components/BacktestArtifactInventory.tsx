@@ -1,13 +1,17 @@
 import {
   Chip,
+  IconButton,
   Stack,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import { useEffect, useRef, useState } from 'react'
 
 import type {
   BacktestArtifactEntry,
@@ -15,6 +19,7 @@ import type {
   BacktestArtifactSummaryItem,
 } from '../types/backtests'
 import { resolveArtifactDescription } from '../utils/artifactDescriptions'
+import { buildSidecarCopySnippet } from '../utils/backtestArtifactCopy'
 import { publicArtifacts } from './BacktestArtifactChips'
 import { CollapsibleSection } from './CollapsibleSection'
 
@@ -75,6 +80,32 @@ export function BacktestArtifactInventory({
 }: BacktestArtifactInventoryProps) {
   const visibleArtifacts = publicArtifacts(artifacts)
   const groups = groupArtifacts(visibleArtifacts)
+  const [copiedArtifactKey, setCopiedArtifactKey] = useState<string | null>(null)
+  const copyResetTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+    }
+  }, [])
+
+  async function handleCopyCode(artifact: ArtifactInventoryItem, artifactKey: string) {
+    try {
+      await navigator.clipboard.writeText(buildSidecarCopySnippet(artifact))
+      setCopiedArtifactKey(artifactKey)
+      if (copyResetTimerRef.current !== null) {
+        window.clearTimeout(copyResetTimerRef.current)
+      }
+      copyResetTimerRef.current = window.setTimeout(() => {
+        setCopiedArtifactKey(null)
+        copyResetTimerRef.current = null
+      }, 1500)
+    } catch {
+      // Clipboard access may be unavailable in some environments.
+    }
+  }
 
   return (
     <CollapsibleSection title="Auxiliary data files" defaultExpanded={defaultExpanded}>
@@ -121,18 +152,51 @@ export function BacktestArtifactInventory({
                         {formatBytes('size_bytes' in artifact ? artifact.size_bytes : null)}
                       </TableCell>
                       <TableCell>
-                        <Typography
-                          component="code"
-                          variant="body2"
-                          sx={{
-                            display: 'block',
-                            fontFamily: 'monospace',
-                            fontSize: '0.78rem',
-                            wordBreak: 'break-all',
-                          }}
-                        >
-                          {'path' in artifact ? artifact.path : '—'}
-                        </Typography>
+                        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                          <Typography
+                            component="code"
+                            variant="body2"
+                            sx={{
+                              display: 'block',
+                              fontFamily: 'monospace',
+                              fontSize: '0.78rem',
+                              wordBreak: 'break-all',
+                            }}
+                          >
+                            {'path' in artifact ? artifact.path : '—'}
+                          </Typography>
+                          {artifact.role === 'sidecar' && (
+                            <Tooltip
+                              title={
+                                copiedArtifactKey ===
+                                ('path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`)
+                                  ? 'Copied'
+                                  : 'Copy Python snippet'
+                              }
+                            >
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label={
+                                    copiedArtifactKey ===
+                                    ('path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`)
+                                      ? 'Copied Python snippet'
+                                      : 'Copy Python snippet'
+                                  }
+                                  sx={{ p: 0.25 }}
+                                  onClick={() => {
+                                    void handleCopyCode(
+                                      artifact,
+                                      'path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`,
+                                    )
+                                  }}
+                                >
+                                  <ContentCopyIcon fontSize="inherit" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )}
+                        </Stack>
                       </TableCell>
                     </TableRow>
                   ))}

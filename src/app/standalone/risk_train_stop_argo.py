@@ -14,6 +14,7 @@ import pandas as pd
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.risk.dataset.feature_columns import select_risk_feature_columns
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -83,12 +84,21 @@ def main(
     if not isinstance(feature_cols, list) or not all(isinstance(x, str) for x in feature_cols):
         raise ValueError("--feature-cols-json must be a JSON array of strings")
 
-    if "y_stop" in df.columns:
-        y_col = "y_stop"
-    elif "label_hit_stop" in df.columns:
-        y_col = "label_hit_stop"
-    else:
-        raise ValueError("Stop label column not found (expected y_stop or label_hit_stop)")
+    stop_label_candidates = ("hit_stop_before_target", "y_stop", "label_hit_stop")
+    y_col = next((col for col in stop_label_candidates if col in df.columns), None)
+    if y_col is None:
+        raise ValueError(
+            "Stop label column not found (expected hit_stop_before_target, y_stop, or label_hit_stop)"
+        )
+
+    feature_cols, skipped_feature_cols = select_risk_feature_columns(df, feature_cols)
+    if skipped_feature_cols:
+        typer.echo(
+            "Skipping non-feature columns from stop-probability training: " + ", ".join(skipped_feature_cols),
+            err=True,
+        )
+    if not feature_cols:
+        raise ValueError("No valid numeric stop-probability features remained after filtering")
 
     X = df[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(float)
     y = df[y_col].astype(int).values
@@ -101,7 +111,7 @@ def main(
         stratify=y if len(np.unique(y)) > 1 else None,
     )
 
-    model = LogisticRegression(max_iter=500, n_jobs=1)
+    model = LogisticRegression(max_iter=500)
     model.fit(X_train, y_train)
     p_raw = model.predict_proba(X_calib)[:, 1]
 

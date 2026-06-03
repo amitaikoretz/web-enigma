@@ -9,6 +9,7 @@ from app.risk.models_api import (
     RiskModelDetailResponse,
     RiskModelListItemResponse,
     RiskModelStatusResponse,
+    RiskModelWorkflowErrorResponse,
 )
 from app.risk.service import RiskModelValidationError
 
@@ -23,6 +24,25 @@ def create_risk_model(
 ) -> RiskModelCreateResponse:
     try:
         result = deps.risk_models.create_and_submit_argo(payload)
+        return RiskModelCreateResponse(
+            group_id=result.group_id,
+            status="running",
+            argo_namespace=result.argo_namespace,
+            argo_workflow_name=result.argo_workflow_name,
+        )
+    except RiskModelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/{group_id}/retry", response_model=RiskModelCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def retry_risk_model(
+    group_id: str,
+    deps: ApiDependencies = Depends(get_deps),
+) -> RiskModelCreateResponse:
+    try:
+        result = deps.risk_models.retry_group(group_id)
         return RiskModelCreateResponse(
             group_id=result.group_id,
             status="running",
@@ -112,6 +132,30 @@ def get_risk_model_status(
         argo_namespace=detail.argo_namespace,
         argo_workflow_name=detail.argo_workflow_name,
         argo_phase=phase,
+    )
+
+
+@router.get("/{group_id}/workflow-errors", response_model=RiskModelWorkflowErrorResponse)
+def get_risk_model_workflow_errors(
+    group_id: str,
+    deps: ApiDependencies = Depends(get_deps),
+) -> RiskModelWorkflowErrorResponse:
+    result = deps.risk_models.get_workflow_errors(group_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Risk model '{group_id}' not found")
+    return RiskModelWorkflowErrorResponse(
+        group_id=result.group_id,
+        argo_namespace=result.argo_namespace,
+        argo_workflow_name=result.argo_workflow_name,
+        argo_phase=result.argo_phase,
+        available=result.available,
+        status_message=result.status_message,
+        failed_node_name=result.failed_node_name,
+        failed_template_name=result.failed_template_name,
+        error_exception=result.error_exception,
+        error_code_location=result.error_code_location,
+        error_call_stack=result.error_call_stack,
+        error_traceback=result.error_traceback,
     )
 
 

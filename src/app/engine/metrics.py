@@ -143,6 +143,8 @@ def enrich_trade_records(
         hold_minutes = None
         hold_bars = None
         entry_datetime = None
+        entry_bar = None
+        exit_bar = None
         if row is not None:
             hold_minutes = duration_to_minutes(row.get("Duration"))
             entry_bar = row.get("EntryBar")
@@ -153,6 +155,8 @@ def enrich_trade_records(
         records.append(
             TradeRecord(
                 datetime=raw.get("datetime"),
+                entry_bar_index=int(entry_bar) if entry_bar is not None and not pd.isna(entry_bar) else None,
+                exit_bar_index=int(exit_bar) if exit_bar is not None and not pd.isna(exit_bar) else None,
                 size=float(raw.get("size", 0.0)),
                 price=float(raw.get("price", 0.0)),
                 value=float(raw.get("value", 0.0)),

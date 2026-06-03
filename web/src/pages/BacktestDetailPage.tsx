@@ -621,7 +621,11 @@ export function BacktestDetailPage() {
 
           {selectedRun && (
             <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-              <BacktestRunDetailPanel result={selectedRun} selection={metadata.selection} />
+              <BacktestRunDetailPanel
+                backtestId={metadata?.id ?? backtestId}
+                result={selectedRun}
+                selection={metadata?.selection ?? null}
+              />
             </Paper>
           )}
 

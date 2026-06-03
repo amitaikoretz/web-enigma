@@ -142,6 +142,40 @@ def test_write_and_hydrate_report_artifacts(tmp_path: Path) -> None:
     assert hydrated.results[0].rejections[0].reason == "max_positions"
 
 
+def test_hydrate_report_overrides_embedded_trades_with_sidecar(tmp_path: Path) -> None:
+    report = _sample_report()
+    paths = default_artifact_paths(tmp_path, "job-1")
+    written = write_report_artifacts(report, paths=paths)
+
+    legacy = report.model_copy(
+        update={
+            "results": [
+                result.model_copy(
+                    update={
+                        "trades": [
+                            TradeRecord(
+                                datetime="2024-01-09T00:00:00+00:00",
+                                size=99.0,
+                                price=999.0,
+                                value=999.0,
+                                pnl=999.0,
+                                pnlcomm=999.0,
+                                reason="legacy_json",
+                            )
+                        ]
+                    }
+                )
+                for result in report.results
+            ]
+        }
+    )
+
+    hydrated = hydrate_report_from_artifacts(legacy, paths=written)
+
+    assert len(hydrated.results[0].trades) == 1
+    assert hydrated.results[0].trades[0].reason == "take_profit"
+
+
 def test_hydrate_report_from_shard_sidecars(tmp_path: Path) -> None:
     from app.backtests.sharding import ShardPlan, ShardSpec, write_shard_manifest
 
@@ -233,6 +267,14 @@ def test_hydrate_report_from_shard_sidecars(tmp_path: Path) -> None:
     assert hydrated.results[0].orders[0].price == 100.0
     assert len(hydrated.results[0].trades) == 1
     assert hydrated.results[0].trades[0].reason == "time_exit"
+
+
+def test_hydrate_report_clears_trades_when_parquet_missing(tmp_path: Path) -> None:
+    report = _sample_report()
+    paths = default_artifact_paths(tmp_path, "job-1")
+    hydrated = hydrate_report_from_artifacts(report, paths=paths)
+
+    assert hydrated.results[0].trades == []
 
 
 def test_hydrate_report_from_nested_shard_sidecars(tmp_path: Path) -> None:
@@ -544,6 +586,47 @@ def test_inventory_backtest_artifacts_excludes_shard_and_manifest_files(tmp_path
     nested_paths = [Path(entry.path) for entry in nested_inventory]
     assert all("shards" not in path.parts for path in nested_paths)
     assert {entry.role for entry in nested_inventory}.isdisjoint({"shard", "manifest"})
+
+
+def test_inventory_backtest_artifacts_hides_shard_parquet_sidecars(tmp_path: Path) -> None:
+    from app.backtests.sharding import ShardPlan, ShardSpec, write_shard_manifest
+
+    backtest_id = "argo-artifact-trades"
+    work_dir = tmp_path / backtest_id
+    shards_dir = work_dir / "shards"
+    shard_dir = shards_dir / "aapl_breakout_channel"
+    shard_dir.mkdir(parents=True)
+    (work_dir / f"{backtest_id}.json").write_text("{}", encoding="utf-8")
+    (work_dir / f"{backtest_id}.yaml").write_text("runs: []\n", encoding="utf-8")
+    shard_output = shard_dir / "aapl_breakout_channel.json"
+    shard_output.write_text("{}", encoding="utf-8")
+    shard_trades = shard_dir / "aapl_breakout_channel.trades.parquet"
+    shard_trades.write_bytes(b"PAR1")
+    write_shard_manifest(
+        ShardPlan(
+            config_path=str(work_dir / f"{backtest_id}.yaml"),
+            split_by="run",
+            shards=[
+                ShardSpec(
+                    shard_id="aapl_breakout_channel",
+                    config_path=str(shard_output.with_suffix(".yaml")),
+                    output_path=str(shard_output.resolve()),
+                )
+            ],
+        ),
+        work_dir / "manifest.json",
+    )
+
+    inventory = inventory_backtest_artifacts(
+        backtest_id,
+        tmp_path,
+        paths=BacktestArtifactPaths(
+            report_json_path=str((work_dir / f"{backtest_id}.json").resolve()),
+            manifest_path=str((work_dir / "manifest.json").resolve()),
+        ),
+    )
+
+    assert all("shards" not in Path(entry.path).parts for entry in inventory)
 
 
 def test_persist_writes_labels_and_features_sidecars(tmp_path: Path) -> None:

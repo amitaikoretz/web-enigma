@@ -11,6 +11,7 @@ from app.config.models import BacktestConfig
 from app.engine.runner import run_backtests
 from app.output.models import BacktestReport, CandidateRecord, RunResult, RunSummary
 from app.risk.data.report_loader import CandidateLoadError, load_candidates_from_reports
+from app.risk.dataset.feature_columns import select_risk_feature_columns
 from app.risk.dataset.builder import build_risk_dataset
 from app.risk.models import RiskDatasetConfig
 
@@ -84,6 +85,9 @@ def test_build_risk_dataset_from_synthetic_report(tmp_path: Path):
             planned_stop_pct=0.05,
             planned_target_pct=0.10,
             planned_horizon_bars=3,
+            signal_score=0.87,
+            signal_reason="breakout_channel|exits:a0b398e7ce",
+            metadata={"rank": 3, "note": "ignored"},
             was_traded=False,
             reject_reason="session_window",
         )
@@ -106,6 +110,16 @@ def test_build_risk_dataset_from_synthetic_report(tmp_path: Path):
     assert "hit_stop_before_target" in df.columns
     assert "return_20" in df.columns
     assert "label_quality_flag" in df.columns
+    selected, skipped = select_risk_feature_columns(df)
+    assert "strategy_id" not in selected
+    assert "signal_reason" not in selected
+    assert "mae_pct" not in selected
+    assert "hit_stop_before_target" not in selected
+    assert "entry_price" in selected
+    assert "return_20" in selected
+    assert "meta_rank" in selected
+    assert "meta_note" not in selected
+    assert "meta_note" in skipped
 
 
 def test_end_to_end_backtest_json_to_dataset(tmp_path: Path):
@@ -319,3 +333,251 @@ def test_build_risk_dataset_from_sidecars_without_candidates(tmp_path: Path):
     assert df.iloc[0]["timestamp"] == "2024-01-10T00:00:00+00:00"
     assert "hit_stop_before_target" in df.columns
     assert "return_20" in df.columns
+
+
+def test_risk_build_dataset_argo_falls_back_to_reports_without_sidecars(tmp_path: Path, monkeypatch):
+    from datetime import datetime, timezone
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.backtests.artifacts import persist_backtest_report
+    from app.db.base import Base
+    from app.db.models import BacktestJob
+    from app.standalone.risk_build_dataset_argo import main as risk_build_dataset_main
+
+    raw = {
+        "runs": [
+            {
+                "run_id": "csv_candidates",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "trigger": {
+                    "name": "breakout_channel",
+                    "params": {
+                        "lookback": 3,
+                        "stake": 1.0,
+                        "stop_loss_pct": 0.01,
+                        "take_profit_pct": 0.02,
+                        "max_hold_bars": 5,
+                    },
+                },
+                "exit_rules": {
+                    "rules": [
+                        {"name": "channel_break", "params": {"lookback": 3}},
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                        {"name": "max_hold_bars", "params": {"max_hold_bars": 5}},
+                    ]
+                },
+                "analyzers": {"include_candidate_log": True},
+            }
+        ]
+    }
+    config = BacktestConfig.model_validate(raw)
+    report = run_backtests(config, raw)
+
+    backtest_id = "4a594af71af249dba8d080b384694336"
+    report_path = tmp_path / backtest_id / f"{backtest_id}.json"
+    persist_backtest_report(report, report_path)
+    assert not (tmp_path / backtest_id / f"{backtest_id}.labels.parquet").exists()
+    assert not (tmp_path / backtest_id / f"{backtest_id}.features.parquet").exists()
+
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        future=True,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    test_session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    with test_session_factory() as session:
+        session.add(
+            BacktestJob(
+                id=backtest_id,
+                name="risk dataset source",
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                status="completed",
+                report_status=report.status,
+                total_runs=report.total_runs,
+                completed_runs=report.total_runs,
+                successful_runs=report.successful_runs,
+                failed_runs=report.failed_runs,
+                execution_backend="local",
+                report_json_path=str(report_path),
+            )
+        )
+        session.commit()
+
+    monkeypatch.setattr("app.standalone.risk_build_dataset_argo.get_session_factory", lambda: test_session_factory)
+
+    dataset_dir = tmp_path / "risk-models" / "group1"
+    dataset_path_out = tmp_path / "dataset-path.txt"
+    manifest_path_out = tmp_path / "manifest-path.txt"
+    feature_cols_out = tmp_path / "feature-cols.json"
+    terminal_command_out = tmp_path / "terminal-command.txt"
+
+    risk_build_dataset_main(
+        group_id="group1",
+        backtest_ids_json=json.dumps([backtest_id]),
+        dataset_config_json="{}",
+        artifact_dir=str(dataset_dir),
+        dataset_path_out=str(dataset_path_out),
+        manifest_path_out=str(manifest_path_out),
+        feature_cols_out=str(feature_cols_out),
+        terminal_command_out=str(terminal_command_out),
+    )
+
+    dataset_path = Path(dataset_path_out.read_text(encoding="utf-8").strip())
+    manifest_path = Path(manifest_path_out.read_text(encoding="utf-8").strip())
+    feature_cols = json.loads(feature_cols_out.read_text(encoding="utf-8"))
+    assert dataset_path.exists()
+    assert manifest_path.exists()
+    assert feature_cols
+    df = pd.read_parquet(dataset_path)
+    assert not df.empty
+    assert "candidate_id" in df.columns
+
+
+def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> None:
+    from app.standalone.risk_train_stop_argo import main as risk_train_stop_main
+
+    dataset_path = tmp_path / "dataset.parquet"
+    pd.DataFrame(
+        [
+            {
+                "candidate_id": "c1",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "hit_stop_before_target": 0,
+                "feature_a": 1.0,
+                "feature_b": 2.0,
+                "signal_reason": "breakout",
+                "mae_pct": 0.11,
+            },
+            {
+                "candidate_id": "c2",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "hit_stop_before_target": 1,
+                "feature_a": 2.0,
+                "feature_b": 3.0,
+                "signal_reason": "breakout",
+                "mae_pct": 0.22,
+            },
+            {
+                "candidate_id": "c3",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "hit_stop_before_target": 0,
+                "feature_a": 3.0,
+                "feature_b": 4.0,
+                "signal_reason": "breakout",
+                "mae_pct": 0.33,
+            },
+            {
+                "candidate_id": "c4",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "hit_stop_before_target": 1,
+                "feature_a": 4.0,
+                "feature_b": 5.0,
+                "signal_reason": "breakout",
+                "mae_pct": 0.44,
+            },
+        ]
+    ).to_parquet(dataset_path, index=False)
+
+    artifact_dir = tmp_path / "artifacts"
+    model_path_out = tmp_path / "model-path.txt"
+    metrics_path_out = tmp_path / "metrics-path.txt"
+    terminal_command_out = tmp_path / "terminal-command.txt"
+
+    risk_train_stop_main(
+        group_id="group1",
+        dataset_path=str(dataset_path),
+        manifest_path=str(tmp_path / "manifest.json"),
+        feature_cols_json=json.dumps(["feature_a", "feature_b", "strategy_id", "signal_reason", "mae_pct"]),
+        train_config_json=json.dumps({"random_seed": 7, "calibration_test_size": 0.5}),
+        artifact_dir=str(artifact_dir),
+        model_path_out=str(model_path_out),
+        metrics_path_out=str(metrics_path_out),
+        terminal_command_out=str(terminal_command_out),
+    )
+
+    model_path = Path(model_path_out.read_text(encoding="utf-8").strip())
+    metrics_path = Path(metrics_path_out.read_text(encoding="utf-8").strip())
+    assert model_path.exists()
+    assert metrics_path.exists()
+    serialized = json.loads(model_path.read_text(encoding="utf-8"))
+    assert serialized["type"] == "logreg+isotonic"
+    assert serialized["feature_cols"] == ["feature_a", "feature_b"]
+
+
+def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> None:
+    from app.standalone.risk_train_mae_argo import main as risk_train_mae_main
+
+    dataset_path = tmp_path / "dataset.parquet"
+    pd.DataFrame(
+        [
+            {
+                "candidate_id": "c1",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "mae_abs_pct": 0.11,
+                "feature_a": 1.0,
+                "feature_b": 2.0,
+                "signal_reason": "breakout",
+                "hit_stop_before_target": 0,
+            },
+            {
+                "candidate_id": "c2",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "mae_abs_pct": 0.22,
+                "feature_a": 2.0,
+                "feature_b": 3.0,
+                "signal_reason": "breakout",
+                "hit_stop_before_target": 1,
+            },
+            {
+                "candidate_id": "c3",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "mae_abs_pct": 0.33,
+                "feature_a": 3.0,
+                "feature_b": 4.0,
+                "signal_reason": "breakout",
+                "hit_stop_before_target": 0,
+            },
+            {
+                "candidate_id": "c4",
+                "strategy_id": "breakout_channel|exits:a0b398e7ce",
+                "mae_abs_pct": 0.44,
+                "feature_a": 4.0,
+                "feature_b": 5.0,
+                "signal_reason": "breakout",
+                "hit_stop_before_target": 1,
+            },
+        ]
+    ).to_parquet(dataset_path, index=False)
+
+    artifact_dir = tmp_path / "artifacts"
+    model_path_out = tmp_path / "model-path.txt"
+    metrics_path_out = tmp_path / "metrics-path.txt"
+    terminal_command_out = tmp_path / "terminal-command.txt"
+
+    risk_train_mae_main(
+        group_id="group1",
+        dataset_path=str(dataset_path),
+        manifest_path=str(tmp_path / "manifest.json"),
+        feature_cols_json=json.dumps(["feature_a", "feature_b", "strategy_id", "signal_reason", "mae_abs_pct"]),
+        train_config_json=json.dumps({"random_seed": 7, "mae_test_size": 0.5, "ridge_alpha": 1.0}),
+        artifact_dir=str(artifact_dir),
+        model_path_out=str(model_path_out),
+        metrics_path_out=str(metrics_path_out),
+        terminal_command_out=str(terminal_command_out),
+    )
+
+    model_path = Path(model_path_out.read_text(encoding="utf-8").strip())
+    metrics_path = Path(metrics_path_out.read_text(encoding="utf-8").strip())
+    assert model_path.exists()
+    assert metrics_path.exists()
+    serialized = json.loads(model_path.read_text(encoding="utf-8"))
+    assert serialized["type"] == "ridge"
+    assert serialized["feature_cols"] == ["feature_a", "feature_b"]

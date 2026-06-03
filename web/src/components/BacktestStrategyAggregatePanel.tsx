@@ -4,11 +4,6 @@ import {
   Stack,
   Tab,
   Tabs,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
   Typography,
 } from '@mui/material'
 import dayjs from 'dayjs'
@@ -26,6 +21,7 @@ import {
   TradeDiagnosticsPanel,
 } from './BacktestDiagnosticsPanels'
 import { DiagnosticsTableShell } from './BacktestMetricGrid'
+import { SortableTradeRecordsTable } from './SortableTradeRecordsTable'
 import { TradeDistributionCharts } from './TradeDistributionCharts'
 import { useSettings } from '../settings/useSettings'
 
@@ -160,36 +156,72 @@ export function BacktestStrategyAggregatePanel({
           >
             {mergedTrades.length > 0 ? (
               <DiagnosticsTableShell title={`Trade records (${mergedTrades.length})`}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Symbol</TableCell>
-                      <TableCell>When</TableCell>
-                      <TableCell align="right">Size</TableCell>
-                      <TableCell align="right">Price</TableCell>
-                      <TableCell align="right">PnL after fees</TableCell>
-                      <TableCell>Exit</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {mergedTrades.map((trade, index) => (
-                      <TableRow key={`${trade.symbol ?? 'unknown'}-${trade.datetime ?? index}`} hover>
-                        <TableCell>{trade.symbol ?? '—'}</TableCell>
-                        <TableCell>
-                          {formatTimestampOrDash(
-                            trade.datetime,
-                            platformSettings.platform_behavior.timezone,
-                            appearance.time_display_format,
-                          )}
-                        </TableCell>
-                        <TableCell align="right">{formatNumber(trade.size, 2)}</TableCell>
-                        <TableCell align="right">{formatNumber(trade.price, 2)}</TableCell>
-                        <TableCell align="right">{formatNumber(trade.pnlcomm, 2)}</TableCell>
-                        <TableCell>{trade.reason ?? '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <SortableTradeRecordsTable
+                  rows={mergedTrades}
+                  getRowKey={(trade) =>
+                    [
+                      trade.symbol ?? 'unknown',
+                      trade.datetime ?? 'no-datetime',
+                      trade.size,
+                      trade.price,
+                      trade.pnlcomm,
+                      trade.reason ?? 'no-reason',
+                    ].join('-')
+                  }
+                  defaultSortKey="datetime"
+                  defaultSortDirection="asc"
+                  columns={[
+                    {
+                      id: 'symbol',
+                      label: 'Symbol',
+                      sortValue: (trade) => trade.symbol ?? '',
+                      render: (trade) => trade.symbol ?? '—',
+                    },
+                    {
+                      id: 'datetime',
+                      label: 'When',
+                      defaultSortDirection: 'asc',
+                      sortValue: (trade) =>
+                        trade.datetime ? dayjs(trade.datetime).valueOf() : null,
+                      render: (trade) =>
+                        formatTimestampOrDash(
+                          trade.datetime,
+                          platformSettings.platform_behavior.timezone,
+                          appearance.time_display_format,
+                        ),
+                    },
+                    {
+                      id: 'size',
+                      label: 'Size',
+                      align: 'right',
+                      defaultSortDirection: 'desc',
+                      sortValue: (trade) => trade.size,
+                      render: (trade) => formatNumber(trade.size, 2),
+                    },
+                    {
+                      id: 'price',
+                      label: 'Price',
+                      align: 'right',
+                      defaultSortDirection: 'desc',
+                      sortValue: (trade) => trade.price,
+                      render: (trade) => formatNumber(trade.price, 2),
+                    },
+                    {
+                      id: 'pnlcomm',
+                      label: 'PnL after fees',
+                      align: 'right',
+                      defaultSortDirection: 'desc',
+                      sortValue: (trade) => trade.pnlcomm,
+                      render: (trade) => formatNumber(trade.pnlcomm, 2),
+                    },
+                    {
+                      id: 'reason',
+                      label: 'Exit',
+                      sortValue: (trade) => trade.reason ?? '',
+                      render: (trade) => trade.reason ?? '—',
+                    },
+                  ]}
+                />
               </DiagnosticsTableShell>
             ) : (
               <Typography color="text.secondary">No trade records were emitted for this strategy.</Typography>

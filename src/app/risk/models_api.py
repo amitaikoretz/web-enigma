@@ -78,3 +78,18 @@ class RiskModelStatusResponse(BaseModel):
     argo_namespace: str | None = None
     argo_workflow_name: str | None = None
     argo_phase: str | None = None
+
+
+class RiskModelWorkflowErrorResponse(BaseModel):
+    group_id: str
+    argo_namespace: str | None = None
+    argo_workflow_name: str | None = None
+    argo_phase: str | None = None
+    available: bool = False
+    status_message: str | None = None
+    failed_node_name: str | None = None
+    failed_template_name: str | None = None
+    error_exception: str | None = None
+    error_code_location: str | None = None
+    error_call_stack: list[str] = Field(default_factory=list)
+    error_traceback: str | None = None

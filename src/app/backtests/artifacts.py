@@ -346,9 +346,11 @@ def inventory_backtest_artifacts(
             if resolved in seen_paths:
                 continue
             seen_paths.add(resolved)
+            lookup_kind = _match_sidecar_filename(path.name)
+            kind = lookup_kind or f"file:{path.name}"
             entries.append(
                 _entry_from_path(
-                    kind=f"file:{path.name}",
+                    kind=kind,
                     label=_artifact_label_for_path(path),
                     description=_artifact_description_for_path(path),
                     format=_artifact_format_for_path(path),
@@ -941,17 +943,6 @@ def hydrate_report_from_artifacts(
         kind="rejections",
     )
 
-    if not any(
-        (
-            candidates_by_run,
-            equity_by_run,
-            orders_by_run,
-            trades_by_run,
-            rejections_by_run,
-        )
-    ):
-        return report
-
     hydrated_results: list[RunResult] = []
     for result in report.results:
         updates: dict = {}
@@ -961,13 +952,12 @@ def hydrate_report_from_artifacts(
             updates["equity_curve"] = equity_by_run[result.run_id]
         if not result.orders and result.run_id in orders_by_run:
             updates["orders"] = orders_by_run[result.run_id]
-        if not result.trades and result.run_id in trades_by_run:
-            updates["trades"] = trades_by_run[result.run_id]
         if not result.rejections and result.run_id in rejections_by_run:
             updates["rejections"] = rejections_by_run[result.run_id]
+        hydrated_result = result.model_copy(deep=True)
+        hydrated_result.trades = trades_by_run.get(result.run_id, [])
         if updates:
-            hydrated_results.append(result.model_copy(update=updates))
-        else:
-            hydrated_results.append(result)
+            hydrated_result = hydrated_result.model_copy(update=updates)
+        hydrated_results.append(hydrated_result)
 
     return report.model_copy(update={"results": hydrated_results})

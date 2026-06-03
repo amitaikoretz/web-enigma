@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.output.models import BacktestReport
+from app.output.records import BacktestReport
 
 _AUXILIARY_RESULT_FIELDS = frozenset(
     {

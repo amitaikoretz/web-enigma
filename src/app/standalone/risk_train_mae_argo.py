@@ -14,6 +14,7 @@ import pandas as pd
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.risk.dataset.feature_columns import select_risk_feature_columns
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -79,12 +80,16 @@ def main(
     if not isinstance(feature_cols, list) or not all(isinstance(x, str) for x in feature_cols):
         raise ValueError("--feature-cols-json must be a JSON array of strings")
 
-    if "y_mae" in df.columns:
-        y_col = "y_mae"
-    elif "label_mae" in df.columns:
-        y_col = "label_mae"
-    else:
-        raise ValueError("MAE label column not found (expected y_mae or label_mae)")
+    mae_label_candidates = ("mae_abs_pct", "y_mae", "label_mae")
+    y_col = next((col for col in mae_label_candidates if col in df.columns), None)
+    if y_col is None:
+        raise ValueError("MAE label column not found (expected mae_abs_pct, y_mae, or label_mae)")
+
+    feature_cols, skipped_feature_cols = select_risk_feature_columns(df, feature_cols)
+    if skipped_feature_cols:
+        typer.echo("Skipping non-feature columns from MAE training: " + ", ".join(skipped_feature_cols), err=True)
+    if not feature_cols:
+        raise ValueError("No valid numeric MAE features remained after filtering")
 
     X = df[feature_cols].replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(float)
     y = df[y_col].astype(float).values

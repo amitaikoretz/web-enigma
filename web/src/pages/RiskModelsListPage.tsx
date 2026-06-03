@@ -1,5 +1,6 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import LaunchIcon from '@mui/icons-material/Launch'
+import ReplayIcon from '@mui/icons-material/Replay'
 import {
   Alert,
   Box,
@@ -19,22 +20,22 @@ import {
 } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
 
-import { deleteRiskModel, fetchRiskModelDetail, fetchRiskModels } from '../api/riskModels'
+import {
+  deleteRiskModel,
+  fetchRiskModelDetail,
+  fetchRiskModelStatus,
+  fetchRiskModels,
+  retryRiskModel,
+} from '../api/riskModels'
 import type { RiskModelDetail, RiskModelListItem } from '../types/riskModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { RiskModelWorkflowErrorDialog } from '../components/RiskModelWorkflowErrorDialog'
 import { useSettings } from '../settings/useSettings'
-
-function statusChipColor(status: string): 'default' | 'success' | 'error' | 'warning' | 'info' {
-  if (status === 'succeeded') return 'success'
-  if (status === 'failed') return 'error'
-  if (status === 'running') return 'info'
-  if (status === 'pending') return 'warning'
-  return 'default'
-}
-
-function isRiskModelActive(status: string): boolean {
-  return status === 'pending' || status === 'running'
-}
+import {
+  isRiskModelActive,
+  resolveRiskModelStatus,
+  statusChipColor,
+} from '../utils/riskModels'
 
 export function RiskModelsListPage() {
   const { platformSettings } = useSettings()
@@ -43,20 +44,54 @@ export function RiskModelsListPage() {
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<RiskModelDetail | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [workflowErrorGroupId, setWorkflowErrorGroupId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<RiskModelListItem | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [retryingId, setRetryingId] = useState<string | null>(null)
 
   const refreshIntervalMs = platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
 
   async function refreshModels() {
     const result = await fetchRiskModels()
-    setItems(result)
-    return result
+    const activeRows = result.filter((item) => isRiskModelActive(item.status))
+
+    if (activeRows.length === 0) {
+      setItems(result)
+      return result
+    }
+
+    const statusResults = await Promise.allSettled(
+      activeRows.map(async (item) => ({
+        groupId: item.group_id,
+        status: await fetchRiskModelStatus(item.group_id),
+      })),
+    )
+
+    const nextByGroup = new Map(result.map((item) => [item.group_id, item]))
+    for (const resultItem of statusResults) {
+      if (resultItem.status !== 'fulfilled') {
+        continue
+      }
+      const { groupId, status } = resultItem.value
+      const current = nextByGroup.get(groupId)
+      if (!current) {
+        continue
+      }
+      nextByGroup.set(groupId, {
+        ...current,
+        status: resolveRiskModelStatus(current.status, status.argo_phase),
+      })
+    }
+
+    const merged = result.map((item) => nextByGroup.get(item.group_id) ?? item)
+    setItems(merged)
+    return merged
   }
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    // Sync the table with the latest backend status on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshModels()
       .catch((err) => {
         if (!cancelled) {
@@ -107,6 +142,7 @@ export function RiskModelsListPage() {
   }, [hasActive, refreshIntervalMs])
 
   async function openDetail(groupId: string) {
+    setWorkflowErrorGroupId(null)
     setDetailError(null)
     try {
       const d = await fetchRiskModelDetail(groupId)
@@ -114,6 +150,12 @@ export function RiskModelsListPage() {
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : 'Failed to load risk model')
     }
+  }
+
+  function openWorkflowErrors(groupId: string) {
+    setDetailError(null)
+    setDetail(null)
+    setWorkflowErrorGroupId(groupId)
   }
 
   async function confirmDelete() {
@@ -129,6 +171,19 @@ export function RiskModelsListPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete risk model')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function retryModel(groupId: string) {
+    setRetryingId(groupId)
+    setError(null)
+    try {
+      await retryRiskModel(groupId)
+      await refreshModels()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry risk model')
+    } finally {
+      setRetryingId(null)
     }
   }
 
@@ -174,7 +229,11 @@ export function RiskModelsListPage() {
                   key={item.group_id}
                   hover
                   sx={{ cursor: 'pointer' }}
-                  onClick={() => void openDetail(item.group_id)}
+                  onClick={() =>
+                    void (item.status === 'failed'
+                      ? openWorkflowErrors(item.group_id)
+                      : openDetail(item.group_id))
+                  }
                 >
                   <TableCell sx={{ fontFamily: 'monospace' }}>{item.group_id}</TableCell>
                   <TableCell>
@@ -209,15 +268,35 @@ export function RiskModelsListPage() {
                   <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <Tooltip title="Open details">
-                      <IconButton size="small" onClick={() => void openDetail(item.group_id)}>
+                      <IconButton
+                        size="small"
+                        aria-label="Open details"
+                        onClick={() => void openDetail(item.group_id)}
+                      >
                         <LaunchIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+                    {item.status === 'failed' && (
+                      <Tooltip title="Retry training">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            aria-label="Retry training"
+                            disabled={retryingId === item.group_id}
+                            onClick={() => void retryModel(item.group_id)}
+                          >
+                            <ReplayIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                     <Tooltip title="Delete">
                       <span>
                         <IconButton
                           size="small"
                           color="error"
+                          aria-label="Delete risk model"
                           disabled={deletingId === item.group_id}
                           onClick={() => setDeleteTarget(item)}
                         >
@@ -265,6 +344,12 @@ export function RiskModelsListPage() {
             )}
           </>
         }
+      />
+
+      <RiskModelWorkflowErrorDialog
+        groupId={workflowErrorGroupId}
+        open={workflowErrorGroupId !== null}
+        onClose={() => setWorkflowErrorGroupId(null)}
       />
 
       <ConfirmDialog

@@ -9,7 +9,8 @@ import yaml
 
 from fastapi.testclient import TestClient
 
-from app.backtests.models import BacktestCreateRequest
+from app.backtests.models import BacktestCreateRequest, BacktestDetailResponse, BacktestTradeReplayCapsule
+from app.backtests.replay import build_trade_replay_capsule, build_trade_replay_launch_config
 from app.backtests.service import BacktestArtifactStore, build_backtest_config
 from app.engine.runner import BacktestExecutionResult
 from app.output.models import BacktestReport, CandidateRecord, OrderRecord, RunResult, RunSummary, TradeRecord
@@ -87,7 +88,10 @@ def _fake_runner(config, config_raw, on_run_complete=None, on_run_error=None, **
             ],
             trades=[
                 TradeRecord(
+                    entry_datetime="2024-01-02T00:00:00+00:00",
                     datetime="2024-01-03T00:00:00+00:00",
+                    entry_bar_index=5,
+                    exit_bar_index=8,
                     size=1.0,
                     price=105.0,
                     value=105.0,
@@ -148,6 +152,37 @@ def test_build_backtest_config_expands_symbols_and_triggers_cartesian() -> None:
         "sma_cross",
         "sma_cross",
     ]
+
+
+def test_trade_replay_launch_config_exposes_alpaca_env_vars() -> None:
+    capsule = BacktestTradeReplayCapsule.model_validate(
+        {
+            "backtest_id": "bt-1",
+            "run_id": "run-1",
+            "run_strategy": "demo",
+            "trade_index": 0,
+            "target_methods": ["app.strategies.implementations.PortableBacktestingStrategy.next"],
+            "break_at": "entry",
+            "trade": {
+                "datetime": "2024-01-02T00:00:00+00:00",
+                "size": 1.0,
+                "price": 100.0,
+                "value": 100.0,
+                "pnl": 0.0,
+                "pnlcomm": 0.0,
+                "entry_datetime": "2024-01-01T00:00:00+00:00",
+            },
+            "trade_entry_time": "2024-01-01T00:00:00+00:00",
+            "trade_exit_time": "2024-01-02T00:00:00+00:00",
+            "config_text": "runs: []",
+        }
+    )
+
+    launch_config = build_trade_replay_launch_config(capsule)
+
+    assert launch_config["env"]["PYTHONPATH"] == "${workspaceFolder}/src"
+    assert launch_config["env"]["ALPACA_API_KEY"] == "${env:ALPACA_API_KEY}"
+    assert launch_config["env"]["ALPACA_SECRET_KEY"] == "${env:ALPACA_SECRET_KEY}"
 
 
 def test_artifact_store_uses_path_agnostic_ids(tmp_path) -> None:
@@ -319,6 +354,33 @@ def test_get_detail_hydrates_candidates_from_parquet(tmp_path, monkeypatch):
     assert result["analyzers"]["candidate_diagnostics"]["total_candidates"] == 1
     assert len(result["candidates"]) == 1
     assert result["candidates"][0]["candidate_id"] == "cand-1"
+
+
+def test_build_trade_replay_capsule_targets_a_single_run(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    backtest_id = client.post("/backtests", json=_wizard_payload()).json()["backtest_id"]
+    _wait_for_terminal_status(client, backtest_id)
+
+    detail = BacktestDetailResponse.model_validate(client.get(f"/backtests/{backtest_id}").json())
+    run = detail.report.results[0]
+    capsule = build_trade_replay_capsule(detail, run_id=run.run_id, trade_index=0)
+    launch_config = build_trade_replay_launch_config(capsule)
+
+    assert capsule.backtest_id == backtest_id
+    assert capsule.run_id == run.run_id
+    assert capsule.trade_index == 0
+    assert capsule.break_at == "entry"
+    assert capsule.trade.entry_bar_index == 5
+    assert capsule.target_methods == [
+        "app.strategies.implementations.PortableBacktestingStrategy.next",
+        "app.strategies.components.ComposableStrategyCore.on_bar",
+    ]
+    assert capsule.config_text.count("run_id:") == 1
+    assert launch_config["module"] == "app.cli"
+    assert launch_config["args"][0] == "replay-trade"
+    assert launch_config["args"][1] == "--capsule-b64"
 
 
 def test_create_backtest_uses_saved_settings_defaults_for_optional_fields(tmp_path, monkeypatch):

@@ -21,6 +21,29 @@ export interface RiskModelCreateResponse {
   argo_workflow_name?: string | null
 }
 
+export interface RiskModelStatusResponse {
+  group_id: string
+  status: RiskModelStatus
+  argo_namespace?: string | null
+  argo_workflow_name?: string | null
+  argo_phase?: string | null
+}
+
+export interface RiskModelWorkflowErrorResponse {
+  group_id: string
+  argo_namespace?: string | null
+  argo_workflow_name?: string | null
+  argo_phase?: string | null
+  available: boolean
+  status_message?: string | null
+  failed_node_name?: string | null
+  failed_template_name?: string | null
+  error_exception?: string | null
+  error_code_location?: string | null
+  error_call_stack: string[]
+  error_traceback?: string | null
+}
+
 export interface RiskModelListItem {
   group_id: string
   created_at: string

@@ -178,10 +178,11 @@ class ArgoWorkflowSubmitter:
             raise RuntimeError(f"Failed to submit Argo workflow: {response.status_code} {response.text}")
         return workflow_name, self.config.namespace
 
-    def get_workflow(self, workflow_name: str) -> dict[str, Any] | None:
+    def get_workflow(self, workflow_name: str, *, namespace: str | None = None) -> dict[str, Any] | None:
+        target_namespace = namespace or self.config.namespace
         response = self._http_request(
             "GET",
-            f"/api/v1/workflows/{self.config.namespace}/{workflow_name}",
+            f"/api/v1/workflows/{target_namespace}/{workflow_name}",
         )
         if response.status_code == 404:
             return None
@@ -192,8 +193,8 @@ class ArgoWorkflowSubmitter:
             return None
         return payload
 
-    def get_workflow_phase(self, workflow_name: str) -> str | None:
-        workflow = self.get_workflow(workflow_name)
+    def get_workflow_phase(self, workflow_name: str, *, namespace: str | None = None) -> str | None:
+        workflow = self.get_workflow(workflow_name, namespace=namespace)
         if workflow is None:
             return None
         return _phase_from_workflow_resource(workflow)

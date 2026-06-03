@@ -2,14 +2,14 @@ import {
   Alert,
   Box,
   Chip,
-  Stack,
-  Tab,
-  Tabs,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableRow,
+  Stack,
+  Tab,
+  Tabs,
   Typography,
 } from '@mui/material'
 import dayjs from 'dayjs'
@@ -19,6 +19,7 @@ import type { BacktestRunResult, BacktestSelectionSummary } from '../types/backt
 import { resolveRunDiagnostics } from '../utils/backtestDiagnostics'
 import { formatInTimezone } from '../utils/datetime'
 import { BacktestAnalysisSection } from './BacktestAnalysisSection'
+import { BacktestTradeRecordsTable } from './BacktestTradeRecordsTable'
 import {
   DiagnosticsLayout,
   FilterDiagnosticsPanel,
@@ -30,6 +31,7 @@ import { DiagnosticsTableShell } from './BacktestMetricGrid'
 import { BacktestRunChart } from './BacktestRunChart'
 import { TradeDistributionCharts } from './TradeDistributionCharts'
 import { useSettings } from '../settings/useSettings'
+import { buildTradeChartFocusWindowMs, type TradeChartFocusWindowMs } from '../utils/backtestChartFocus'
 
 function formatNumber(value: number | null | undefined, digits = 2): string {
   if (value === null || value === undefined) {
@@ -62,13 +64,15 @@ function medianTradeSize(trades: BacktestRunResult['trades']): number | null {
 }
 
 interface BacktestRunDetailPanelProps {
+  backtestId: string
   result: BacktestRunResult
   selection: BacktestSelectionSummary | null
 }
 
-export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailPanelProps) {
+export function BacktestRunDetailPanel({ backtestId, result, selection }: BacktestRunDetailPanelProps) {
   const { platformSettings, appearance } = useSettings()
   const [tab, setTab] = useState<'overview' | 'chart' | 'diagnostics' | 'candidates' | 'trades'>('overview')
+  const [chartFocusWindow, setChartFocusWindow] = useState<TradeChartFocusWindowMs | null>(null)
   const summary = result.summary
   const resolved = resolveRunDiagnostics(result)
   const tradeDiagnostics = resolved.tradeDiagnostics
@@ -95,6 +99,16 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
   const lastTrade = sortedTrades.at(-1) ?? null
   const latestOrders = [...sortedOrders].reverse().slice(0, 5)
 
+  const handleFocusChartTrade = (trade: BacktestRunResult['trades'][number]) => {
+    const focusWindow = buildTradeChartFocusWindowMs(trade)
+    if (!focusWindow) {
+      return
+    }
+
+    setChartFocusWindow(focusWindow)
+    setTab('chart')
+  }
+
   return (
     <Box sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.default' }}>
       <Stack spacing={2} sx={{ p: 2 }}>
@@ -111,7 +125,7 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
         {resolved.isDerived && (
           <Alert severity="info">
             Some metrics were computed in the browser from trade records. Re-run this backtest to persist full
-            diagnostics in the report JSON.
+            diagnostics in the stored artifacts.
           </Alert>
         )}
 
@@ -147,12 +161,15 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
         {tab === 'chart' && result.status === 'success' && result.symbol && selection && (
           <BacktestAnalysisSection title="Price chart" description="Market bars with order and trade markers.">
             <BacktestRunChart
+              key={result.run_id}
               symbol={result.symbol}
               startDate={selection.start_date}
               endDate={selection.end_date}
               resolution={selection.resolution}
               orders={result.orders}
               trades={result.trades}
+              focusWindow={chartFocusWindow}
+              onResetFocusWindow={() => setChartFocusWindow(null)}
             />
           </BacktestAnalysisSection>
         )}
@@ -298,46 +315,16 @@ export function BacktestRunDetailPanel({ result, selection }: BacktestRunDetailP
                 <Metric label="Data source" value={result.data_source} />
               </Stack>
 
-              {result.trades.length > 0 ? (
-                <DiagnosticsTableShell title={`Trade records (${result.trades.length})`}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>When</TableCell>
-                        <TableCell align="right">Size</TableCell>
-                        <TableCell align="right">Price</TableCell>
-                        <TableCell align="right">Value</TableCell>
-                        <TableCell align="right">PnL</TableCell>
-                        <TableCell align="right">PnL after fees</TableCell>
-                        <TableCell>Exit</TableCell>
-                        <TableCell align="right">Hold (min)</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {sortedTrades.map((trade, index) => (
-                        <TableRow key={`${trade.datetime ?? 'no-datetime'}-${index}`} hover>
-                          <TableCell>
-                            {formatTimestampOrDash(
-                              trade.datetime,
-                              platformSettings.platform_behavior.timezone,
-                              appearance.time_display_format,
-                            )}
-                          </TableCell>
-                          <TableCell align="right">{formatNumber(trade.size, 2)}</TableCell>
-                          <TableCell align="right">{formatNumber(trade.price, 2)}</TableCell>
-                          <TableCell align="right">{formatNumber(trade.value, 2)}</TableCell>
-                          <TableCell align="right">{formatNumber(trade.pnl, 2)}</TableCell>
-                          <TableCell align="right">{formatNumber(trade.pnlcomm, 2)}</TableCell>
-                          <TableCell>{trade.reason ?? '—'}</TableCell>
-                          <TableCell align="right">{formatNumber(trade.hold_minutes, 1)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </DiagnosticsTableShell>
-              ) : (
-                <Typography color="text.secondary">No trade records were emitted for this run.</Typography>
-              )}
+              <DiagnosticsTableShell title={`Trade records (${result.trades.length})`}>
+                <BacktestTradeRecordsTable
+                  backtestId={backtestId}
+                  runId={result.run_id}
+                  trades={result.trades}
+                  timezone={platformSettings.platform_behavior.timezone}
+                  timeDisplayFormat={appearance.time_display_format}
+                  onFocusChartTrade={handleFocusChartTrade}
+                />
+              </DiagnosticsTableShell>
 
               {latestOrders.length > 0 && (
                 <DiagnosticsTableShell title={`Recent orders (${latestOrders.length})`}>

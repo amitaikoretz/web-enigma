@@ -16,6 +16,7 @@ from app.backtests.argo import ArgoWorkflowSubmitter
 from app.backtests.persistence import SqlAlchemyBacktestJobRepository
 from app.backtests.argo_workflow import workflow_results_mount
 from app.risk.models_api import RiskModelCreateRequest
+from app.risk.workflow_errors import WorkflowErrorDetails, extract_workflow_error_details
 from app.risk.persistence import SqlAlchemyRiskModelRepository
 from app.risk.argo import RiskModelArgoSubmitter
 
@@ -35,6 +36,22 @@ class CreateRiskModelResult:
     argo_namespace: str | None
     argo_workflow_name: str | None
     artifact_dir: str
+
+
+@dataclass(frozen=True)
+class RiskModelWorkflowErrorResult:
+    group_id: str
+    argo_namespace: str | None
+    argo_workflow_name: str | None
+    argo_phase: str | None
+    available: bool
+    status_message: str | None
+    failed_node_name: str | None
+    failed_template_name: str | None
+    error_exception: str | None
+    error_code_location: str | None
+    error_call_stack: list[str]
+    error_traceback: str | None
 
 
 class RiskModelService:
@@ -153,6 +170,28 @@ class RiskModelService:
             artifact_dir=artifact_dir,
         )
 
+    def retry_group(self, group_id: str) -> CreateRiskModelResult:
+        detail = self._risk_repo.get_detail(group_id)
+        if detail is None:
+            raise RiskModelValidationError(f"Risk model '{group_id}' not found")
+
+        params = detail.params or {}
+        try:
+            request = RiskModelCreateRequest.model_validate(
+                {
+                    "backtest_ids": params.get("backtest_ids", []),
+                    "targets": params.get("targets", []),
+                    "dataset_config": params.get("dataset_config", {}),
+                    "train_config": params.get("train_config", {}),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise RiskModelValidationError(
+                f"Risk model '{group_id}' does not contain a retryable request payload"
+            ) from exc
+
+        return self.create_and_submit_argo(request)
+
     def get_argo_phase(self, group_id: str) -> str | None:
         detail = self._risk_repo.get_detail(group_id)
         if detail is None:
@@ -160,6 +199,44 @@ class RiskModelService:
         if not detail.argo_workflow_name:
             return None
         return self._argo_submitter.get_workflow_phase(detail.argo_workflow_name)
+
+    def get_workflow_errors(self, group_id: str) -> RiskModelWorkflowErrorResult | None:
+        detail = self._risk_repo.get_detail(group_id)
+        if detail is None:
+            return None
+
+        workflow = None
+        if detail.argo_workflow_name:
+            try:
+                workflow = self._argo_submitter.get_workflow(
+                    detail.argo_workflow_name,
+                    namespace=detail.argo_namespace or None,
+                )
+            except Exception:  # noqa: BLE001
+                self._logger.exception(
+                    "Failed to load risk model workflow for error details; falling back to unavailable state. "
+                    "group_id=%s workflow=%s namespace=%s",
+                    group_id,
+                    detail.argo_workflow_name,
+                    detail.argo_namespace,
+                )
+                workflow = None
+
+        error_details: WorkflowErrorDetails = extract_workflow_error_details(workflow)
+        return RiskModelWorkflowErrorResult(
+            group_id=detail.group_id,
+            argo_namespace=detail.argo_namespace,
+            argo_workflow_name=detail.argo_workflow_name,
+            argo_phase=error_details.argo_phase,
+            available=error_details.available,
+            status_message=error_details.status_message,
+            failed_node_name=error_details.failed_node_name,
+            failed_template_name=error_details.failed_template_name,
+            error_exception=error_details.error_exception,
+            error_code_location=error_details.error_code_location,
+            error_call_stack=error_details.error_call_stack,
+            error_traceback=error_details.error_traceback,
+        )
 
     def delete_group(self, group_id: str) -> bool:
         detail = self._risk_repo.get_detail(group_id)

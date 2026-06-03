@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config.models import AnalyzerConfig, BacktestExecutionConfig, BrokerConfig
 from app.output.models import BacktestReport
+from app.output.models import TradeRecord
 from app.strategies.exit_rules import ExitRulesSelection
 from app.strategies.triggers import TRIGGER_REGISTRY, TriggerSelection, validate_trigger_params
 
@@ -272,3 +273,28 @@ class BacktestDetailResponse(BaseModel):
     output_path: str | None = None
     report: BacktestReport | None = None
     artifacts: list[BacktestArtifactEntry] = Field(default_factory=list)
+
+
+class BacktestTradeReplayCapsule(BaseModel):
+    capsule_version: int = 1
+    backtest_id: str
+    run_id: str
+    run_name: str | None = None
+    run_symbol: str | None = None
+    run_strategy: str
+    trade_index: int = Field(ge=0)
+    target_methods: list[str] = Field(default_factory=list)
+    break_at: Literal["entry", "exit"] = "entry"
+    trade: TradeRecord
+    trade_entry_time: str | None = None
+    trade_exit_time: str | None = None
+    focus_window_start: str | None = None
+    focus_window_end: str | None = None
+    config_format: Literal["yaml"] = "yaml"
+    config_text: str = Field(min_length=1)
+    config_sha256: str | None = None
+
+
+class BacktestTradeReplayResponse(BaseModel):
+    capsule: BacktestTradeReplayCapsule
+    launch_config: dict[str, object]

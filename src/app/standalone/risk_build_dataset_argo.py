@@ -6,7 +6,6 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 import typer
@@ -14,6 +13,8 @@ import typer
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.db.session import get_session_factory
 from app.db.models import BacktestJob
+from app.risk.dataset.feature_columns import select_risk_feature_columns
+from app.risk.dataset.builder import build_risk_dataset
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -80,63 +81,34 @@ def main(
     manifest_path = out_dir / "manifest.json"
 
     session_factory = get_session_factory()
-
-    label_frames: list[pd.DataFrame] = []
-    feature_frames: list[pd.DataFrame] = []
+    report_paths: list[Path] = []
     for backtest_id in backtest_ids:
         with session_factory() as session:
             row = session.get(BacktestJob, backtest_id)
             if row is None:
                 raise ValueError(f"Backtest '{backtest_id}' not found in DB")
-            if not row.labels_parquet_path or not row.features_parquet_path:
-                raise ValueError(f"Backtest '{backtest_id}' missing labels/features parquet paths")
-            labels_path = Path(row.labels_parquet_path)
-            feats_path = Path(row.features_parquet_path)
-        if not labels_path.exists():
-            raise FileNotFoundError(f"labels parquet not found: {labels_path}")
-        if not feats_path.exists():
-            raise FileNotFoundError(f"features parquet not found: {feats_path}")
+            if not row.report_json_path:
+                raise ValueError(f"Backtest '{backtest_id}' missing report JSON path")
+            report_paths.append(Path(row.report_json_path))
 
-        labels = pd.read_parquet(labels_path)
-        feats = pd.read_parquet(feats_path)
-        labels["backtest_id"] = backtest_id
-        feats["backtest_id"] = backtest_id
-        label_frames.append(labels)
-        feature_frames.append(feats)
+    dataset_manifest = build_risk_dataset(report_paths, output_path=dataset_path)
+    joined = pd.read_parquet(dataset_path)
 
-    labels_all = pd.concat(label_frames, ignore_index=True) if label_frames else pd.DataFrame()
-    feats_all = pd.concat(feature_frames, ignore_index=True) if feature_frames else pd.DataFrame()
+    feature_cols, skipped_feature_cols = select_risk_feature_columns(joined)
+    if skipped_feature_cols:
+        typer.echo(
+            "Skipping non-feature columns from risk model inputs: " + ", ".join(skipped_feature_cols),
+            err=True,
+        )
 
-    key = "candidate_id"
-    if key not in labels_all.columns or key not in feats_all.columns:
-        raise ValueError("Expected 'candidate_id' in both labels and features parquet")
-
-    joined = labels_all.merge(feats_all, on=[key, "backtest_id"], how="inner", suffixes=("_label", ""))
-    if joined.empty:
-        raise ValueError("Joined dataset is empty; check candidate_id alignment between labels/features")
-
-    # Feature columns = non-label columns, excluding obvious identifiers.
-    exclude_prefixes = ("label_",)
-    exclude_exact = {key, "backtest_id"}
-    feature_cols: list[str] = []
-    for col in joined.columns:
-        if col in exclude_exact:
-            continue
-        if any(col.startswith(p) for p in exclude_prefixes):
-            continue
-        if col.endswith("_label"):
-            continue
-        feature_cols.append(col)
-
-    joined.to_parquet(dataset_path, index=False)
     manifest = DatasetManifest(
         generated_at=_utc_now(),
         group_id=group_id,
         backtest_ids=backtest_ids,
-        input_rows=int(len(labels_all) + len(feats_all)),
-        joined_rows=int(len(joined)),
-        labels_rows=int(len(labels_all)),
-        features_rows=int(len(feats_all)),
+        input_rows=int(dataset_manifest.labeled_rows + dataset_manifest.feature_rows),
+        joined_rows=int(dataset_manifest.joined_rows),
+        labels_rows=int(dataset_manifest.labeled_rows),
+        features_rows=int(dataset_manifest.feature_rows),
         dataset_path=str(dataset_path),
         feature_columns=feature_cols,
     )
