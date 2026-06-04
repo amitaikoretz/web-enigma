@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.api.routes import (
+    argo,
     backtests_argo,
     backtests_jobs,
     backtests_run,
@@ -21,6 +22,7 @@ from app.api.routes import (
 
 
 def register_routes(app: FastAPI) -> None:
+    app.include_router(argo.router)
     app.include_router(health.router)
     app.include_router(server.router)
     app.include_router(strategies.router)

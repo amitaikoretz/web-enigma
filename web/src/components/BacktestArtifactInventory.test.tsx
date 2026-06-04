@@ -47,7 +47,7 @@ describe('buildSidecarCopySnippet', () => {
       }),
     )
 
-    expect(snippet).toContain('from app.output.records import CandidateRecord')
+    expect(snippet).toContain('from app.output.models import CandidateRecord')
     expect(snippet).toContain('payload = json.loads(artifact_path.read_text())')
     expect(snippet).toContain('record = CandidateRecord.model_validate(row_data)')
     expect(snippet).toContain('explain_record(CandidateRecord, record)')
@@ -110,6 +110,8 @@ describe('BacktestArtifactInventory', () => {
     if (!table) {
       return
     }
+    expect(within(table).queryByText('Path')).not.toBeInTheDocument()
+    expect(within(table).queryByText('/tmp/backtests/example/features.parquet')).not.toBeInTheDocument()
     expect(within(table).getAllByRole('button', { name: /copy python snippet/i })).toHaveLength(1)
 
     fireEvent.click(within(table).getByRole('button', { name: /copy python snippet/i }))

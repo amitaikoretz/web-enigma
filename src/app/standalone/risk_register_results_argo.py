@@ -9,7 +9,6 @@ import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.db.session import get_session_factory
-from app.backtests.persistence import SqlAlchemyBacktestJobRepository
 from app.risk.persistence import SqlAlchemyRiskModelRepository
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -24,6 +23,29 @@ def _write_text(path: str | None, text: str) -> None:
 
 def _terminal_command(argv: list[str]) -> str:
     return " ".join(shlex.quote(arg) for arg in argv)
+
+
+def _nested_get(payload: dict[str, object], *path: str) -> object | None:
+    current: object = payload
+    for key in path:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _metric_dict(metrics: dict[str, object], target_key: str) -> dict[str, object]:
+    aggregate_test = _nested_get(metrics, "aggregate", "test")
+    aggregate_validation = _nested_get(metrics, "aggregate", "validation")
+    walk_forward = _nested_get(metrics, "walk_forward")
+    result: dict[str, object] = {
+        "target_key": target_key,
+        "walk_forward": walk_forward,
+        "fold_count": (_nested_get(metrics, "walk_forward", "n_folds") or 0),
+        "validation": aggregate_validation,
+        "test": aggregate_test,
+    }
+    return result
 
 
 @app.command(help="Register trained risk model artifacts + metrics in the DB (for Argo workflow).")
@@ -78,13 +100,14 @@ def main(
         group_id,
         status="succeeded",
         summary_metrics={
+            "walk_forward": stop_metrics.get("walk_forward") or mae_metrics.get("walk_forward"),
             "stop_prob": {
-                "brier_calibrated": stop_metrics.get("brier_calibrated"),
-                "auc_calibrated": stop_metrics.get("auc_calibrated"),
+                "validation": _metric_dict(stop_metrics, "stop_prob").get("validation"),
+                "test": _metric_dict(stop_metrics, "stop_prob").get("test"),
             },
             "mae": {
-                "mae": mae_metrics.get("mae"),
-                "rmse": mae_metrics.get("rmse"),
+                "validation": _metric_dict(mae_metrics, "mae").get("validation"),
+                "test": _metric_dict(mae_metrics, "mae").get("test"),
             },
         },
     )
@@ -92,4 +115,3 @@ def main(
 
 if __name__ == "__main__":
     run_typer_app_with_argo_error_outputs(app)
-

@@ -40,6 +40,7 @@ from app.backtests.replay import (
     resolve_trade_replay_target_bar_index,
     install_trade_replay_debug_target,
 )
+from app.intraday.cli import app as intraday_app
 from app.reporting import generate_html_report
 from app.risk.data.report_loader import CandidateLoadError
 from app.risk.dataset.builder import build_risk_dataset
@@ -63,6 +64,7 @@ universes_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(universes_app, name="universes")
+app.add_typer(intraday_app, name="intraday")
 
 
 @app.callback()

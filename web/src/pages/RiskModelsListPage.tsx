@@ -38,6 +38,19 @@ import {
   statusChipColor,
 } from '../utils/riskModels'
 
+function formatTrainingDateRange(startDate?: string | null, endDate?: string | null): string {
+  if (!startDate && !endDate) {
+    return '—'
+  }
+  if (startDate && endDate && startDate === endDate) {
+    return startDate
+  }
+  if (startDate && endDate) {
+    return `${startDate} to ${endDate}`
+  }
+  return startDate ?? endDate ?? '—'
+}
+
 export function RiskModelsListPage() {
   const navigate = useNavigate()
   const { platformSettings } = useSettings()
@@ -210,6 +223,7 @@ export function RiskModelsListPage() {
                 <TableCell>Status</TableCell>
                 <TableCell>Progress</TableCell>
                 <TableCell>Backtests</TableCell>
+                <TableCell>Training range</TableCell>
                 <TableCell>Targets</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -252,6 +266,9 @@ export function RiskModelsListPage() {
                     </Stack>
                   </TableCell>
                   <TableCell>{item.backtest_ids.length}</TableCell>
+                  <TableCell sx={{ fontFamily: 'monospace' }}>
+                    {formatTrainingDateRange(item.training_start_date, item.training_end_date)}
+                  </TableCell>
                   <TableCell>{item.targets.join(', ')}</TableCell>
                   <TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
                   <TableCell align="right" onClick={(e) => e.stopPropagation()}>

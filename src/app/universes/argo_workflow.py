@@ -42,7 +42,7 @@ def build_symbol_universe_refresh_workflow_spec(*, universe_key: str | None, as_
                 "outputs": {
                     "parameters": [
                         {
-                            "name": "commandLine",
+                            "name": "terminal-command",
                             "valueFrom": {"path": "/tmp/argo-command-line.txt"},
                         }
                     ]
@@ -71,7 +71,7 @@ def build_symbol_universe_registry_sync_workflow_spec() -> dict[str, Any]:
                 "outputs": {
                     "parameters": [
                         {
-                            "name": "commandLine",
+                            "name": "terminal-command",
                             "valueFrom": {"path": "/tmp/argo-command-line.txt"},
                         }
                     ]

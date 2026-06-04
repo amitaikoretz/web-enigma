@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.backtests.models import BacktestSelectionSummary
 from app.db.models import RiskModelGroup, RiskModelSource, RiskModelTarget
+from app.db.models import BacktestJob
 
 
 def _utc_now() -> datetime:
@@ -28,6 +30,8 @@ class RiskModelListItem:
     targets_done: int
     summary_metrics: dict[str, Any] | None
     artifact_dir: str
+    training_start_date: date | None
+    training_end_date: date | None
 
 
 @dataclass(frozen=True)
@@ -58,11 +62,38 @@ class RiskModelDetail:
     summary_metrics: dict[str, Any] | None
     sources: list[dict[str, Any]]
     targets: list[RiskModelTargetRow]
+    training_start_date: date | None
+    training_end_date: date | None
 
 
 class SqlAlchemyRiskModelRepository:
     def __init__(self, session_factory: sessionmaker[Session]):
         self._session_factory = session_factory
+
+    def _training_date_range(
+        self,
+        session: Session,
+        backtest_ids: list[str],
+    ) -> tuple[date | None, date | None]:
+        if not backtest_ids:
+            return None, None
+
+        rows = session.scalars(select(BacktestJob).where(BacktestJob.id.in_(backtest_ids))).all()
+        start_date: date | None = None
+        end_date: date | None = None
+        for row in rows:
+            selection = row.selection
+            if not selection:
+                continue
+            try:
+                parsed = BacktestSelectionSummary.model_validate(selection)
+            except Exception:  # noqa: BLE001
+                continue
+            if start_date is None or parsed.start_date < start_date:
+                start_date = parsed.start_date
+            if end_date is None or parsed.end_date > end_date:
+                end_date = parsed.end_date
+        return start_date, end_date
 
     def create_group(
         self,
@@ -201,9 +232,15 @@ class SqlAlchemyRiskModelRepository:
             for t in targets:
                 target_map.setdefault(t.group_id, []).append(t.target_key)
 
+            training_ranges: dict[str, tuple[date | None, date | None]] = {}
+            for group_id in group_ids:
+                source_ids = sorted({src.backtest_id for src in sources if src.group_id == group_id})
+                training_ranges[group_id] = self._training_date_range(session, source_ids)
+
             out: list[RiskModelListItem] = []
             for g in groups:
                 targets_total, targets_done = target_counts.get(g.id, (0, 0))
+                training_start_date, training_end_date = training_ranges.get(g.id, (None, None))
                 out.append(
                     RiskModelListItem(
                         group_id=g.id,
@@ -218,6 +255,8 @@ class SqlAlchemyRiskModelRepository:
                         targets_done=targets_done,
                         summary_metrics=g.summary_metrics_json,
                         artifact_dir=g.artifact_dir,
+                        training_start_date=training_start_date,
+                        training_end_date=training_end_date,
                     )
                 )
             return out
@@ -229,6 +268,10 @@ class SqlAlchemyRiskModelRepository:
                 return None
             sources = session.scalars(select(RiskModelSource).where(RiskModelSource.group_id == group_id)).all()
             targets = session.scalars(select(RiskModelTarget).where(RiskModelTarget.group_id == group_id)).all()
+            training_start_date, training_end_date = self._training_date_range(
+                session,
+                [source.backtest_id for source in sources],
+            )
             return RiskModelDetail(
                 group_id=g.id,
                 created_at=g.created_at,
@@ -263,6 +306,8 @@ class SqlAlchemyRiskModelRepository:
                     )
                     for t in targets
                 ],
+                training_start_date=training_start_date,
+                training_end_date=training_end_date,
             )
 
     def count(self) -> int:
@@ -288,6 +333,8 @@ class SqlAlchemyRiskModelRepository:
                 targets_done=0,
                 summary_metrics=g.summary_metrics_json,
                 artifact_dir=g.artifact_dir,
+                training_start_date=None,
+                training_end_date=None,
             )
             session.query(RiskModelTarget).filter(RiskModelTarget.group_id == group_id).delete(
                 synchronize_session=False

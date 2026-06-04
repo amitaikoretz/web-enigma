@@ -17,7 +17,14 @@ from app.db.session import get_db_session
 from tests.conftest import build_backtest_client
 
 
-def _insert_backtest_job(session, backtest_id: str, *, labels_path: str, features_path: str) -> None:
+def _insert_backtest_job(
+    session,
+    backtest_id: str,
+    *,
+    labels_path: str,
+    features_path: str,
+    selection: dict | None = None,
+) -> None:
     now = datetime.now(UTC)
     session.add(
         BacktestJob(
@@ -31,7 +38,7 @@ def _insert_backtest_job(session, backtest_id: str, *, labels_path: str, feature
             completed_runs=1,
             successful_runs=1,
             failed_runs=0,
-            selection=None,
+            selection=selection,
             error_message=None,
             execution_backend="local",
             workflow_name=None,
@@ -54,11 +61,101 @@ def _insert_backtest_job(session, backtest_id: str, *, labels_path: str, feature
     )
 
 
+def _insert_risk_model_group(
+    session,
+    *,
+    group_id: str,
+    backtest_ids: list[str],
+) -> None:
+    now = datetime.now(UTC)
+    session.add(
+        RiskModelGroup(
+            id=group_id,
+            status="running",
+            argo_namespace=None,
+            argo_workflow_name=None,
+            params_json={"backtest_ids": backtest_ids, "targets": [], "dataset_config": {}, "train_config": {}},
+            artifact_dir=f"/tmp/risk-models/{group_id}",
+            summary_metrics_json=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    for backtest_id in backtest_ids:
+        session.add(
+            RiskModelSource(
+                group_id=group_id,
+                backtest_id=backtest_id,
+                source_report_path=None,
+            )
+        )
+
+
 def test_risk_models_list_empty(tmp_path) -> None:
     client = build_backtest_client(tmp_path)
     response = client.get("/risk-models")
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_risk_models_show_training_date_range(tmp_path) -> None:
+    client = build_backtest_client(tmp_path)
+
+    labels_path = tmp_path / "labels.parquet"
+    feats_path = tmp_path / "features.parquet"
+    pd.DataFrame([{"candidate_id": "c1", "label_hit_stop": 0, "label_mae": 0.1}]).to_parquet(
+        labels_path,
+        index=False,
+    )
+    pd.DataFrame([{"candidate_id": "c1", "f1": 1.0}]).to_parquet(feats_path, index=False)
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    _insert_backtest_job(
+        session,
+        "b1",
+        labels_path=str(labels_path),
+        features_path=str(feats_path),
+        selection={
+            "start_date": "2024-01-05",
+            "end_date": "2024-01-10",
+            "resolution": "1d",
+            "feed": "iex",
+            "symbols": ["AAPL"],
+            "triggers": ["sma_cross"],
+            "exit_rules": ["basic"],
+        },
+    )
+    _insert_backtest_job(
+        session,
+        "b2",
+        labels_path=str(labels_path),
+        features_path=str(feats_path),
+        selection={
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-03",
+            "resolution": "1d",
+            "feed": "iex",
+            "symbols": ["AAPL"],
+            "triggers": ["sma_cross"],
+            "exit_rules": ["basic"],
+        },
+    )
+    _insert_risk_model_group(session, group_id="g-1", backtest_ids=["b1", "b2"])
+    session.commit()
+    session.close()
+
+    list_response = client.get("/risk-models")
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload[0]["training_start_date"] == "2024-01-01"
+    assert list_payload[0]["training_end_date"] == "2024-01-10"
+
+    detail_response = client.get("/risk-models/g-1")
+    assert detail_response.status_code == 200
+    detail_payload = detail_response.json()
+    assert detail_payload["training_start_date"] == "2024-01-01"
+    assert detail_payload["training_end_date"] == "2024-01-10"
 
 
 def test_risk_models_create_validates_backtest_artifacts(tmp_path) -> None:

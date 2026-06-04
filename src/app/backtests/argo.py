@@ -180,10 +180,7 @@ class ArgoWorkflowSubmitter:
 
     def get_workflow(self, workflow_name: str, *, namespace: str | None = None) -> dict[str, Any] | None:
         target_namespace = namespace or self.config.namespace
-        response = self._http_request(
-            "GET",
-            f"/api/v1/workflows/{target_namespace}/{workflow_name}",
-        )
+        response = self.get_workflow_response(workflow_name, namespace=target_namespace)
         if response.status_code == 404:
             return None
         if response.status_code >= 400:
@@ -192,6 +189,13 @@ class ArgoWorkflowSubmitter:
         if not isinstance(payload, dict):
             return None
         return payload
+
+    def get_workflow_response(self, workflow_name: str, *, namespace: str | None = None) -> httpx.Response:
+        target_namespace = namespace or self.config.namespace
+        return self._http_request(
+            "GET",
+            f"/api/v1/workflows/{target_namespace}/{workflow_name}",
+        )
 
     def get_workflow_phase(self, workflow_name: str, *, namespace: str | None = None) -> str | None:
         workflow = self.get_workflow(workflow_name, namespace=namespace)

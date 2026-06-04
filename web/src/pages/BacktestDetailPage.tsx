@@ -42,6 +42,7 @@ import { BacktestRunDetailPanel } from '../components/BacktestRunDetailPanel'
 import { BacktestRunsComparisonTable } from '../components/BacktestRunsComparisonTable'
 import { BacktestStrategyAggregatePanel } from '../components/BacktestStrategyAggregatePanel'
 import { BacktestSummaryDashboard } from '../components/BacktestSummaryDashboard'
+import { WorkflowStepsDialog } from '../components/WorkflowStepsDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestDetailResponse, BacktestListItem, BacktestStatusResponse } from '../types/backtests'
 import type { ComparisonViewMode } from '../utils/backtestAggregates'
@@ -92,6 +93,7 @@ export function BacktestDetailPage() {
   const [symbolsDialogOpen, setSymbolsDialogOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [savingName, setSavingName] = useState(false)
+  const [workflowStepsOpen, setWorkflowStepsOpen] = useState(false)
   const refreshIntervalMs =
     platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
@@ -442,7 +444,14 @@ export function BacktestDetailPage() {
       )}
 
       {metadata.workflow_name && (
-        <Alert severity="info">
+        <Alert
+          severity="info"
+          action={
+            <Button size="small" variant="outlined" onClick={() => setWorkflowStepsOpen(true)}>
+              View workflow steps
+            </Button>
+          }
+        >
           Argo workflow: {metadata.workflow_name}
           {metadata.workflow_namespace ? ` (${metadata.workflow_namespace})` : ''}
         </Alert>
@@ -717,6 +726,16 @@ export function BacktestDetailPage() {
         onConfirm={() => {
           void confirmDelete()
         }}
+      />
+
+      <WorkflowStepsDialog
+        open={workflowStepsOpen}
+        onClose={() => setWorkflowStepsOpen(false)}
+        entityKind="Backtest"
+        entityLabel={`Backtest ${metadata.name ?? metadata.id}`}
+        workflowName={metadata.workflow_name ?? ''}
+        namespace={metadata.workflow_namespace ?? null}
+        workflowTitle={metadata.name ?? null}
       />
     </Stack>
   )

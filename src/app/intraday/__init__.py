@@ -1,0 +1,2 @@
+"""Intraday forecast model pipeline."""
+

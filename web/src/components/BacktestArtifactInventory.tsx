@@ -130,7 +130,7 @@ export function BacktestArtifactInventory({
                     <TableCell>Contents</TableCell>
                     <TableCell>Format</TableCell>
                     <TableCell align="right">Size</TableCell>
-                    <TableCell>Path</TableCell>
+                    <TableCell>Copy</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -152,51 +152,37 @@ export function BacktestArtifactInventory({
                         {formatBytes('size_bytes' in artifact ? artifact.size_bytes : null)}
                       </TableCell>
                       <TableCell>
-                        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                          <Typography
-                            component="code"
-                            variant="body2"
-                            sx={{
-                              display: 'block',
-                              fontFamily: 'monospace',
-                              fontSize: '0.78rem',
-                              wordBreak: 'break-all',
-                            }}
+                        {artifact.role === 'sidecar' && (
+                          <Tooltip
+                            title={
+                              copiedArtifactKey ===
+                              ('path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`)
+                                ? 'Copied'
+                                : 'Copy Python snippet'
+                            }
                           >
-                            {'path' in artifact ? artifact.path : '—'}
-                          </Typography>
-                          {artifact.role === 'sidecar' && (
-                            <Tooltip
-                              title={
-                                copiedArtifactKey ===
-                                ('path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`)
-                                  ? 'Copied'
-                                  : 'Copy Python snippet'
-                              }
-                            >
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  aria-label={
-                                    copiedArtifactKey ===
-                                    ('path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`)
-                                      ? 'Copied Python snippet'
-                                      : 'Copy Python snippet'
-                                  }
-                                  sx={{ p: 0.25 }}
-                                  onClick={() => {
-                                    void handleCopyCode(
-                                      artifact,
-                                      'path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`,
-                                    )
-                                  }}
-                                >
-                                  <ContentCopyIcon fontSize="inherit" />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-                          )}
-                        </Stack>
+                            <span>
+                              <IconButton
+                                size="small"
+                                aria-label={
+                                  copiedArtifactKey ===
+                                  ('path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`)
+                                    ? 'Copied Python snippet'
+                                    : 'Copy Python snippet'
+                                }
+                                sx={{ p: 0.25 }}
+                                onClick={() => {
+                                  void handleCopyCode(
+                                    artifact,
+                                    'path' in artifact && artifact.path ? artifact.path : `${artifact.kind}:${artifact.label}`,
+                                  )
+                                }}
+                              >
+                                <ContentCopyIcon fontSize="inherit" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

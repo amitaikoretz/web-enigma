@@ -98,6 +98,8 @@ def list_risk_models(
             targets_done=i.targets_done,
             summary_metrics=i.summary_metrics,
             artifact_dir=i.artifact_dir,
+            training_start_date=i.training_start_date,
+            training_end_date=i.training_end_date,
         )
         for i in items
     ]
@@ -139,6 +141,8 @@ def get_risk_model(
             }
             for t in detail.targets
         ],
+        training_start_date=detail.training_start_date,
+        training_end_date=detail.training_end_date,
     )
 
 

@@ -74,6 +74,8 @@ export interface RiskModelListItem {
   targets_done: number
   summary_metrics?: Record<string, unknown> | null
   artifact_dir: string
+  training_start_date?: string | null
+  training_end_date?: string | null
 }
 
 export interface RiskModelTargetRow {
@@ -109,4 +111,6 @@ export interface RiskModelDetail {
   dataset_manifest?: RiskDatasetManifestSummary | null
   sources: RiskModelSourceRow[]
   targets: RiskModelTargetRow[]
+  training_start_date?: string | null
+  training_end_date?: string | null
 }

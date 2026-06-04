@@ -580,7 +580,7 @@ export function BacktestsListPage() {
               value={riskRandomSeed}
               onChange={(e) => setRiskRandomSeed(e.target.value)}
               size="small"
-              helperText="Used for train/calibration splits in v1."
+              helperText="Used for walk-forward fold configuration in v1."
             />
           </Stack>
         </DialogContent>

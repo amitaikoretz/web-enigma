@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -42,6 +42,8 @@ class RiskModelListItemResponse(BaseModel):
     targets_done: int = 0
     summary_metrics: dict[str, Any] | None = None
     artifact_dir: str
+    training_start_date: date | None = None
+    training_end_date: date | None = None
 
 
 class RiskModelTargetRowResponse(BaseModel):
@@ -71,6 +73,8 @@ class RiskModelDetailResponse(BaseModel):
     dataset_manifest: RiskDatasetManifestSummary | None = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
     targets: list[RiskModelTargetRowResponse] = Field(default_factory=list)
+    training_start_date: date | None = None
+    training_end_date: date | None = None
 
 
 class RiskModelStatusResponse(BaseModel):

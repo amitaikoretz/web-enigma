@@ -1,0 +1,75 @@
+intraday:
+  model_version: intraday_model_v1
+  feature_version: intraday_features_v1
+  label_version: intraday_labels_v1
+  dataset_version: intraday_dataset_v1
+  output_dir: artifacts/intraday
+  allow_short: true
+  lookback_bars: 60
+  horizon_bars: 5
+  data_cache:
+    enabled: false
+    directory: .cache/backtest-data
+  universe:
+    start_date: 2024-01-01
+    end_date: 2024-03-31
+    interval: 1d
+    symbols:
+      - symbol: AAPL
+        data:
+          type: csv
+          path: examples/data/sample_daily.csv
+          datetime_column: datetime
+          open_column: open
+          high_column: high
+          low_column: low
+          close_column: close
+          volume_column: volume
+      - symbol: MSFT
+        data:
+          type: csv
+          path: examples/data/sample_daily.csv
+          datetime_column: datetime
+          open_column: open
+          high_column: high
+          low_column: low
+          close_column: close
+          volume_column: volume
+    benchmark:
+      symbol: SPY
+      data:
+        type: csv
+        path: examples/data/sample_daily.csv
+        datetime_column: datetime
+        open_column: open
+        high_column: high
+        low_column: low
+        close_column: close
+        volume_column: volume
+  walk_forward:
+    train_days: 60
+    validation_days: 5
+    test_days: 5
+    step_days: 5
+    embargo_bars: 1
+    min_train_rows: 60
+    min_validation_rows: 10
+    min_test_rows: 10
+  model_search:
+    alpha_grid: [0.1, 1.0, 10.0]
+    threshold_bps_grid: [1.0, 2.5, 5.0]
+    target_edge_bps_grid: [5.0, 10.0, 20.0]
+    max_risk_fraction_grid: [0.0005, 0.001, 0.0025]
+  costs:
+    spread_bps: 1.5
+    slippage_bps: 1.0
+    impact_bps: 0.5
+  sizing:
+    account_equity: 100000.0
+    max_participation_rate: 0.02
+    max_notional_fraction: 0.02
+    target_vol_bps: 20.0
+    floor_vol_bps: 5.0
+    stop_vol_multiplier: 1.5
+    min_stop_bps: 5.0
+

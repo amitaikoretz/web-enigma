@@ -43,6 +43,8 @@ describe('RiskModelsListPage', () => {
         targets_total: 1,
         targets_done: 1,
         artifact_dir: '/tmp/risk-models/g-1',
+        training_start_date: '2024-01-01',
+        training_end_date: '2024-01-10',
       },
     ])
 
@@ -56,6 +58,7 @@ describe('RiskModelsListPage', () => {
     )
 
     await waitFor(() => expect(screen.getByText('g-1')).toBeInTheDocument())
+    expect(screen.getByText('2024-01-01 to 2024-01-10')).toBeInTheDocument()
     fireEvent.click(screen.getByText('g-1'))
 
     await waitFor(() => expect(screen.getByText('risk model detail route')).toBeInTheDocument())
@@ -73,6 +76,8 @@ describe('RiskModelsListPage', () => {
         targets_total: 1,
         targets_done: 1,
         artifact_dir: '/tmp/risk-models/g-failed',
+        training_start_date: '2024-01-01',
+        training_end_date: '2024-01-10',
       },
     ])
     fetchRiskModelWorkflowErrorsMock.mockResolvedValue({

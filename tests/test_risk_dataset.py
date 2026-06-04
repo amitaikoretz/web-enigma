@@ -449,6 +449,7 @@ def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> 
         [
             {
                 "candidate_id": "c1",
+                "timestamp": "2024-01-01T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "hit_stop_before_target": 0,
                 "feature_a": 1.0,
@@ -458,6 +459,7 @@ def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> 
             },
             {
                 "candidate_id": "c2",
+                "timestamp": "2024-01-02T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "hit_stop_before_target": 1,
                 "feature_a": 2.0,
@@ -467,6 +469,7 @@ def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> 
             },
             {
                 "candidate_id": "c3",
+                "timestamp": "2024-01-03T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "hit_stop_before_target": 0,
                 "feature_a": 3.0,
@@ -476,6 +479,7 @@ def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> 
             },
             {
                 "candidate_id": "c4",
+                "timestamp": "2024-01-04T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "hit_stop_before_target": 1,
                 "feature_a": 4.0,
@@ -496,7 +500,19 @@ def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> 
         dataset_path=str(dataset_path),
         manifest_path=str(tmp_path / "manifest.json"),
         feature_cols_json=json.dumps(["feature_a", "feature_b", "strategy_id", "signal_reason", "mae_pct"]),
-        train_config_json=json.dumps({"random_seed": 7, "calibration_test_size": 0.5}),
+        train_config_json=json.dumps(
+            {
+                "random_seed": 7,
+                "calibration_test_size": 0.5,
+                "walk_forward_train_days": 2,
+                "walk_forward_test_days": 1,
+                "walk_forward_step_days": 1,
+                "walk_forward_embargo_bars": 0,
+                "walk_forward_min_train_rows": 1,
+                "walk_forward_min_validation_rows": 1,
+                "walk_forward_min_test_rows": 1,
+            }
+        ),
         artifact_dir=str(artifact_dir),
         model_path_out=str(model_path_out),
         metrics_path_out=str(metrics_path_out),
@@ -508,8 +524,12 @@ def test_risk_train_stop_accepts_canonical_stop_label_column(tmp_path: Path) -> 
     assert model_path.exists()
     assert metrics_path.exists()
     serialized = json.loads(model_path.read_text(encoding="utf-8"))
-    assert serialized["type"] == "logreg+isotonic"
+    assert serialized["type"] in {"logreg+isotonic", "logreg+identity"}
     assert serialized["feature_cols"] == ["feature_a", "feature_b"]
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert metrics["walk_forward"]["n_folds"] >= 1
+    assert metrics["aggregate"]["test"]["brier_calibrated_mean"] is not None
+    assert metrics["fold_metrics"]
 
 
 def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> None:
@@ -520,6 +540,7 @@ def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> No
         [
             {
                 "candidate_id": "c1",
+                "timestamp": "2024-01-01T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "mae_abs_pct": 0.11,
                 "feature_a": 1.0,
@@ -529,6 +550,7 @@ def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> No
             },
             {
                 "candidate_id": "c2",
+                "timestamp": "2024-01-02T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "mae_abs_pct": 0.22,
                 "feature_a": 2.0,
@@ -538,6 +560,7 @@ def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> No
             },
             {
                 "candidate_id": "c3",
+                "timestamp": "2024-01-03T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "mae_abs_pct": 0.33,
                 "feature_a": 3.0,
@@ -547,6 +570,7 @@ def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> No
             },
             {
                 "candidate_id": "c4",
+                "timestamp": "2024-01-04T00:00:00+00:00",
                 "strategy_id": "breakout_channel|exits:a0b398e7ce",
                 "mae_abs_pct": 0.44,
                 "feature_a": 4.0,
@@ -567,7 +591,19 @@ def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> No
         dataset_path=str(dataset_path),
         manifest_path=str(tmp_path / "manifest.json"),
         feature_cols_json=json.dumps(["feature_a", "feature_b", "strategy_id", "signal_reason", "mae_abs_pct"]),
-        train_config_json=json.dumps({"random_seed": 7, "mae_test_size": 0.5, "ridge_alpha": 1.0}),
+        train_config_json=json.dumps(
+            {
+                "random_seed": 7,
+                "ridge_alpha": 1.0,
+                "walk_forward_train_days": 2,
+                "walk_forward_test_days": 1,
+                "walk_forward_step_days": 1,
+                "walk_forward_embargo_bars": 0,
+                "walk_forward_min_train_rows": 1,
+                "walk_forward_min_validation_rows": 1,
+                "walk_forward_min_test_rows": 1,
+            }
+        ),
         artifact_dir=str(artifact_dir),
         model_path_out=str(model_path_out),
         metrics_path_out=str(metrics_path_out),
@@ -581,3 +617,7 @@ def test_risk_train_mae_accepts_canonical_mae_label_column(tmp_path: Path) -> No
     serialized = json.loads(model_path.read_text(encoding="utf-8"))
     assert serialized["type"] == "ridge"
     assert serialized["feature_cols"] == ["feature_a", "feature_b"]
+    metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    assert metrics["walk_forward"]["n_folds"] >= 1
+    assert metrics["aggregate"]["test"]["mae_mean"] is not None
+    assert metrics["fold_metrics"]

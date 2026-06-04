@@ -101,6 +101,9 @@ def build_csv_data_feed(config: CsvDataSource, start_date: date, end_date: date)
 
     start_ts = pd.Timestamp(start_date)
     end_ts = pd.Timestamp(end_date) + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+    if out.index.tz is not None:
+        start_ts = start_ts.tz_localize(out.index.tz)
+        end_ts = end_ts.tz_localize(out.index.tz)
     out = out.loc[(out.index >= start_ts) & (out.index <= end_ts)]
     if out.empty:
         raise RuntimeError("No CSV data found in requested date range")
