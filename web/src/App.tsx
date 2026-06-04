@@ -41,12 +41,15 @@ import { ScanRunDetailPage } from './pages/ScanRunDetailPage'
 import { ScannersLandingPage } from './pages/ScannersLandingPage'
 import { ScannerTypePage } from './pages/ScannerTypePage'
 import { SettingsPage } from './pages/SettingsPage'
+import { ModelsLandingPage } from './pages/ModelsLandingPage'
 import { RiskModelsListPage } from './pages/RiskModelsListPage'
 import { RiskModelDetailPage } from './pages/RiskModelDetailPage'
+import { ReturnForecastModelsListPage } from './pages/ReturnForecastModelsListPage'
+import { ReturnForecastModelDetailPage } from './pages/ReturnForecastModelDetailPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
-  { label: 'Risk Models', to: '/risk-models', icon: <ShieldIcon /> },
+  { label: 'Models', to: '/models', icon: <ShieldIcon /> },
   { label: 'Data', to: '/data/downloads', icon: <CloudDownloadIcon /> },
   { label: 'Scanners', to: '/scanners', icon: <ManageSearchIcon /> },
   { label: 'Contracts', to: '/contracts', icon: <AssignmentIcon /> },
@@ -206,8 +209,11 @@ function App() {
           <Route path="/backtests" element={<BacktestsListPage />} />
           <Route path="/backtests/new" element={<BacktestWizardPage />} />
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
-          <Route path="/risk-models" element={<RiskModelsListPage />} />
-          <Route path="/risk-models/:groupId" element={<RiskModelDetailPage />} />
+          <Route path="/models" element={<ModelsLandingPage />} />
+          <Route path="/models/risk" element={<RiskModelsListPage />} />
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
+          <Route path="/models/returns" element={<ReturnForecastModelsListPage />} />
+          <Route path="/models/returns/:groupId" element={<ReturnForecastModelDetailPage />} />
           <Route path="/data/downloads" element={<DataDownloadsListPage />} />
           <Route path="/data/downloads/new" element={<DataDownloadWizardPage />} />
           <Route path="/data/downloads/:jobId" element={<DataDownloadDetailPage />} />

@@ -51,6 +51,7 @@ def _metric_dict(metrics: dict[str, object], target_key: str) -> dict[str, objec
 @app.command(help="Register trained risk model artifacts + metrics in the DB (for Argo workflow).")
 def main(
     group_id: str = typer.Option(..., "--group-id"),
+    family: str = typer.Option("risk", "--family", help="Risk model family to update"),
     manifest_path: str = typer.Option(..., "--manifest-path"),
     feature_cols_json: str = typer.Option(..., "--feature-cols-json"),
     stop_model_path: str = typer.Option(..., "--stop-model-path"),
@@ -73,7 +74,7 @@ def main(
     mae_metrics = json.loads(Path(mae_metrics_path).read_text(encoding="utf-8"))
 
     session_factory = get_session_factory()
-    risk_repo = SqlAlchemyRiskModelRepository(session_factory)
+    risk_repo = SqlAlchemyRiskModelRepository(session_factory, family=family)
 
     risk_repo.upsert_target(
         group_id=group_id,

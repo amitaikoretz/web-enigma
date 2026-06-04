@@ -150,6 +150,7 @@ def _register_results_template() -> dict[str, Any]:
         "inputs": {
             "parameters": [
                 {"name": "group-id"},
+                {"name": "family"},
                 {"name": "manifest-path"},
                 {"name": "feature-cols"},
                 {"name": "stop-model-path"},
@@ -167,6 +168,8 @@ def _register_results_template() -> dict[str, Any]:
                 "/tmp/terminal-command.txt",
                 "--group-id",
                 "{{inputs.parameters.group-id}}",
+                "--family",
+                "{{inputs.parameters.family}}",
                 "--manifest-path",
                 "{{inputs.parameters.manifest-path}}",
                 "--feature-cols-json",
@@ -192,6 +195,7 @@ def _register_results_template() -> dict[str, Any]:
 def build_risk_model_workflow_spec(
     *,
     group_id: str,
+    family: str,
     backtest_ids_json: str,
     dataset_config_json: str,
     train_config_json: str,
@@ -216,6 +220,7 @@ def build_risk_model_workflow_spec(
                         {"name": "dataset-config-json"},
                         {"name": "train-config-json"},
                         {"name": "artifact-dir"},
+                        {"name": "family"},
                     ]
                 },
                 "steps": [
@@ -278,6 +283,7 @@ def build_risk_model_workflow_spec(
                                     ("stop-metrics-path", "{{steps.train-stop.outputs.parameters.metrics-path}}"),
                                     ("mae-model-path", "{{steps.train-mae.outputs.parameters.model-path}}"),
                                     ("mae-metrics-path", "{{steps.train-mae.outputs.parameters.metrics-path}}"),
+                                    ("family", "{{inputs.parameters.family}}"),
                                 ]
                             ),
                         }
@@ -296,7 +302,7 @@ def build_risk_model_workflow_spec(
                 ("dataset-config-json", dataset_config_json),
                 ("train-config-json", train_config_json),
                 ("artifact-dir", artifact_dir),
+                ("family", family),
             ]
         ),
     }
-

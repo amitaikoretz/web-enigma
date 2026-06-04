@@ -17,6 +17,7 @@ def test_registry_has_demo_triggers_and_exit_rules():
         "breakout_channel",
         "buy_oco_atr",
         "volume_rally",
+        "fast_upswing",
     } <= trigger_names
     assert {
         "fixed_pct_oco",
@@ -46,6 +47,9 @@ def test_registry_param_validation():
     assert rally_parsed["min_confirmations"] == 3
     tiered = validate_trigger_params("volume_rally", {"min_confirmations": 4})
     assert tiered["min_confirmations"] == 4
+    upswing = validate_trigger_params("fast_upswing", {"return_lookback": 5, "volume_window": 20})
+    assert upswing["min_consecutive_up_bars"] == 3
+    assert upswing["require_vwap"] is True
     with pytest.raises(ValueError):
         validate_trigger_params("sma_cross", {"fast": 0, "slow": 8})
     with pytest.raises(ValueError):

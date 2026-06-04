@@ -49,6 +49,40 @@ def test_list_universes_empty(tmp_path):
     assert response.json() == []
 
 
+def test_sync_registry_seeds_bluechip_etfs_universe(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    service = SymbolUniverseService()
+
+    with session_factory() as session:
+        stats = service.sync_registry(session)
+        assert stats["created"] == len(UNIVERSE_REGISTRY)
+
+    response = client.get("/universes?active_only=false")
+    assert response.status_code == 200
+    items = response.json()
+    bluechip = next(item for item in items if item["key"] == "bluechip_etfs")
+    assert bluechip["name"] == "Blue-chip ETFs"
+    assert bluechip["description"] == "Curated large-cap and dividend-quality ETF basket."
+    assert bluechip["provider"] == "static"
+    assert bluechip["provider_ref"] == {"symbols": ["DIA", "QQQ", "SCHD", "SPY", "VIG"]}
+    assert bluechip["is_active"] is True
+
+
+def test_bluechip_etfs_constituents_return_seed_symbols(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    service = SymbolUniverseService()
+
+    with session_factory() as session:
+        service.sync_registry(session)
+
+    response = client.get(f"/universes/bluechip_etfs/constituents?as_of={date(2026, 5, 28).isoformat()}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["key"] == "bluechip_etfs"
+    assert body["as_of"] == date(2026, 5, 28).isoformat()
+    assert body["symbols"] == ["DIA", "QQQ", "SCHD", "SPY", "VIG"]
+
+
 def test_admin_create_and_patch_universe(tmp_path, monkeypatch):
     monkeypatch.setenv("BACKTEST_ADMIN_SECRET", "secret")
     client, _session_factory = _build_client(tmp_path)

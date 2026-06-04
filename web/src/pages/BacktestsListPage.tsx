@@ -20,7 +20,6 @@ import {
   TablePagination,
   TableRow,
   Tooltip,
-  TextField,
   Typography,
   Link,
 } from '@mui/material'
@@ -29,8 +28,10 @@ import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'r
 
 import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
 import { deleteBacktest, fetchBacktests, retryBacktest, retryBacktestForce } from '../api/backtests'
+import { createReturnForecastModel } from '../api/returnForecastModels'
 import { createRiskModel } from '../api/riskModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { ModelTrainingLaunchDialog, type ModelTrainingFamily, type ModelTrainingLaunchPayload } from '../components/ModelTrainingLaunchDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
 import { canRetryBacktest } from '../utils/backtestConfigPrefill'
@@ -39,6 +40,7 @@ interface LaunchResultState {
   status: 'success' | 'failed'
   message: string
   backtestId?: string
+  family: ModelTrainingFamily
 }
 
 const DEFAULT_PAGE_SIZE = 25
@@ -91,9 +93,9 @@ export function BacktestsListPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [retryTarget, setRetryTarget] = useState<BacktestListItem | null>(null)
-  const [riskDialogOpen, setRiskDialogOpen] = useState(false)
-  const [riskSubmitting, setRiskSubmitting] = useState(false)
-  const [riskRandomSeed, setRiskRandomSeed] = useState('7')
+  const [launchFamily, setLaunchFamily] = useState<ModelTrainingFamily | null>(null)
+  const [launchSubmitting, setLaunchSubmitting] = useState(false)
+  const [launchError, setLaunchError] = useState<string | null>(null)
   const [launchResult, setLaunchResult] = useState<LaunchResultState | null>(null)
 
   const visibleColumns = useMemo(
@@ -288,29 +290,44 @@ export function BacktestsListPage() {
     }
   }
 
-  async function submitRiskModel() {
+  async function submitModelLaunch(payload: ModelTrainingLaunchPayload) {
     const ids = items.filter((item) => selectedIds.has(item.id)).map((item) => item.id)
     if (ids.length === 0) {
       return
     }
-    setRiskSubmitting(true)
+    setLaunchSubmitting(true)
+    setLaunchError(null)
     setError(null)
     try {
-      await createRiskModel({
+      const request = {
+        ...payload.request,
         backtest_ids: ids,
-        targets: [
-          { target_key: 'stop_prob', task_type: 'classification' },
-          { target_key: 'mae', task_type: 'regression' },
-        ],
-        dataset_config: {},
-        train_config: { random_seed: Number(riskRandomSeed) || 7 },
+      }
+      const response =
+        payload.family === 'risk'
+          ? await createRiskModel(request)
+          : await createReturnForecastModel(request)
+      setLaunchFamily(null)
+      setLaunchResult({
+        family: payload.family,
+        status: 'success',
+        message:
+          payload.family === 'risk'
+            ? 'Risk model launch submitted successfully.'
+            : 'Return forecast model launch submitted successfully.',
+        backtestId: response.group_id,
       })
-      setRiskDialogOpen(false)
-      navigate('/risk-models')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create risk model')
+      const message = err instanceof Error ? err.message : 'Failed to launch model'
+      setLaunchError(message)
+      setError(message)
+      setLaunchResult({
+        family: payload.family,
+        status: 'failed',
+        message,
+      })
     } finally {
-      setRiskSubmitting(false)
+      setLaunchSubmitting(false)
     }
   }
 
@@ -352,9 +369,16 @@ export function BacktestsListPage() {
           <Button
             variant="outlined"
             disabled={selectedOnPageCount === 0 || bulkDeleting}
-            onClick={() => setRiskDialogOpen(true)}
+            onClick={() => setLaunchFamily('risk')}
           >
             Train risk model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
+          </Button>
+          <Button
+            variant="outlined"
+            disabled={selectedOnPageCount === 0 || bulkDeleting}
+            onClick={() => setLaunchFamily('return_forecast')}
+          >
+            Train return forecast{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
           </Button>
           <Button
             color="error"
@@ -394,7 +418,7 @@ export function BacktestsListPage() {
         }}
       >
         <DialogTitle id="launch-result-title" sx={{ pb: 1 }}>
-          {launchResult?.status === 'success' ? 'Backtest launched' : 'Backtest launch failed'}
+          {launchResult?.status === 'success' ? 'Model launched' : 'Model launch failed'}
         </DialogTitle>
         <DialogContent id="launch-result-description" sx={{ pt: 0 }}>
           <Stack spacing={1.5}>
@@ -404,8 +428,11 @@ export function BacktestsListPage() {
             {launchResult?.status === 'success' && launchResult.backtestId && (
               <Typography color="text.secondary">
                 You can open the new job from{' '}
-                <Link component={RouterLink} to={`/backtests/${launchResult.backtestId}`}>
-                  backtest {launchResult.backtestId}
+                <Link
+                  component={RouterLink}
+                  to={launchResult.family === 'risk' ? `/models/risk/${launchResult.backtestId}` : `/models/returns/${launchResult.backtestId}`}
+                >
+                  {launchResult.family === 'risk' ? 'risk model' : 'return forecast model'} {launchResult.backtestId}
                 </Link>
                 .
               </Typography>
@@ -556,47 +583,20 @@ export function BacktestsListPage() {
         )}
       </Paper>
 
-      <Dialog
-        open={riskDialogOpen}
+      <ModelTrainingLaunchDialog
+        open={launchFamily !== null}
+        family={launchFamily ?? 'risk'}
+        selectedBacktestCount={selectedOnPageCount}
+        submitting={launchSubmitting}
+        error={launchError}
         onClose={() => {
-          if (!riskSubmitting) {
-            setRiskDialogOpen(false)
+          if (!launchSubmitting) {
+            setLaunchFamily(null)
+            setLaunchError(null)
           }
         }}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Train risk model</DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
-          <Stack spacing={2}>
-            <Typography color="text.secondary">
-              Trains stop probability + MAE models from the selected backtests via Argo.
-            </Typography>
-            <Typography>
-              Selected backtests on this page: <b>{selectedOnPageCount}</b>
-            </Typography>
-            <TextField
-              label="Random seed"
-              value={riskRandomSeed}
-              onChange={(e) => setRiskRandomSeed(e.target.value)}
-              size="small"
-              helperText="Used for walk-forward fold configuration in v1."
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRiskDialogOpen(false)} disabled={riskSubmitting}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => void submitRiskModel()}
-            variant="contained"
-            disabled={riskSubmitting || selectedOnPageCount === 0}
-          >
-            {riskSubmitting ? 'Submitting…' : 'Start training'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onSubmit={(payload) => void submitModelLaunch(payload)}
+      />
 
       <ConfirmDialog
         open={retryTarget !== null}

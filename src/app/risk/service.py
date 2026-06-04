@@ -62,16 +62,22 @@ class RiskModelService:
         backtest_repo: SqlAlchemyBacktestJobRepository,
         risk_repo: SqlAlchemyRiskModelRepository,
         argo_submitter: ArgoWorkflowSubmitter | None = None,
+        family: str = "risk",
+        family_slug: str = "risk-models",
+        family_label: str = "Risk model",
     ):
         self._session_factory = session_factory
         self._backtest_repo = backtest_repo
         self._risk_repo = risk_repo
         self._argo_submitter = argo_submitter or ArgoWorkflowSubmitter()
+        self._family = family
+        self._family_slug = family_slug
+        self._family_label = family_label
         self._logger = logging.getLogger(__name__)
 
     def _artifact_dir_for_group(self, group_id: str) -> str:
         base = workflow_results_mount().rstrip("/")
-        return f"{base}/risk-models/{group_id}"
+        return f"{base}/{self._family_slug}/{group_id}"
 
     def _is_writable_dir(self, candidate: Path) -> bool:
         try:
@@ -90,7 +96,7 @@ class RiskModelService:
 
     def _validate_backtests(self, backtest_ids: list[str]) -> dict[str, str | None]:
         if not backtest_ids:
-            raise RiskModelValidationError("Provide at least one backtest_id")
+            raise RiskModelValidationError(f"Provide at least one backtest_id for {self._family_label.lower()}")
         report_paths: dict[str, str | None] = {}
         for backtest_id in backtest_ids:
             item = self._backtest_repo.get(backtest_id)
@@ -121,13 +127,13 @@ class RiskModelService:
         }
         if skip_local_writes:
             self._logger.warning(
-                "Skipping local risk model artifact writes due to BACKTEST_RISK_SKIP_LOCAL_ARTIFACT_WRITES=1; "
+                "Skipping local model artifact writes due to BACKTEST_RISK_SKIP_LOCAL_ARTIFACT_WRITES=1; "
                 "artifact_dir=%s",
                 artifact_dir,
             )
         elif not self._is_writable_dir(artifact_dir_path):
             self._logger.warning(
-                "Risk model artifact_dir is not writable; skipping local writes (params.json will not be written). "
+                "Model artifact_dir is not writable; skipping local writes (params.json will not be written). "
                 "artifact_dir=%s",
                 artifact_dir,
             )
@@ -153,13 +159,18 @@ class RiskModelService:
         )
 
         # Submit workflow
-        rm_submitter = RiskModelArgoSubmitter(self._argo_submitter)
+        rm_submitter = RiskModelArgoSubmitter(
+            self._argo_submitter,
+            workflow_prefix=self._family_slug.rstrip("s"),
+            component_label=self._family_slug.rstrip("s"),
+        )
         wf_name, wf_ns = rm_submitter.submit(
             group_id=group_id,
             backtest_ids=request.backtest_ids,
             dataset_config=request.dataset_config,
             train_config=request.train_config,
             artifact_dir=artifact_dir,
+            family=self._family,
         )
         self._risk_repo.update_group_workflow(group_id, argo_namespace=wf_ns, argo_workflow_name=wf_name)
         return CreateRiskModelResult(
@@ -173,7 +184,7 @@ class RiskModelService:
     def retry_group(self, group_id: str) -> CreateRiskModelResult:
         detail = self._risk_repo.get_detail(group_id)
         if detail is None:
-            raise RiskModelValidationError(f"Risk model '{group_id}' not found")
+            raise RiskModelValidationError(f"{self._family_label} '{group_id}' not found")
 
         params = detail.params or {}
         try:
@@ -187,7 +198,7 @@ class RiskModelService:
             )
         except Exception as exc:  # noqa: BLE001
             raise RiskModelValidationError(
-                f"Risk model '{group_id}' does not contain a retryable request payload"
+                f"{self._family_label} '{group_id}' does not contain a retryable request payload"
             ) from exc
 
         return self.create_and_submit_argo(request)
@@ -214,7 +225,7 @@ class RiskModelService:
                 )
             except Exception:  # noqa: BLE001
                 self._logger.exception(
-                    "Failed to load risk model workflow for error details; falling back to unavailable state. "
+                    "Failed to load model workflow for error details; falling back to unavailable state. "
                     "group_id=%s workflow=%s namespace=%s",
                     group_id,
                     detail.argo_workflow_name,
@@ -251,7 +262,7 @@ class RiskModelService:
                 )
             except Exception:  # noqa: BLE001
                 self._logger.exception(
-                    "Failed to terminate risk model workflow; continuing with deletion. group_id=%s",
+                    "Failed to terminate model workflow; continuing with deletion. group_id=%s",
                     group_id,
                 )
 
@@ -265,7 +276,7 @@ class RiskModelService:
         except FileNotFoundError:
             return True
         except PermissionError as exc:
-            raise RuntimeError(f"Risk model artifact_dir is not deletable: {artifact_dir}") from exc
+            raise RuntimeError(f"Model artifact_dir is not deletable: {artifact_dir}") from exc
         except OSError as exc:
-            raise RuntimeError(f"Failed to delete risk model artifact_dir: {artifact_dir}") from exc
+            raise RuntimeError(f"Failed to delete model artifact_dir: {artifact_dir}") from exc
         return True

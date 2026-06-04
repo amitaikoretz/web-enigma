@@ -14,6 +14,7 @@ Built-in strategies include:
 - `buy_oco_atr_tp_sl`
 - `buy_oco_atr_tp_trailing`
 - `volume_rally` for confirmed breakout/rally detection using volume, VWAP, MACD, ADX, and ATR exits
+- `fast_upswing` for conservative fast-continuation entries using consecutive up bars, volume expansion, and VWAP confirmation
 
 ## Quick Start
 
@@ -41,6 +42,7 @@ Start here for local setup and operations:
 - [Docker Compose Guide](./docs/docker-compose.md)
 - [Live Runtime Guide](./docs/live-runtime.md)
 - [Backtesting Guide](./BACKTEST.md)
+- [Parquet Schema Contracts](./docs/parquet-schema-contracts.md)
 - [Kubernetes Design Notes](./docs/k8s-trading-agent-design.md)
 
 ## What Each Guide Covers

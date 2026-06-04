@@ -8,7 +8,12 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
+  Link,
   Stack,
   Typography,
 } from '@mui/material'
@@ -18,6 +23,19 @@ import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import { createScanRun, fetchScanParams, fetchScanRuns } from '../api/scans'
 import { ScanParamsForm } from '../components/ScanParamsForm'
 import type { ScanStatusResponse, ScanType } from '../types/scans'
+
+type ScanLaunchResultState =
+  | {
+      status: 'success'
+      message: string
+      scanId: string
+      scanType: ScanType
+    }
+  | {
+      status: 'failed'
+      message: string
+      scanType: ScanType
+    }
 
 function titleForType(scanType: ScanType): string {
   if (scanType === 'momentum') return 'Stock Momentum Scanner'
@@ -36,14 +54,82 @@ export function ScannerTypePage() {
   const [paramsSchema, setParamsSchema] = useState<unknown | null>(null)
   const [loadingParams, setLoadingParams] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [launchResult, setLaunchResult] = useState<ScanLaunchResultState | null>(null)
 
   const isValidType = useMemo(
     () => scanType === 'momentum' || scanType === 'options' || scanType === 'trend',
     [scanType],
   )
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    if (!scanType || !isValidType) {
+      return undefined
+    }
+
+    const currentScanType = scanType
+    let cancelled = false
+
+    async function loadRuns() {
+      setLoading(true)
+      setError(null)
+      try {
+        const response = await fetchScanRuns(currentScanType)
+        if (!cancelled) {
+          setItems(response.items)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load scans')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    void loadRuns()
+    return () => {
+      cancelled = true
+    }
+  }, [scanType, isValidType])
+
+  useEffect(() => {
+    if (!scanType || !isValidType) {
+      return undefined
+    }
+
+    const currentScanType = scanType
+    let cancelled = false
+
+    async function loadParams() {
+      setLoadingParams(true)
+      try {
+        const response = await fetchScanParams(currentScanType)
+        if (!cancelled) {
+          setScanParams(response.defaults ?? {})
+          setParamsSchema(response.schema ?? null)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load scan params')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingParams(false)
+        }
+      }
+    }
+
+    void loadParams()
+    return () => {
+      cancelled = true
+    }
+  }, [scanType, isValidType])
+
+  const refreshRuns = useCallback(async () => {
     if (!scanType || !isValidType) return
+    setLoading(true)
     setError(null)
     try {
       const response = await fetchScanRuns(scanType)
@@ -55,40 +141,29 @@ export function ScannerTypePage() {
     }
   }, [scanType, isValidType])
 
-  useEffect(() => {
-    setLoading(true)
-    void load()
-  }, [load])
-
-  useEffect(() => {
-    if (!scanType || !isValidType) return
-    setLoadingParams(true)
-    void (async () => {
-      try {
-        const response = await fetchScanParams(scanType)
-        setScanParams(response.defaults ?? {})
-        setParamsSchema(response.schema ?? null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load scan params')
-      } finally {
-        setLoadingParams(false)
-      }
-    })()
-  }, [scanType, isValidType])
-
   const onCreate = useCallback(async () => {
     if (!scanType || !isValidType) return
     setCreating(true)
-    setError(null)
     try {
-      await createScanRun(scanType, { params: scanParams ?? {} })
-      await load()
+      const response = await createScanRun(scanType, { params: scanParams ?? {} })
+      setLaunchResult({
+        status: 'success',
+        message: `${titleForType(scanType)} launch submitted successfully.`,
+        scanId: response.scan_id,
+        scanType: response.scan_type,
+      })
+      void refreshRuns()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start scan')
+      const message = err instanceof Error ? err.message : 'Failed to start scan'
+      setLaunchResult({
+        status: 'failed',
+        message,
+        scanType,
+      })
     } finally {
       setCreating(false)
     }
-  }, [scanType, isValidType, scanParams, load])
+  }, [scanType, isValidType, scanParams, refreshRuns])
 
   if (!scanType || !isValidType) {
     return (
@@ -100,6 +175,53 @@ export function ScannerTypePage() {
 
   return (
     <Stack spacing={2.5}>
+      <Dialog
+        open={launchResult !== null}
+        onClose={() => setLaunchResult(null)}
+        aria-labelledby="scan-launch-result-title"
+        aria-describedby="scan-launch-result-description"
+        slotProps={{
+          backdrop: {
+            sx: {
+              backdropFilter: 'blur(6px)',
+              backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            },
+          },
+          paper: {
+            sx: {
+              width: '100%',
+              maxWidth: 520,
+              p: 0.5,
+            },
+          },
+        }}
+      >
+        <DialogTitle id="scan-launch-result-title" sx={{ pb: 1 }}>
+          {launchResult?.status === 'success' ? 'Scanner launched' : 'Scanner launch failed'}
+        </DialogTitle>
+        <DialogContent id="scan-launch-result-description" sx={{ pt: 0 }}>
+          <Stack spacing={1.5}>
+            <Alert severity={launchResult?.status === 'success' ? 'success' : 'error'}>
+              {launchResult?.message}
+            </Alert>
+            {launchResult?.status === 'success' && launchResult.scanId && (
+              <Typography color="text.secondary">
+                You can open the new run from{' '}
+                <Link component={RouterLink} to={`/scanners/${launchResult.scanType}/runs/${launchResult.scanId}`}>
+                  run {launchResult.scanId}
+                </Link>
+                .
+              </Typography>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+          <Button onClick={() => setLaunchResult(null)} variant="contained">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
         <Stack spacing={0.25}>
           <Typography variant="h4">{titleForType(scanType)}</Typography>
@@ -109,7 +231,7 @@ export function ScannerTypePage() {
           <Button component={RouterLink} to="/scanners" startIcon={<ArrowBackIcon />}>
             All scanners
           </Button>
-          <Button onClick={() => void load()} startIcon={<RefreshIcon />} disabled={loading}>
+          <Button onClick={() => void refreshRuns()} startIcon={<RefreshIcon />} disabled={loading}>
             Refresh
           </Button>
         </Stack>
@@ -121,11 +243,13 @@ export function ScannerTypePage() {
         <CardContent>
           <Stack spacing={1.5}>
             <Typography variant="h6">Run a new scan</Typography>
-            {loadingParams || scanParams == null ? (
+            {loadingParams ? (
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <CircularProgress size={18} />
                 <Typography color="text.secondary">Loading parameters…</Typography>
               </Stack>
+            ) : scanParams == null ? (
+              <Alert severity="warning">Params schema not available for this scan type.</Alert>
             ) : paramsSchema ? (
               <ScanParamsForm schema={paramsSchema} value={scanParams} onChange={setScanParams} disabled={creating} />
             ) : (

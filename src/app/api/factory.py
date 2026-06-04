@@ -84,7 +84,8 @@ def create_app(
     scan_repository = ScanJobRepository(resolved_output_dir)
     resolved_session_factory = session_factory or get_session_factory()
     backtest_repo = SqlAlchemyBacktestJobRepository(resolved_session_factory)
-    risk_repo = SqlAlchemyRiskModelRepository(resolved_session_factory)
+    risk_repo = SqlAlchemyRiskModelRepository(resolved_session_factory, family="risk")
+    return_forecast_repo = SqlAlchemyRiskModelRepository(resolved_session_factory, family="return_forecast")
     app.state.deps = ApiDependencies(
         cache_config=resolved_cache_config,
         output_dir=resolved_output_dir,
@@ -107,8 +108,21 @@ def create_app(
             backtest_repo=backtest_repo,
             risk_repo=risk_repo,
             argo_submitter=ArgoWorkflowSubmitter(),
+            family="risk",
+            family_slug="risk-models",
+            family_label="Risk model",
         ),
         risk_models_repo=risk_repo,
+        return_forecast_models=RiskModelService(
+            session_factory=resolved_session_factory,
+            backtest_repo=backtest_repo,
+            risk_repo=return_forecast_repo,
+            argo_submitter=ArgoWorkflowSubmitter(),
+            family="return_forecast",
+            family_slug="return-forecast-models",
+            family_label="Return forecast model",
+        ),
+        return_forecast_models_repo=return_forecast_repo,
     )
 
     register_exception_handlers(app, logger)

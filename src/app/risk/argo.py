@@ -12,6 +12,8 @@ from app.risk.argo_workflow import build_risk_model_workflow_spec
 @dataclass(frozen=True)
 class RiskModelArgoSubmitter:
     submitter: ArgoWorkflowSubmitter
+    workflow_prefix: str = "risk-model"
+    component_label: str = "risk-model"
 
     def submit(
         self,
@@ -21,8 +23,9 @@ class RiskModelArgoSubmitter:
         dataset_config: dict[str, Any],
         train_config: dict[str, Any],
         artifact_dir: str,
+        family: str = "risk",
     ) -> tuple[str, str]:
-        workflow_name = f"risk-model-{group_id[:12]}-{uuid.uuid4().hex[:6]}"
+        workflow_name = f"{self.workflow_prefix}-{group_id[:12]}-{uuid.uuid4().hex[:6]}"
         body = {
             "namespace": self.submitter.config.namespace,
             "serverDryRun": False,
@@ -33,12 +36,13 @@ class RiskModelArgoSubmitter:
                     "name": workflow_name,
                     "namespace": self.submitter.config.namespace,
                     "labels": {
-                        "risk-model-group-id": group_id,
-                        "app.kubernetes.io/component": "risk-model",
+                        f"{self.component_label}-group-id": group_id,
+                        "app.kubernetes.io/component": self.component_label,
                     },
                 },
                 "spec": build_risk_model_workflow_spec(
                     group_id=group_id,
+                    family=family,
                     backtest_ids_json=json.dumps(backtest_ids),
                     dataset_config_json=json.dumps(dataset_config or {}),
                     train_config_json=json.dumps(train_config or {}),
@@ -54,4 +58,3 @@ class RiskModelArgoSubmitter:
         if response.status_code >= 400:
             raise RuntimeError(f"Failed to submit Argo workflow: {response.status_code} {response.text}")
         return workflow_name, self.submitter.config.namespace
-

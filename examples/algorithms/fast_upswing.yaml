@@ -1,0 +1,28 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 100000
+    commission: 0.0
+    slippage_perc: 0.0
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "1m": 315360000
+      "5m": 315360000
+      "15m": 315360000
+      "1h": 315360000
+      "1d": 315360000
+
+runs:
+  - run_id: "fast_upswing_single"
+    start_date: "2025-01-01"
+    end_date: "2025-05-21"
+    data:
+      type: alpaca
+      symbol: AAPL
+      interval: 5m
+    trigger_path: "examples/triggers/fast_upswing.yaml"
+    exit_rules_path: "examples/exit_rules/volume_rally_atr.yaml"

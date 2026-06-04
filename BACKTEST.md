@@ -29,6 +29,8 @@ For environment setup, local service startup, and live-runtime operations, use:
 
 The same execution pipeline is also available through `POST /backtests/run`, which accepts inline YAML or JSON text, validates it with `BacktestConfig`, runs the backtest in-process, writes a JSON report to a server-managed temp path, and returns that path plus run status metadata.
 
+Parquet artifacts written by the backtest and risk pipelines are documented in [docs/parquet-schema-contracts.md](./docs/parquet-schema-contracts.md).
+
 ## Config shape (high level)
 
 A config YAML contains:

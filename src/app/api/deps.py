@@ -24,6 +24,8 @@ class ApiDependencies:
     settings_service: PlatformSettingsService
     risk_models: RiskModelService
     risk_models_repo: SqlAlchemyRiskModelRepository
+    return_forecast_models: RiskModelService
+    return_forecast_models_repo: SqlAlchemyRiskModelRepository
 
 
 def get_deps(request: Request) -> ApiDependencies:

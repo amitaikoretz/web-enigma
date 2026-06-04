@@ -409,6 +409,7 @@ def test_get_strategies_returns_all_built_in_strategies_and_parameter_metadata(t
         "breakout_channel",
         "buy_oco_atr",
         "volume_rally",
+        "fast_upswing",
     ]
 
     sma_cross = next(item for item in triggers if item["name"] == "sma_cross")

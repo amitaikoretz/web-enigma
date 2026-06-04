@@ -246,9 +246,11 @@ class RiskModelGroup(Base):
     __table_args__ = (
         Index("ix_risk_model_groups_created_at", "created_at"),
         Index("ix_risk_model_groups_status", "status"),
+        Index("ix_risk_model_groups_family_created_at", "family", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    family: Mapped[str] = mapped_column(String(32), nullable=False, default="risk", server_default="risk")
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     argo_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
     argo_workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)

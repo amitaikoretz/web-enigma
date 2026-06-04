@@ -265,6 +265,7 @@ _LEGACY_STRATEGY_EXIT_RULES: dict[str, list[str]] = {
     "breakout_channel": ["channel_break", "fixed_pct_oco", "max_hold_bars"],
     "buy_oco_atr_tp_sl": ["atr_oco", "max_hold_bars"],
     "buy_oco_atr_tp_trailing": ["atr_trailing", "max_hold_bars"],
+    "fast_upswing": ["volume_rally_atr"],
     "volume_rally": ["volume_rally_atr"],
 }
 

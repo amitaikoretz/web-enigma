@@ -24,6 +24,7 @@ from app.strategies.implementations import (
     _volume_rally_entry_signal,
     _benchmark_regime_ok,
 )
+from app.strategies.triggers import FastUpswingTrigger
 from app.strategies.registry import validate_strategy_params
 
 
@@ -144,6 +145,54 @@ def _volume_rally_params(**overrides: float | int) -> dict[str, float | int]:
     return validate_strategy_params("volume_rally", params)
 
 
+def _fast_upswing_params(**overrides: float | int | bool) -> dict[str, float | int | bool]:
+    params: dict[str, float | int | bool] = {
+        "stake": 1.0,
+        "return_lookback": 5,
+        "volatility_window": 20,
+        "min_return_burst_sigma": 1.0,
+        "volume_window": 20,
+        "min_relative_volume": 1.5,
+        "min_volume_zscore": 1.0,
+        "min_consecutive_up_bars": 3,
+        "min_close_strength": 0.65,
+        "require_vwap": True,
+        "breakout_lookback": 5,
+        "require_breakout": False,
+        "atr_period": 14,
+        "sl_atr_mult": 1.5,
+        "tp_atr_mult": 3.0,
+        "max_hold_bars": 24,
+        "adx_period": 14,
+        "adx_min": 0.0,
+    }
+    params.update(overrides)
+    return validate_strategy_params("fast_upswing", params)
+
+
+def _fast_upswing_bars(
+    closes: list[float],
+    *,
+    volumes: list[float] | None = None,
+    highs: list[float] | None = None,
+    lows: list[float] | None = None,
+) -> list[Bar]:
+    volumes = volumes or [1000.0 for _ in closes]
+    highs = highs or [close + 0.25 for close in closes]
+    lows = lows or [close - 0.75 for close in closes]
+    return [
+        Bar(
+            timestamp=datetime(2024, 1, 2, 9, 30, tzinfo=US_EASTERN) + timedelta(minutes=5 * idx),
+            open=close - 0.2,
+            high=highs[idx],
+            low=lows[idx],
+            close=close,
+            volume=volumes[idx],
+        )
+        for idx, close in enumerate(closes)
+    ]
+
+
 def test_volume_rally_core_warmup():
     core = VolumeRallyCore(_volume_rally_params())
     decision = core.on_bar(_context(_bars([10, 11, 12])))
@@ -169,6 +218,160 @@ def test_volume_rally_core_buy_signal_after_confirmed_breakout():
     decision = core.on_bar(_context(bars))
     assert decision.action == "buy"
     assert decision.reason == "confirmed_breakout"
+
+
+def test_fast_upswing_core_buy_signal_after_3_bar_surge():
+    core = FastUpswingTrigger(_fast_upswing_params())
+    closes = [
+        100.0,
+        100.2,
+        100.4,
+        100.5,
+        100.6,
+        100.7,
+        100.8,
+        100.9,
+        101.0,
+        101.1,
+        101.2,
+        101.4,
+        101.5,
+        101.6,
+        101.7,
+        101.8,
+        101.9,
+        102.0,
+        102.1,
+        102.2,
+        103.0,
+        104.0,
+        105.0,
+        106.0,
+        107.5,
+    ]
+    volumes = [1000.0 for _ in closes[:-1]] + [3000.0]
+    bars = _fast_upswing_bars(closes, volumes=volumes)
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "buy"
+    assert decision.reason == "fast_upswing"
+    assert decision.entry_intent is not None
+
+
+def test_fast_upswing_core_requires_volume_expansion():
+    core = FastUpswingTrigger(_fast_upswing_params())
+    closes = [
+        100.0,
+        100.2,
+        100.4,
+        100.5,
+        100.6,
+        100.7,
+        100.8,
+        100.9,
+        101.0,
+        101.1,
+        101.2,
+        101.4,
+        101.5,
+        101.6,
+        101.7,
+        101.8,
+        101.9,
+        102.0,
+        102.1,
+        102.2,
+        103.0,
+        104.0,
+        105.0,
+        106.0,
+        107.5,
+    ]
+    volumes = [1000.0 for _ in closes]
+    bars = _fast_upswing_bars(closes, volumes=volumes)
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "hold"
+    assert decision.reason is None
+
+
+def test_fast_upswing_core_rejects_choppy_non_accelerating_price_action():
+    core = FastUpswingTrigger(_fast_upswing_params())
+    closes = [
+        100.0,
+        99.8,
+        100.0,
+        99.9,
+        100.1,
+        99.9,
+        100.0,
+        99.8,
+        100.0,
+        99.9,
+        100.1,
+        99.9,
+        100.0,
+        99.8,
+        100.0,
+        99.9,
+        100.1,
+        99.9,
+        100.0,
+        99.8,
+        100.0,
+        100.1,
+        100.0,
+        100.2,
+        100.1,
+    ]
+    bars = _fast_upswing_bars(closes, volumes=[2500.0 for _ in closes])
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "hold"
+    assert decision.reason is None
+
+
+def test_fast_upswing_core_can_require_micro_breakout():
+    core = FastUpswingTrigger(_fast_upswing_params(require_breakout=True))
+    closes = [
+        100.0,
+        100.2,
+        100.4,
+        100.5,
+        100.6,
+        100.7,
+        100.8,
+        100.9,
+        101.0,
+        101.1,
+        101.2,
+        101.4,
+        101.5,
+        101.6,
+        101.7,
+        101.8,
+        101.9,
+        102.0,
+        102.1,
+        102.2,
+        103.0,
+        104.0,
+        105.0,
+        106.0,
+        106.1,
+    ]
+    highs = [close + 0.25 for close in closes[:-1]] + [106.15]
+    lows = [close - 0.75 for close in closes]
+    volumes = [1000.0 for _ in closes[:-1]] + [3000.0]
+    bars = _fast_upswing_bars(closes, volumes=volumes, highs=highs, lows=lows)
+    decision = core.on_bar(_context(bars))
+    assert decision.action == "hold"
+    assert decision.reason == "breakout_filter"
+    assert decision.entry_intent is not None
+
+
+def test_fast_upswing_core_warmup():
+    core = FastUpswingTrigger(_fast_upswing_params())
+    decision = core.on_bar(_context(_bars([10, 10.2, 10.4, 10.6, 10.8])))
+    assert decision.action == "hold"
+    assert decision.reason == "warmup"
 
 
 def test_volume_rally_core_requires_volume_spike():

@@ -126,9 +126,9 @@ describe('RiskModelDetailPage', () => {
     })
 
     render(
-      <MemoryRouter initialEntries={['/risk-models/g-1']}>
+      <MemoryRouter initialEntries={['/models/risk/g-1']}>
         <Routes>
-          <Route path="/risk-models/:groupId" element={<RiskModelDetailPage />} />
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -141,6 +141,9 @@ describe('RiskModelDetailPage', () => {
     expect(screen.getByRole('tab', { name: 'Debug' })).toBeInTheDocument()
     expect(screen.getByText('Training snapshot')).toBeInTheDocument()
     expect(screen.getByText('Headline metrics')).toBeInTheDocument()
+    expect(screen.getAllByText('Calibration metrics').length).toBeGreaterThan(0)
+    expect(screen.getByText('How well predicted probabilities line up with the observed outcomes.')).toBeInTheDocument()
+    expect(screen.getAllByText('Error metrics').length).toBeGreaterThan(0)
     expect(screen.getByText('Status panel')).toBeInTheDocument()
     expect(screen.getByText('Quick facts')).toBeInTheDocument()
 
@@ -159,6 +162,7 @@ describe('RiskModelDetailPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Targets' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Fold metrics (1)' }))
     expect(await screen.findAllByText('Fold 1')).toHaveLength(2)
+    expect(screen.getAllByText('Calibration metrics').length).toBeGreaterThan(0)
     expect(screen.getByText('Fold comparison')).toBeInTheDocument()
     expect(screen.getAllByText('Validation').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Test').length).toBeGreaterThan(0)
@@ -215,9 +219,9 @@ describe('RiskModelDetailPage', () => {
       })
 
     render(
-      <MemoryRouter initialEntries={['/risk-models/g-1']}>
+      <MemoryRouter initialEntries={['/models/risk/g-1']}>
         <Routes>
-          <Route path="/risk-models/:groupId" element={<RiskModelDetailPage />} />
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -288,9 +292,9 @@ describe('RiskModelDetailPage', () => {
     })
 
     render(
-      <MemoryRouter initialEntries={['/risk-models/g-2']}>
+      <MemoryRouter initialEntries={['/models/risk/g-2']}>
         <Routes>
-          <Route path="/risk-models/:groupId" element={<RiskModelDetailPage />} />
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
         </Routes>
       </MemoryRouter>,
     )
@@ -348,9 +352,9 @@ describe('RiskModelDetailPage', () => {
     })
 
     render(
-      <MemoryRouter initialEntries={['/risk-models/g-3']}>
+      <MemoryRouter initialEntries={['/models/risk/g-3']}>
         <Routes>
-          <Route path="/risk-models/:groupId" element={<RiskModelDetailPage />} />
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
         </Routes>
       </MemoryRouter>,
     )

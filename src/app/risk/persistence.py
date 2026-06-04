@@ -67,8 +67,9 @@ class RiskModelDetail:
 
 
 class SqlAlchemyRiskModelRepository:
-    def __init__(self, session_factory: sessionmaker[Session]):
+    def __init__(self, session_factory: sessionmaker[Session], *, family: str = "risk"):
         self._session_factory = session_factory
+        self._family = family
 
     def _training_date_range(
         self,
@@ -111,6 +112,7 @@ class SqlAlchemyRiskModelRepository:
         with self._session_factory() as session:
             row = RiskModelGroup(
                 id=group_id,
+                family=self._family,
                 status=status,
                 argo_namespace=argo_namespace,
                 argo_workflow_name=argo_workflow_name,
@@ -134,7 +136,7 @@ class SqlAlchemyRiskModelRepository:
     def update_group_workflow(self, group_id: str, *, argo_namespace: str, argo_workflow_name: str) -> None:
         with self._session_factory() as session:
             row = session.get(RiskModelGroup, group_id)
-            if row is None:
+            if row is None or row.family != self._family:
                 raise KeyError(f"Risk model group '{group_id}' not found")
             row.argo_namespace = argo_namespace
             row.argo_workflow_name = argo_workflow_name
@@ -144,7 +146,7 @@ class SqlAlchemyRiskModelRepository:
     def update_group_status(self, group_id: str, *, status: str, summary_metrics: dict[str, Any] | None = None) -> None:
         with self._session_factory() as session:
             row = session.get(RiskModelGroup, group_id)
-            if row is None:
+            if row is None or row.family != self._family:
                 raise KeyError(f"Risk model group '{group_id}' not found")
             row.status = status
             row.summary_metrics_json = summary_metrics
@@ -195,7 +197,10 @@ class SqlAlchemyRiskModelRepository:
     def list_recent(self, *, limit: int = 100) -> list[RiskModelListItem]:
         with self._session_factory() as session:
             groups = session.scalars(
-                select(RiskModelGroup).order_by(RiskModelGroup.created_at.desc()).limit(limit)
+                select(RiskModelGroup)
+                .where(RiskModelGroup.family == self._family)
+                .order_by(RiskModelGroup.created_at.desc())
+                .limit(limit)
             ).all()
             group_ids = [g.id for g in groups]
             sources = (
@@ -264,7 +269,7 @@ class SqlAlchemyRiskModelRepository:
     def get_detail(self, group_id: str) -> RiskModelDetail | None:
         with self._session_factory() as session:
             g = session.get(RiskModelGroup, group_id)
-            if g is None:
+            if g is None or g.family != self._family:
                 return None
             sources = session.scalars(select(RiskModelSource).where(RiskModelSource.group_id == group_id)).all()
             targets = session.scalars(select(RiskModelTarget).where(RiskModelTarget.group_id == group_id)).all()
@@ -312,12 +317,15 @@ class SqlAlchemyRiskModelRepository:
 
     def count(self) -> int:
         with self._session_factory() as session:
-            return int(session.scalar(select(func.count()).select_from(RiskModelGroup)) or 0)
+            return int(
+                session.scalar(select(func.count()).select_from(RiskModelGroup).where(RiskModelGroup.family == self._family))
+                or 0
+            )
 
     def delete_group(self, group_id: str) -> RiskModelListItem | None:
         with self._session_factory() as session:
             g = session.get(RiskModelGroup, group_id)
-            if g is None:
+            if g is None or g.family != self._family:
                 return None
             # Snapshot metadata for caller (e.g. artifact_dir) before delete.
             list_item = RiskModelListItem(

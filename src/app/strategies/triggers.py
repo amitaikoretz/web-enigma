@@ -29,6 +29,7 @@ from app.strategies.implementations import (
     _session_vwap,
     _sma,
     _volume_rally_entry_signal,
+    _volumes,
 )
 from app.strategies.regime import RegimeClassifier, regime_params_from_strategy, resolve_regime_warmup_bars
 
@@ -135,6 +136,27 @@ class VolumeRallyTriggerParams(BaseModel):
         return self
 
 
+class FastUpswingTriggerParams(BaseModel):
+    stake: float = Field(default=1.0, gt=0)
+    return_lookback: int = Field(default=5, ge=2)
+    volatility_window: int = Field(default=20, ge=2)
+    min_return_burst_sigma: float = Field(default=1.0, gt=0.0)
+    volume_window: int = Field(default=20, ge=2)
+    min_relative_volume: float = Field(default=1.5, gt=0.0)
+    min_volume_zscore: float = Field(default=1.0, gt=0.0)
+    min_consecutive_up_bars: int = Field(default=3, ge=2)
+    min_close_strength: float = Field(default=0.65, ge=0.0, le=1.0)
+    require_vwap: bool = True
+    breakout_lookback: int = Field(default=5, ge=2)
+    require_breakout: bool = False
+    atr_period: int = Field(default=14, ge=2)
+    sl_atr_mult: float = Field(default=1.5, gt=0)
+    tp_atr_mult: float = Field(default=3.0, gt=0)
+    max_hold_bars: int = Field(default=24, ge=1)
+    adx_period: int = Field(default=14, ge=2)
+    adx_min: float = Field(default=0.0, ge=0.0)
+
+
 class SmaCrossTrigger(TriggerCore):
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -231,6 +253,43 @@ class BuyOcoAtrTrigger(TriggerCore):
             )
             return StrategyDecision.buy(float(self.params["stake"]), "cross_up", entry_intent=entry_intent)
         return StrategyDecision.hold()
+
+
+def _recent_relative_volume(volumes: np.ndarray, window: int) -> tuple[float | None, float | None]:
+    prior = np.asarray(volumes[-(window + 1) : -1], dtype=float)
+    if prior.size < window:
+        return None, None
+    mean = float(np.mean(prior))
+    latest = float(volumes[-1])
+    if mean <= 0:
+        return None, None
+    std = float(np.std(prior))
+    rel_volume = latest / mean
+    zscore = 0.0 if std == 0 else (latest - mean) / std
+    return rel_volume, float(zscore)
+
+
+def _recent_realized_volatility(closes: np.ndarray, window: int) -> float | None:
+    baseline = np.asarray(closes[-(window + 2) : -1], dtype=float)
+    if baseline.size < window + 1 or np.any(baseline <= 0):
+        return None
+    log_returns = np.diff(np.log(baseline))
+    if log_returns.size < window:
+        return None
+    return float(np.std(log_returns[-window:]))
+
+
+def _return_burst_sigma(closes: np.ndarray, lookback: int, volatility_window: int) -> float | None:
+    if len(closes) < max(lookback + 1, volatility_window + 2):
+        return None
+    start = float(closes[-(lookback + 1)])
+    end = float(closes[-1])
+    if start <= 0 or end <= 0:
+        return None
+    realized_vol = _recent_realized_volatility(closes, volatility_window)
+    if realized_vol is None or realized_vol <= 0:
+        return None
+    return float(np.log(end / start) / (realized_vol * np.sqrt(float(lookback))))
 
 
 class VolumeRallyTrigger(TriggerCore):
@@ -363,6 +422,133 @@ class VolumeRallyTrigger(TriggerCore):
         return StrategyDecision.buy(float(self.params["stake"]), "confirmed_breakout", entry_intent=entry_intent)
 
 
+class FastUpswingTrigger(TriggerCore):
+    def __init__(self, params: dict[str, Any]):
+        self.params = params
+
+    def on_bar(self, context: StrategyContext) -> StrategyDecision:
+        closes = _closes(context.bars)
+        highs = _highs(context.bars)
+        volumes = _volumes(context.bars)
+        atr = _atr(highs, _lows(context.bars), closes, int(self.params["atr_period"]))
+        vwap = _session_vwap(context.bars)
+
+        return_lookback = int(self.params["return_lookback"])
+        volatility_window = int(self.params["volatility_window"])
+        volume_window = int(self.params["volume_window"])
+        breakout_lookback = int(self.params["breakout_lookback"])
+        min_consecutive_up_bars = int(self.params["min_consecutive_up_bars"])
+        adx_min = float(self.params["adx_min"])
+
+        warmup_bars = max(
+            return_lookback + 1,
+            volatility_window + 2,
+            volume_window + 1,
+            breakout_lookback + 1 if bool(self.params["require_breakout"]) else 1,
+            int(self.params["atr_period"]),
+            (int(self.params["adx_period"]) * 2) if adx_min > 0 else 1,
+        )
+        if len(closes) < warmup_bars:
+            return StrategyDecision.hold("warmup")
+
+        atr_value = float(atr[-1]) if not np.isnan(atr[-1]) else np.nan
+        if np.isnan(atr_value):
+            return StrategyDecision.hold("warmup")
+
+        consecutive_up_bars = 0
+        for idx in range(len(closes) - 1, 0, -1):
+            if closes[idx] > closes[idx - 1]:
+                consecutive_up_bars += 1
+            else:
+                break
+
+        return_burst_sigma = _return_burst_sigma(closes, return_lookback, volatility_window)
+        relative_volume, volume_zscore = _recent_relative_volume(volumes, volume_window)
+        if return_burst_sigma is None or relative_volume is None or volume_zscore is None:
+            return StrategyDecision.hold("warmup")
+
+        close_strength = _close_strength(context.bar)
+        vwap_ok = not bool(self.params["require_vwap"]) or float(context.bar.close) > float(vwap[-1])
+
+        breakout_ok = True
+        if bool(self.params["require_breakout"]):
+            lookback_bars = context.bars[-(breakout_lookback + 1) : -1]
+            prev_highest = max(bar.high for bar in lookback_bars)
+            breakout_ok = float(context.bar.close) > float(prev_highest)
+
+        adx_ok = True
+        adx_value = None
+        if adx_min > 0:
+            adx = _adx(highs, _lows(context.bars), closes, int(self.params["adx_period"]))
+            adx_value = float(adx[-1]) if not np.isnan(adx[-1]) else None
+            adx_ok = adx_value is not None and adx_value >= adx_min
+            if adx_value is None:
+                return StrategyDecision.hold("warmup")
+
+        volume_ok = relative_volume >= float(self.params["min_relative_volume"]) or volume_zscore >= float(
+            self.params["min_volume_zscore"]
+        )
+        burst_ok = return_burst_sigma >= float(self.params["min_return_burst_sigma"])
+        up_bars_ok = consecutive_up_bars >= min_consecutive_up_bars
+        close_strength_ok = close_strength >= float(self.params["min_close_strength"])
+
+        signal_components: dict[str, Any] = {
+            "consecutive_up_bars": consecutive_up_bars,
+            "min_consecutive_up_bars": min_consecutive_up_bars,
+            "return_lookback": return_lookback,
+            "volatility_window": volatility_window,
+            "return_burst_sigma": return_burst_sigma,
+            "min_return_burst_sigma": float(self.params["min_return_burst_sigma"]),
+            "relative_volume": relative_volume,
+            "volume_zscore": volume_zscore,
+            "min_relative_volume": float(self.params["min_relative_volume"]),
+            "min_volume_zscore": float(self.params["min_volume_zscore"]),
+            "close_strength": close_strength,
+            "min_close_strength": float(self.params["min_close_strength"]),
+            "vwap": float(vwap[-1]),
+            "vwap_ok": vwap_ok,
+            "breakout_ok": breakout_ok,
+            "adx": adx_value,
+            "adx_min": adx_min,
+            "adx_ok": adx_ok,
+        }
+        active_components = 5 + int(bool(self.params["require_breakout"])) + int(adx_min > 0)
+        true_components = sum(
+            (
+                up_bars_ok,
+                burst_ok,
+                volume_ok,
+                vwap_ok,
+                close_strength_ok,
+                breakout_ok if bool(self.params["require_breakout"]) else False,
+                adx_ok if adx_min > 0 else False,
+            )
+        )
+        entry_intent = atr_entry_intent(
+            float(context.bar.close),
+            atr_value,
+            sl_mult=float(self.params["sl_atr_mult"]),
+            tp_mult=float(self.params["tp_atr_mult"]),
+            horizon_bars=int(self.params["max_hold_bars"]),
+            signal_score=true_components / float(active_components),
+            signal_reason="fast_upswing",
+            metadata=signal_components,
+        )
+
+        if not (up_bars_ok and burst_ok and volume_ok):
+            return StrategyDecision.hold()
+        if not close_strength_ok:
+            return StrategyDecision.hold("weak_close", auditor_rejection=True, entry_intent=entry_intent)
+        if not vwap_ok:
+            return StrategyDecision.hold("below_vwap", auditor_rejection=True, entry_intent=entry_intent)
+        if bool(self.params["require_breakout"]) and not breakout_ok:
+            return StrategyDecision.hold("breakout_filter", auditor_rejection=True, entry_intent=entry_intent)
+        if adx_min > 0 and not adx_ok:
+            return StrategyDecision.hold("adx_filter", auditor_rejection=True, entry_intent=entry_intent)
+
+        return StrategyDecision.buy(float(self.params["stake"]), "fast_upswing", entry_intent=entry_intent)
+
+
 WarmupFn = Callable[[dict[str, Any]], int]
 
 
@@ -428,6 +614,20 @@ TRIGGER_REGISTRY: dict[str, TriggerSpec] = {
                 if str(params.get("benchmark_symbol", "")).strip()
                 else 0
             ),
+        ),
+    ),
+    "fast_upswing": TriggerSpec(
+        name="fast_upswing",
+        description="Fast continuation entry with volume, VWAP, and volatility expansion confirmation.",
+        params_model=FastUpswingTriggerParams,
+        factory=FastUpswingTrigger,
+        warmup_bars=lambda params: max(
+            int(params["return_lookback"]) + 1,
+            int(params["volatility_window"]) + 2,
+            int(params["volume_window"]) + 1,
+            int(params["breakout_lookback"]) + 1 if bool(params.get("require_breakout", False)) else 1,
+            int(params["atr_period"]),
+            (int(params["adx_period"]) * 2) if float(params.get("adx_min", 0.0)) > 0 else 1,
         ),
     ),
 }

@@ -16,6 +16,9 @@ from app.strategies.implementations import (
     SmaCrossCore,
     VolumeRallyCore,
 )
+from app.strategies.triggers import FastUpswingTrigger, FastUpswingTriggerParams
+
+FastUpswingParams = FastUpswingTriggerParams
 
 
 class SmaCrossParams(BaseModel):
@@ -236,6 +239,20 @@ STRATEGY_REGISTRY: dict[str, StrategySpec] = {
                 if str(params.get("benchmark_symbol", "")).strip()
                 else 0
             ),
+        ),
+    ),
+    "fast_upswing": StrategySpec(
+        name="fast_upswing",
+        description="Fast continuation entry with volume, VWAP, and volatility expansion confirmation.",
+        params_model=FastUpswingParams,
+        factory=FastUpswingTrigger,
+        warmup_bars=lambda params: max(
+            int(params["return_lookback"]) + 1,
+            int(params["volatility_window"]) + 2,
+            int(params["volume_window"]) + 1,
+            int(params["breakout_lookback"]) + 1 if bool(params.get("require_breakout", False)) else 1,
+            int(params["atr_period"]),
+            (int(params["adx_period"]) * 2) if float(params.get("adx_min", 0.0)) > 0 else 1,
         ),
     ),
 }

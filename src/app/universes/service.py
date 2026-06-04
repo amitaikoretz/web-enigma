@@ -34,6 +34,18 @@ def _normalize_symbol(value: str) -> str:
     return value.strip().upper()
 
 
+def _normalize_symbol_list(values: list[str] | tuple[str, ...]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        symbol = _normalize_symbol(item)
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        ordered.append(symbol)
+    return sorted(ordered)
+
+
 @dataclass(frozen=True)
 class UniverseRefreshStats:
     added: int
@@ -45,6 +57,14 @@ class UniverseRefreshStats:
 
 
 class SymbolUniverseService:
+    def _registry_provider_ref(self, spec) -> dict:
+        provider = spec.provider.strip().lower()
+        if provider == "wikipedia":
+            return {"kind": spec.key}
+        if provider in {"static", "static_list", "static-list"}:
+            return {"symbols": _normalize_symbol_list(spec.symbols)}
+        return {}
+
     def list_universes(self, session: Session, *, active_only: bool) -> list[dict]:
         # Auto-migrate legacy universes stored with the deprecated "fmp" provider to "wikipedia"
         # so the UI/API never surface "fmp" again.
@@ -117,16 +137,13 @@ class SymbolUniverseService:
         for key, spec in UNIVERSE_REGISTRY.items():
             record = self.get_universe(session, key=key)
             if record is None:
-                provider_ref: dict = {}
-                if spec.provider.strip().lower() == "wikipedia":
-                    provider_ref = {"kind": spec.key}
                 record = SymbolUniverse(
                     key=spec.key,
                     kind="registry",
                     name=spec.name,
                     description=spec.description,
                     provider=spec.provider,
-                    provider_ref=provider_ref,
+                    provider_ref=self._registry_provider_ref(spec),
                     is_active=1,
                 )
                 session.add(record)
@@ -149,12 +166,10 @@ class SymbolUniverseService:
             if record.provider != spec.provider:
                 record.provider = spec.provider
                 changed = True
-            if spec.provider.strip().lower() == "wikipedia":
-                provider_ref = record.provider_ref or {}
-                kind = provider_ref.get("kind")
-                if not isinstance(kind, str) or not kind.strip():
-                    record.provider_ref = {**provider_ref, "kind": spec.key}
-                    changed = True
+            desired_provider_ref = self._registry_provider_ref(spec)
+            if (record.provider_ref or {}) != desired_provider_ref:
+                record.provider_ref = desired_provider_ref
+                changed = True
             # Migrate legacy FMP registry universes to Wikipedia without requiring an Alembic migration.
             if (record.provider or "").strip().lower() == "fmp":
                 record.provider = "wikipedia"
@@ -372,6 +387,10 @@ class SymbolUniverseService:
         symbols = _query_symbols(as_of_dt)
         if symbols:
             return symbols
+
+        static_symbols = (universe.provider_ref or {}).get("symbols")
+        if isinstance(static_symbols, list) and static_symbols:
+            return _normalize_symbol_list([symbol for symbol in static_symbols if isinstance(symbol, str)])
 
         # Fallback: if the exact requested as-of has no snapshot yet, use the nearest snapshot
         # by effective_from. This makes the UI more forgiving when users refreshed "today" but

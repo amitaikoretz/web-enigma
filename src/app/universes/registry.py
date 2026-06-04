@@ -9,6 +9,7 @@ class UniverseSpec:
     name: str
     description: str | None
     provider: str
+    symbols: tuple[str, ...] = ()
 
 
 UNIVERSE_REGISTRY: dict[str, UniverseSpec] = {
@@ -29,5 +30,12 @@ UNIVERSE_REGISTRY: dict[str, UniverseSpec] = {
         name="Dow 30",
         description="Dow Jones Industrial Average constituents.",
         provider="wikipedia",
+    ),
+    "bluechip_etfs": UniverseSpec(
+        key="bluechip_etfs",
+        name="Blue-chip ETFs",
+        description="Curated large-cap and dividend-quality ETF basket.",
+        provider="static",
+        symbols=("SPY", "DIA", "QQQ", "SCHD", "VIG"),
     ),
 }
