@@ -28,6 +28,7 @@ import {
   fetchRiskModels,
   retryRiskModel,
 } from '../api/riskModels'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import type { RiskModelListItem } from '../types/riskModels'
 import { RiskModelWorkflowErrorDialog } from '../components/RiskModelWorkflowErrorDialog'
 import { useSettings } from '../settings/useSettings'
