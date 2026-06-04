@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import ApiDependencies, get_deps
 from app.risk.models_api import (
+    RiskDatasetManifestSummary,
     RiskModelCreateRequest,
     RiskModelCreateResponse,
     RiskModelDetailResponse,
@@ -11,10 +15,30 @@ from app.risk.models_api import (
     RiskModelStatusResponse,
     RiskModelWorkflowErrorResponse,
 )
+from app.risk.persistence import RiskModelDetail as RiskModelDetailRecord
 from app.risk.service import RiskModelValidationError
 
 
 router = APIRouter(prefix="/risk-models", tags=["risk-models"])
+
+
+def _load_dataset_manifest_summary(detail: RiskModelDetailRecord) -> RiskDatasetManifestSummary | None:
+    manifest_paths = []
+    for target in detail.targets:
+        manifest_path = getattr(target, "dataset_manifest_path", None)
+        if manifest_path:
+            manifest_paths.append(str(manifest_path))
+
+    for manifest_path in manifest_paths:
+        path = Path(manifest_path)
+        if not path.exists():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return RiskDatasetManifestSummary.model_validate(payload)
+        except Exception:
+            continue
+    return None
 
 
 @router.post("", response_model=RiskModelCreateResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -97,6 +121,7 @@ def get_risk_model(
         params=detail.params,
         artifact_dir=detail.artifact_dir,
         summary_metrics=detail.summary_metrics,
+        dataset_manifest=_load_dataset_manifest_summary(detail),
         sources=detail.sources,
         targets=[
             {

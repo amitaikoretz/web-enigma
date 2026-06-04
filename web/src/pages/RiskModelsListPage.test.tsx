@@ -2,17 +2,16 @@ import '@testing-library/jest-dom/vitest'
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 const fetchRiskModelsMock = vi.hoisted(() => vi.fn())
 const fetchRiskModelStatusMock = vi.hoisted(() => vi.fn())
-const fetchRiskModelDetailMock = vi.hoisted(() => vi.fn())
 const fetchRiskModelWorkflowErrorsMock = vi.hoisted(() => vi.fn())
 const retryRiskModelMock = vi.hoisted(() => vi.fn())
 const deleteRiskModelMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/riskModels', () => ({
   deleteRiskModel: deleteRiskModelMock,
-  fetchRiskModelDetail: fetchRiskModelDetailMock,
   fetchRiskModelStatus: fetchRiskModelStatusMock,
   fetchRiskModels: fetchRiskModelsMock,
   fetchRiskModelWorkflowErrors: fetchRiskModelWorkflowErrorsMock,
@@ -32,59 +31,37 @@ vi.mock('../settings/useSettings', () => ({
 import { RiskModelsListPage } from './RiskModelsListPage'
 
 describe('RiskModelsListPage', () => {
-  it('shows a retry action for failed models and submits the retry request', async () => {
+  it('navigates to the detail route when a row is clicked', async () => {
     fetchRiskModelsMock.mockResolvedValue([
       {
-        group_id: 'g-failed',
-        created_at: '2026-06-01T12:00:00.000Z',
-        updated_at: '2026-06-01T12:01:00.000Z',
-        status: 'failed',
-        backtest_ids: ['b1'],
-        targets: ['stop_prob'],
-        targets_total: 1,
-        targets_done: 1,
-        artifact_dir: '/tmp/risk-models/g-failed',
-      },
-      {
-        group_id: 'g-ok',
+        group_id: 'g-1',
         created_at: '2026-06-01T12:00:00.000Z',
         updated_at: '2026-06-01T12:01:00.000Z',
         status: 'succeeded',
-        backtest_ids: ['b2'],
-        targets: ['mae'],
+        backtest_ids: ['b1'],
+        targets: ['stop_prob'],
         targets_total: 1,
         targets_done: 1,
-        artifact_dir: '/tmp/risk-models/g-ok',
+        artifact_dir: '/tmp/risk-models/g-1',
       },
     ])
-    fetchRiskModelStatusMock.mockResolvedValue({ group_id: 'g-failed', status: 'failed' })
-    fetchRiskModelDetailMock.mockResolvedValue({
-      group_id: 'g-failed',
-      created_at: '2026-06-01T12:00:00.000Z',
-      updated_at: '2026-06-01T12:01:00.000Z',
-      status: 'failed',
-      params: {},
-      artifact_dir: '/tmp/risk-models/g-failed',
-      sources: [],
-      targets: [],
-    })
-    retryRiskModelMock.mockResolvedValue({
-      group_id: 'g-retry',
-      status: 'running',
-    })
 
-    render(<RiskModelsListPage />)
+    render(
+      <MemoryRouter initialEntries={['/risk-models']}>
+        <Routes>
+          <Route path="/risk-models" element={<RiskModelsListPage />} />
+          <Route path="/risk-models/:groupId" element={<div>risk model detail route</div>} />
+        </Routes>
+      </MemoryRouter>,
+    )
 
-    await waitFor(() => expect(screen.getByText('g-failed')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /retry training/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /retry training/i })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('g-1')).toBeInTheDocument())
+    fireEvent.click(screen.getByText('g-1'))
 
-    fireEvent.click(screen.getByRole('button', { name: /retry training/i }))
-
-    await waitFor(() => expect(retryRiskModelMock).toHaveBeenCalledWith('g-failed'))
+    await waitFor(() => expect(screen.getByText('risk model detail route')).toBeInTheDocument())
   })
 
-  it('opens workflow errors for a failed row and still opens details from the icon', async () => {
+  it('opens workflow errors from the failed-row action', async () => {
     fetchRiskModelsMock.mockResolvedValue([
       {
         group_id: 'g-failed',
@@ -98,7 +75,6 @@ describe('RiskModelsListPage', () => {
         artifact_dir: '/tmp/risk-models/g-failed',
       },
     ])
-    fetchRiskModelStatusMock.mockResolvedValue({ group_id: 'g-failed', status: 'failed' })
     fetchRiskModelWorkflowErrorsMock.mockResolvedValue({
       group_id: 'g-failed',
       argo_namespace: 'ns',
@@ -113,37 +89,26 @@ describe('RiskModelsListPage', () => {
       error_call_stack: ['/tmp/train.py:42', '/tmp/train.py:13'],
       error_traceback: 'Traceback (most recent call last):\nboom',
     })
-    fetchRiskModelDetailMock.mockResolvedValue({
-      group_id: 'g-failed',
-      created_at: '2026-06-01T12:00:00.000Z',
-      updated_at: '2026-06-01T12:01:00.000Z',
-      status: 'failed',
-      params: {},
-      artifact_dir: '/tmp/risk-models/g-failed',
-      sources: [],
-      targets: [],
-    })
 
-    render(<RiskModelsListPage />)
+    render(
+      <MemoryRouter initialEntries={['/risk-models']}>
+        <Routes>
+          <Route path="/risk-models" element={<RiskModelsListPage />} />
+          <Route path="/risk-models/:groupId" element={<div>risk model detail route</div>} />
+        </Routes>
+      </MemoryRouter>,
+    )
 
     await waitFor(() => expect(screen.getByText('g-failed')).toBeInTheDocument())
-    const failedRow = screen.getAllByText('g-failed')[0].closest('tr')
-    expect(failedRow).not.toBeNull()
-    fireEvent.click(failedRow!)
+    const row = screen.getByText('g-failed').closest('tr')
+    expect(row).not.toBeNull()
+
+    const workflowErrorsButton = within(row!).getByRole('button', { name: /workflow errors/i })
+    fireEvent.click(workflowErrorsButton)
 
     await waitFor(() => expect(fetchRiskModelWorkflowErrorsMock).toHaveBeenCalledWith('g-failed'))
     expect(screen.getByText('Workflow errors')).toBeInTheDocument()
     expect(screen.getByText('RuntimeError: boom')).toBeInTheDocument()
     expect(screen.getByText('/tmp/train.py:42')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /close/i }))
-    await waitFor(() =>
-      expect(screen.queryByText('Workflow errors')).not.toBeInTheDocument(),
-    )
-
-    const detailsButton = within(failedRow!).getByRole('button', { name: /open details/i })
-    fireEvent.click(detailsButton)
-    await waitFor(() => expect(fetchRiskModelDetailMock).toHaveBeenCalledWith('g-failed'))
-    expect(screen.getByRole('dialog', { name: /risk model g-failed/i })).toBeInTheDocument()
   })
 })

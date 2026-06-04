@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pandas as pd
 import pytest
@@ -381,3 +382,109 @@ def test_risk_models_list_includes_progress_counts(tmp_path) -> None:
     assert item["group_id"] == "g1"
     assert item["targets_total"] == 2
     assert item["targets_done"] == 1
+
+
+def test_risk_model_detail_includes_dataset_manifest_summary(tmp_path) -> None:
+    client = build_backtest_client(tmp_path)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-01T12:00:00.000Z",
+                "dataset_version": "risk_dataset_v1",
+                "label_version": "labels_v1",
+                "feature_version": "features_v1",
+                "config_hash": "abc123def4567890",
+                "source_report_paths": ["/tmp/report-a.json", "/tmp/report-b.json"],
+                "total_candidates": 18,
+                "labeled_rows": 16,
+                "feature_rows": 17,
+                "joined_rows": 15,
+                "dropped_label_rows": 2,
+                "dropped_feature_rows": 1,
+                "duplicate_candidate_ids": 3,
+                "output_path": "/tmp/risk-models/g1/dataset/dataset.parquet",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    now = datetime.now(UTC)
+    session.add(
+        RiskModelGroup(
+            id="g1",
+            status="succeeded",
+            argo_namespace="ns",
+            argo_workflow_name="wf",
+            params_json={"backtest_ids": ["b1"], "train_config": {"random_seed": 7}},
+            artifact_dir=str(tmp_path / "risk-artifacts" / "g1"),
+            summary_metrics_json={"stop_prob": {"auc_calibrated": 0.77}},
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    session.add(RiskModelSource(group_id="g1", backtest_id="b1", source_report_path="/tmp/report-a.json"))
+    session.add(
+        RiskModelTarget(
+            group_id="g1",
+            target_key="stop_prob",
+            task_type="classification",
+            status="succeeded",
+            model_artifact_path="/tmp/risk-models/g1/targets/stop_prob/model.json",
+            metrics_json={"auc_calibrated": 0.77},
+            dataset_manifest_path=str(manifest_path),
+            feature_columns_json=["f1", "f2"],
+        )
+    )
+    session.commit()
+    session.close()
+
+    response = client.get("/risk-models/g1")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["group_id"] == "g1"
+    assert payload["dataset_manifest"]["total_candidates"] == 18
+    assert payload["dataset_manifest"]["joined_rows"] == 15
+    assert payload["dataset_manifest"]["source_report_paths"] == ["/tmp/report-a.json", "/tmp/report-b.json"]
+    assert payload["targets"][0]["dataset_manifest_path"] == str(manifest_path)
+
+
+def test_risk_model_detail_omits_dataset_manifest_when_missing(tmp_path) -> None:
+    client = build_backtest_client(tmp_path)
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    now = datetime.now(UTC)
+    session.add(
+        RiskModelGroup(
+            id="g1",
+            status="succeeded",
+            argo_namespace=None,
+            argo_workflow_name=None,
+            params_json={},
+            artifact_dir=str(tmp_path / "risk-artifacts" / "g1"),
+            summary_metrics_json=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    session.add(RiskModelTarget(
+        group_id="g1",
+        target_key="stop_prob",
+        task_type="classification",
+        status="succeeded",
+        model_artifact_path=None,
+        metrics_json=None,
+        dataset_manifest_path=str(tmp_path / "missing-manifest.json"),
+        feature_columns_json=None,
+    ))
+    session.commit()
+    session.close()
+
+    response = client.get("/risk-models/g1")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset_manifest"] is None

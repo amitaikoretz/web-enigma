@@ -42,6 +42,7 @@ import { ScannersLandingPage } from './pages/ScannersLandingPage'
 import { ScannerTypePage } from './pages/ScannerTypePage'
 import { SettingsPage } from './pages/SettingsPage'
 import { RiskModelsListPage } from './pages/RiskModelsListPage'
+import { RiskModelDetailPage } from './pages/RiskModelDetailPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
@@ -206,6 +207,7 @@ function App() {
           <Route path="/backtests/new" element={<BacktestWizardPage />} />
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
           <Route path="/risk-models" element={<RiskModelsListPage />} />
+          <Route path="/risk-models/:groupId" element={<RiskModelDetailPage />} />
           <Route path="/data/downloads" element={<DataDownloadsListPage />} />
           <Route path="/data/downloads/new" element={<DataDownloadWizardPage />} />
           <Route path="/data/downloads/:jobId" element={<DataDownloadDetailPage />} />

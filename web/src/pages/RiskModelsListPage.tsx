@@ -1,4 +1,5 @@
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
+import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined'
 import LaunchIcon from '@mui/icons-material/Launch'
 import ReplayIcon from '@mui/icons-material/Replay'
 import {
@@ -19,16 +20,15 @@ import {
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import {
   deleteRiskModel,
-  fetchRiskModelDetail,
   fetchRiskModelStatus,
   fetchRiskModels,
   retryRiskModel,
 } from '../api/riskModels'
-import type { RiskModelDetail, RiskModelListItem } from '../types/riskModels'
-import { ConfirmDialog } from '../components/ConfirmDialog'
+import type { RiskModelListItem } from '../types/riskModels'
 import { RiskModelWorkflowErrorDialog } from '../components/RiskModelWorkflowErrorDialog'
 import { useSettings } from '../settings/useSettings'
 import {
@@ -38,12 +38,11 @@ import {
 } from '../utils/riskModels'
 
 export function RiskModelsListPage() {
+  const navigate = useNavigate()
   const { platformSettings } = useSettings()
   const [items, setItems] = useState<RiskModelListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [detail, setDetail] = useState<RiskModelDetail | null>(null)
-  const [detailError, setDetailError] = useState<string | null>(null)
   const [workflowErrorGroupId, setWorkflowErrorGroupId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<RiskModelListItem | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -141,20 +140,12 @@ export function RiskModelsListPage() {
     }
   }, [hasActive, refreshIntervalMs])
 
-  async function openDetail(groupId: string) {
+  function openDetail(groupId: string) {
     setWorkflowErrorGroupId(null)
-    setDetailError(null)
-    try {
-      const d = await fetchRiskModelDetail(groupId)
-      setDetail(d)
-    } catch (err) {
-      setDetailError(err instanceof Error ? err.message : 'Failed to load risk model')
-    }
+    navigate(`/risk-models/${groupId}`)
   }
 
   function openWorkflowErrors(groupId: string) {
-    setDetailError(null)
-    setDetail(null)
     setWorkflowErrorGroupId(groupId)
   }
 
@@ -229,11 +220,7 @@ export function RiskModelsListPage() {
                   key={item.group_id}
                   hover
                   sx={{ cursor: 'pointer' }}
-                  onClick={() =>
-                    void (item.status === 'failed'
-                      ? openWorkflowErrors(item.group_id)
-                      : openDetail(item.group_id))
-                  }
+                  onClick={() => openDetail(item.group_id)}
                 >
                   <TableCell sx={{ fontFamily: 'monospace' }}>{item.group_id}</TableCell>
                   <TableCell>
@@ -271,11 +258,25 @@ export function RiskModelsListPage() {
                       <IconButton
                         size="small"
                         aria-label="Open details"
-                        onClick={() => void openDetail(item.group_id)}
+                        onClick={() => openDetail(item.group_id)}
                       >
                         <LaunchIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
+                    {item.status === 'failed' && (
+                      <Tooltip title="Workflow errors">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            aria-label="Workflow errors"
+                            onClick={() => openWorkflowErrors(item.group_id)}
+                          >
+                            <BugReportOutlinedIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
                     {item.status === 'failed' && (
                       <Tooltip title="Retry training">
                         <span>
@@ -311,40 +312,6 @@ export function RiskModelsListPage() {
           </Table>
         )}
       </Paper>
-
-      <ConfirmDialog
-        open={detail !== null}
-        title={detail ? `Risk model ${detail.group_id}` : 'Risk model'}
-        intent="info"
-        confirmLabel="Close"
-        cancelLabel="Cancel"
-        onCancel={() => setDetail(null)}
-        onConfirm={() => setDetail(null)}
-        description={
-          <>
-            {detailError && <Alert severity="error">{detailError}</Alert>}
-            {detail && (
-              <Stack spacing={1}>
-                <Typography>
-                  Status: <b>{detail.status}</b>
-                </Typography>
-                <Typography>
-                  Backtests: <b>{detail.sources.length}</b>
-                </Typography>
-                <Typography sx={{ fontFamily: 'monospace' }}>Artifact dir: {detail.artifact_dir}</Typography>
-                <Typography variant="subtitle2">Targets</Typography>
-                <Stack spacing={0.5}>
-                  {detail.targets.map((t) => (
-                    <Box key={t.id} sx={{ fontFamily: 'monospace' }}>
-                      {t.target_key}: {t.status}
-                    </Box>
-                  ))}
-                </Stack>
-              </Stack>
-            )}
-          </>
-        }
-      />
 
       <RiskModelWorkflowErrorDialog
         groupId={workflowErrorGroupId}

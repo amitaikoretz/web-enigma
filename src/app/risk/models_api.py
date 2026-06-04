@@ -68,6 +68,7 @@ class RiskModelDetailResponse(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
     artifact_dir: str
     summary_metrics: dict[str, Any] | None = None
+    dataset_manifest: RiskDatasetManifestSummary | None = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
     targets: list[RiskModelTargetRowResponse] = Field(default_factory=list)
 
@@ -93,3 +94,20 @@ class RiskModelWorkflowErrorResponse(BaseModel):
     error_code_location: str | None = None
     error_call_stack: list[str] = Field(default_factory=list)
     error_traceback: str | None = None
+
+
+class RiskDatasetManifestSummary(BaseModel):
+    generated_at: datetime
+    dataset_version: str
+    label_version: str
+    feature_version: str
+    config_hash: str
+    source_report_paths: list[str] = Field(default_factory=list)
+    total_candidates: int
+    labeled_rows: int
+    feature_rows: int
+    joined_rows: int
+    dropped_label_rows: int
+    dropped_feature_rows: int
+    duplicate_candidate_ids: int
+    output_path: str

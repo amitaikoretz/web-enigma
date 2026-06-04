@@ -44,6 +44,23 @@ export interface RiskModelWorkflowErrorResponse {
   error_traceback?: string | null
 }
 
+export interface RiskDatasetManifestSummary {
+  generated_at: string
+  dataset_version: string
+  label_version: string
+  feature_version: string
+  config_hash: string
+  source_report_paths: string[]
+  total_candidates: number
+  labeled_rows: number
+  feature_rows: number
+  joined_rows: number
+  dropped_label_rows: number
+  dropped_feature_rows: number
+  duplicate_candidate_ids: number
+  output_path: string
+}
+
 export interface RiskModelListItem {
   group_id: string
   created_at: string
@@ -73,6 +90,12 @@ export interface RiskModelTargetRow {
   updated_at: string
 }
 
+export interface RiskModelSourceRow {
+  backtest_id: string
+  source_report_path?: string | null
+  created_at?: string | null
+}
+
 export interface RiskModelDetail {
   group_id: string
   created_at: string
@@ -83,6 +106,7 @@ export interface RiskModelDetail {
   params: Record<string, unknown>
   artifact_dir: string
   summary_metrics?: Record<string, unknown> | null
-  sources: Array<Record<string, unknown>>
+  dataset_manifest?: RiskDatasetManifestSummary | null
+  sources: RiskModelSourceRow[]
   targets: RiskModelTargetRow[]
 }
