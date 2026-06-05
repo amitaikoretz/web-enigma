@@ -66,6 +66,7 @@ def _insert_risk_model_group(
     *,
     group_id: str,
     backtest_ids: list[str],
+    name: str | None = None,
 ) -> None:
     now = datetime.now(UTC)
     session.add(
@@ -74,6 +75,7 @@ def _insert_risk_model_group(
             status="running",
             argo_namespace=None,
             argo_workflow_name=None,
+            name=name,
             params_json={"backtest_ids": backtest_ids, "targets": [], "dataset_config": {}, "train_config": {}},
             artifact_dir=f"/tmp/risk-models/{group_id}",
             summary_metrics_json=None,
@@ -156,6 +158,41 @@ def test_risk_models_show_training_date_range(tmp_path) -> None:
     detail_payload = detail_response.json()
     assert detail_payload["training_start_date"] == "2024-01-01"
     assert detail_payload["training_end_date"] == "2024-01-10"
+
+
+def test_risk_models_can_rename_existing_model(tmp_path) -> None:
+    client = build_backtest_client(tmp_path)
+
+    labels_path = tmp_path / "labels.parquet"
+    feats_path = tmp_path / "features.parquet"
+    pd.DataFrame([{"candidate_id": "c1", "label_hit_stop": 0, "label_mae": 0.1}]).to_parquet(
+        labels_path,
+        index=False,
+    )
+    pd.DataFrame([{"candidate_id": "c1", "f1": 1.0}]).to_parquet(feats_path, index=False)
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    _insert_backtest_job(session, "b1", labels_path=str(labels_path), features_path=str(feats_path))
+    _insert_risk_model_group(session, group_id="g-1", backtest_ids=["b1"], name="Original Name")
+    session.commit()
+    session.close()
+
+    response = client.patch("/risk-models/g-1", json={"name": "Renamed Model"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "Renamed Model"
+    assert payload["params"]["name"] == "Renamed Model"
+
+    list_response = client.get("/risk-models")
+    assert list_response.status_code == 200
+    assert list_response.json()[0]["name"] == "Renamed Model"
+
+    clear_response = client.patch("/risk-models/g-1", json={"name": None})
+    assert clear_response.status_code == 200
+    clear_payload = clear_response.json()
+    assert clear_payload["name"] is None
+    assert "name" not in clear_payload["params"]
 
 
 def test_risk_models_create_validates_backtest_artifacts(tmp_path) -> None:

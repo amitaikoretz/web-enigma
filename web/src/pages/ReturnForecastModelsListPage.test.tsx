@@ -35,6 +35,7 @@ describe('ReturnForecastModelsListPage', () => {
     fetchReturnForecastModelsMock.mockResolvedValue([
       {
         group_id: 'rf-1',
+        name: 'Short Horizon Forecast',
         created_at: '2026-06-01T12:00:00.000Z',
         updated_at: '2026-06-01T12:01:00.000Z',
         status: 'succeeded',
@@ -57,7 +58,8 @@ describe('ReturnForecastModelsListPage', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(screen.getByText('rf-1')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Short Horizon Forecast')).toBeInTheDocument())
+    expect(screen.getByText('rf-1')).toBeInTheDocument()
     expect(screen.getByText('2024-01-01 to 2024-01-10')).toBeInTheDocument()
     fireEvent.click(screen.getByText('rf-1'))
 
@@ -68,6 +70,7 @@ describe('ReturnForecastModelsListPage', () => {
     fetchReturnForecastModelsMock.mockResolvedValue([
       {
         group_id: 'rf-failed',
+        name: 'Short Horizon Forecast',
         created_at: '2026-06-01T12:00:00.000Z',
         updated_at: '2026-06-01T12:01:00.000Z',
         status: 'failed',

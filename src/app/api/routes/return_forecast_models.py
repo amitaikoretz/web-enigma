@@ -12,6 +12,7 @@ from app.return_forecast.models_api import (
     ReturnForecastModelCreateResponse,
     ReturnForecastModelDetailResponse,
     ReturnForecastModelListItemResponse,
+    ReturnForecastModelUpdateRequest,
     ReturnForecastModelStatusResponse,
     ReturnForecastModelWorkflowErrorResponse,
 )
@@ -41,80 +42,10 @@ def _load_dataset_manifest_summary(detail: RiskModelDetailRecord):
     return None
 
 
-@router.post("", response_model=ReturnForecastModelCreateResponse, status_code=status.HTTP_202_ACCEPTED)
-def create_return_forecast_model(
-    payload: ReturnForecastModelCreateRequest,
-    deps: ApiDependencies = Depends(get_deps),
-) -> ReturnForecastModelCreateResponse:
-    try:
-        result = deps.return_forecast_models.create_and_submit_argo(payload)
-        return ReturnForecastModelCreateResponse(
-            group_id=result.group_id,
-            status="running",
-            argo_namespace=result.argo_namespace,
-            argo_workflow_name=result.argo_workflow_name,
-        )
-    except RiskModelValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@router.post("/{group_id}/retry", response_model=ReturnForecastModelCreateResponse, status_code=status.HTTP_202_ACCEPTED)
-def retry_return_forecast_model(
-    group_id: str,
-    deps: ApiDependencies = Depends(get_deps),
-) -> ReturnForecastModelCreateResponse:
-    try:
-        result = deps.return_forecast_models.retry_group(group_id)
-        return ReturnForecastModelCreateResponse(
-            group_id=result.group_id,
-            status="running",
-            argo_namespace=result.argo_namespace,
-            argo_workflow_name=result.argo_workflow_name,
-        )
-    except RiskModelValidationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@router.get("", response_model=list[ReturnForecastModelListItemResponse])
-def list_return_forecast_models(
-    deps: ApiDependencies = Depends(get_deps),
-) -> list[ReturnForecastModelListItemResponse]:
-    items = deps.return_forecast_models_repo.list_recent(limit=200)
-    return [
-        ReturnForecastModelListItemResponse(
-            group_id=i.group_id,
-            created_at=i.created_at,
-            updated_at=i.updated_at,
-            status=i.status,  # type: ignore[arg-type]
-            argo_namespace=i.argo_namespace,
-            argo_workflow_name=i.argo_workflow_name,
-            backtest_ids=i.backtest_ids,
-            targets=i.targets,
-            targets_total=i.targets_total,
-            targets_done=i.targets_done,
-            summary_metrics=i.summary_metrics,
-            artifact_dir=i.artifact_dir,
-            training_start_date=i.training_start_date,
-            training_end_date=i.training_end_date,
-        )
-        for i in items
-    ]
-
-
-@router.get("/{group_id}", response_model=ReturnForecastModelDetailResponse)
-def get_return_forecast_model(
-    group_id: str,
-    deps: ApiDependencies = Depends(get_deps),
-) -> ReturnForecastModelDetailResponse:
-    detail = deps.return_forecast_models_repo.get_detail(group_id)
-    if detail is None:
-        raise HTTPException(status_code=404, detail=f"Return forecast model '{group_id}' not found")
+def _detail_response(detail: RiskModelDetailRecord) -> ReturnForecastModelDetailResponse:
     return ReturnForecastModelDetailResponse(
         group_id=detail.group_id,
+        name=detail.name,
         created_at=detail.created_at,
         updated_at=detail.updated_at,
         status=detail.status,  # type: ignore[arg-type]
@@ -146,6 +77,99 @@ def get_return_forecast_model(
     )
 
 
+@router.post("", response_model=ReturnForecastModelCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_return_forecast_model(
+    payload: ReturnForecastModelCreateRequest,
+    deps: ApiDependencies = Depends(get_deps),
+) -> ReturnForecastModelCreateResponse:
+    try:
+        result = deps.return_forecast_models.create_and_submit_argo(payload)
+        return ReturnForecastModelCreateResponse(
+            group_id=result.group_id,
+            name=result.name,
+            status="running",
+            argo_namespace=result.argo_namespace,
+            argo_workflow_name=result.argo_workflow_name,
+        )
+    except RiskModelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.patch("/{group_id}", response_model=ReturnForecastModelDetailResponse)
+def update_return_forecast_model(
+    group_id: str,
+    payload: ReturnForecastModelUpdateRequest,
+    deps: ApiDependencies = Depends(get_deps),
+) -> ReturnForecastModelDetailResponse:
+    try:
+        detail = deps.return_forecast_models.update_group_name(group_id, payload.name)
+    except RiskModelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Return forecast model '{group_id}' not found")
+    return _detail_response(detail)
+
+
+@router.post("/{group_id}/retry", response_model=ReturnForecastModelCreateResponse, status_code=status.HTTP_202_ACCEPTED)
+def retry_return_forecast_model(
+    group_id: str,
+    deps: ApiDependencies = Depends(get_deps),
+) -> ReturnForecastModelCreateResponse:
+    try:
+        result = deps.return_forecast_models.retry_group(group_id)
+        return ReturnForecastModelCreateResponse(
+            group_id=result.group_id,
+            name=result.name,
+            status="running",
+            argo_namespace=result.argo_namespace,
+            argo_workflow_name=result.argo_workflow_name,
+        )
+    except RiskModelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("", response_model=list[ReturnForecastModelListItemResponse])
+def list_return_forecast_models(
+    deps: ApiDependencies = Depends(get_deps),
+) -> list[ReturnForecastModelListItemResponse]:
+    items = deps.return_forecast_models_repo.list_recent(limit=200)
+    return [
+        ReturnForecastModelListItemResponse(
+            group_id=i.group_id,
+            name=i.name,
+            created_at=i.created_at,
+            updated_at=i.updated_at,
+            status=i.status,  # type: ignore[arg-type]
+            argo_namespace=i.argo_namespace,
+            argo_workflow_name=i.argo_workflow_name,
+            backtest_ids=i.backtest_ids,
+            targets=i.targets,
+            targets_total=i.targets_total,
+            targets_done=i.targets_done,
+            summary_metrics=i.summary_metrics,
+            artifact_dir=i.artifact_dir,
+            training_start_date=i.training_start_date,
+            training_end_date=i.training_end_date,
+        )
+        for i in items
+    ]
+
+
+@router.get("/{group_id}", response_model=ReturnForecastModelDetailResponse)
+def get_return_forecast_model(
+    group_id: str,
+    deps: ApiDependencies = Depends(get_deps),
+) -> ReturnForecastModelDetailResponse:
+    detail = deps.return_forecast_models_repo.get_detail(group_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Return forecast model '{group_id}' not found")
+    return _detail_response(detail)
+
+
 @router.get("/{group_id}/status", response_model=ReturnForecastModelStatusResponse)
 def get_return_forecast_model_status(
     group_id: str,
@@ -157,6 +181,7 @@ def get_return_forecast_model_status(
     phase = deps.return_forecast_models.get_argo_phase(group_id)
     return ReturnForecastModelStatusResponse(
         group_id=detail.group_id,
+        name=detail.name,
         status=detail.status,  # type: ignore[arg-type]
         argo_namespace=detail.argo_namespace,
         argo_workflow_name=detail.argo_workflow_name,

@@ -7,6 +7,7 @@ export type {
   ModelSourceRow as ReturnForecastModelSourceRow,
   ModelStatus as ReturnForecastModelStatus,
   ModelStatusResponse as ReturnForecastModelStatusResponse,
+  ModelUpdateRequest as ReturnForecastModelUpdateRequest,
   ModelTargetRow as ReturnForecastModelTargetRow,
   ModelTaskType as ReturnForecastModelTaskType,
   ModelTargetSpec as ReturnForecastModelTargetSpec,

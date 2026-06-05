@@ -17,6 +17,7 @@ class RiskModelTargetSpec(BaseModel):
 
 class RiskModelCreateRequest(BaseModel):
     backtest_ids: list[str]
+    name: str | None = Field(default=None, max_length=128)
     targets: list[RiskModelTargetSpec] = Field(default_factory=list)
     dataset_config: dict[str, Any] = Field(default_factory=dict)
     train_config: dict[str, Any] = Field(default_factory=dict)
@@ -24,13 +25,19 @@ class RiskModelCreateRequest(BaseModel):
 
 class RiskModelCreateResponse(BaseModel):
     group_id: str
+    name: str | None = None
     status: RiskModelStatus
     argo_namespace: str | None = None
     argo_workflow_name: str | None = None
 
 
+class RiskModelUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=128)
+
+
 class RiskModelListItemResponse(BaseModel):
     group_id: str
+    name: str | None = None
     created_at: datetime
     updated_at: datetime
     status: RiskModelStatus
@@ -62,6 +69,7 @@ class RiskModelTargetRowResponse(BaseModel):
 
 class RiskModelDetailResponse(BaseModel):
     group_id: str
+    name: str | None = None
     created_at: datetime
     updated_at: datetime
     status: RiskModelStatus
@@ -79,6 +87,7 @@ class RiskModelDetailResponse(BaseModel):
 
 class RiskModelStatusResponse(BaseModel):
     group_id: str
+    name: str | None = None
     status: RiskModelStatus
     argo_namespace: str | None = None
     argo_workflow_name: str | None = None

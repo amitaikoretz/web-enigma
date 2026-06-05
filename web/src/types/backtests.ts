@@ -332,6 +332,22 @@ export interface ExitRulesSelectionInput {
   rules: ExitRuleSelectionInput[]
 }
 
+export interface ModelArtifactRefInput {
+  group_id?: string | null
+  model_artifact_path?: string | null
+  target_key?: string | null
+}
+
+export interface BacktestModelPolicyInput {
+  forecast_model?: ModelArtifactRefInput | null
+  risk_model?: ModelArtifactRefInput | null
+  threshold_bps?: number
+  target_edge_bps?: number
+  max_risk_fraction?: number
+  allow_short?: boolean
+  min_signal_score?: number
+}
+
 export interface BacktestCreateRequest {
   name?: string | null
   start_date: string
@@ -341,6 +357,7 @@ export interface BacktestCreateRequest {
   symbols: string[]
   triggers: BacktestStrategySelectionInput[]
   exit_rules: ExitRulesSelectionInput[]
+  model_policy?: BacktestModelPolicyInput | null
   broker?: {
     cash: number
     commission: number

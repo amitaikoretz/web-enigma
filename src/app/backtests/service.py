@@ -307,6 +307,8 @@ def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) 
         include_order_log=True,
     )
     execution = payload.execution
+    model_policy = payload.model_policy
+    model_policy_id = model_policy.stable_id() if model_policy is not None else None
     runs: list[dict[str, Any]] = []
 
     for trigger in payload.triggers:
@@ -314,10 +316,16 @@ def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) 
             exits_id = exit_rules.stable_id()
             for symbol in payload.symbols:
                 run_index = len(runs) + 1
-                run_id = f"{backtest_id}:{run_index:03d}:{symbol}:{trigger.name}:exits:{exits_id}"
+                run_id_parts = [backtest_id, f"{run_index:03d}", symbol, trigger.name, f"exits:{exits_id}"]
+                if model_policy_id is not None:
+                    run_id_parts.append(f"models:{model_policy_id}")
+                run_id = ":".join(run_id_parts)
+                run_name_parts = [symbol, trigger.name, f"exits:{exits_id}"]
+                if model_policy_id is not None:
+                    run_name_parts.append(f"models:{model_policy_id}")
                 run_payload: dict[str, Any] = {
                     "run_id": run_id,
-                    "name": f"{symbol} {trigger.name} exits:{exits_id}",
+                    "name": " ".join(run_name_parts),
                     "start_date": payload.start_date.isoformat(),
                     "end_date": payload.end_date.isoformat(),
                     "data": {
@@ -331,6 +339,8 @@ def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) 
                     "broker": broker.model_dump(mode="json"),
                     "analyzers": analyzers.model_dump(mode="json"),
                 }
+                if model_policy is not None:
+                    run_payload["model_policy"] = model_policy.model_dump(mode="json")
                 if execution is not None:
                     run_payload["execution"] = execution.model_dump(mode="json")
                 runs.append(run_payload)

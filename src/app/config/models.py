@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -35,6 +37,53 @@ class AnalyzerConfig(BaseModel):
 
 class BacktestExecutionConfig(BaseModel):
     fill_model: Literal["close", "next_bar"] = "close"
+
+
+class ModelArtifactRef(BaseModel):
+    group_id: str | None = None
+    model_artifact_path: str | None = None
+    target_key: str | None = None
+
+    @model_validator(mode="after")
+    def validate_reference(self) -> "ModelArtifactRef":
+        has_group_id = bool(self.group_id and self.group_id.strip())
+        has_artifact_path = bool(self.model_artifact_path and self.model_artifact_path.strip())
+        if has_group_id == has_artifact_path:
+            raise ValueError("Provide exactly one of 'group_id' or 'model_artifact_path'")
+        if self.group_id is not None:
+            object.__setattr__(self, "group_id", self.group_id.strip())
+        if self.model_artifact_path is not None:
+            object.__setattr__(self, "model_artifact_path", self.model_artifact_path.strip())
+        if self.target_key is not None:
+            target_key = self.target_key.strip()
+            object.__setattr__(self, "target_key", target_key or None)
+        return self
+
+    def resolve_paths(self, *, base_dir: Path) -> "ModelArtifactRef":
+        if self.model_artifact_path is None:
+            return self
+        path = Path(self.model_artifact_path)
+        if not path.is_absolute():
+            path = (base_dir / path).resolve()
+        return self.model_copy(update={"model_artifact_path": str(path)})
+
+    def stable_payload(self) -> dict[str, str | None]:
+        return self.model_dump(mode="json")
+
+
+class BacktestModelPolicyConfig(BaseModel):
+    forecast_model: ModelArtifactRef | None = None
+    risk_model: ModelArtifactRef | None = None
+    threshold_bps: float = Field(default=1.0, ge=0.0)
+    target_edge_bps: float = Field(default=5.0, gt=0.0)
+    max_risk_fraction: float = Field(default=0.001, gt=0.0, le=1.0)
+    allow_short: bool = False
+    min_signal_score: float = Field(default=0.0)
+
+    def stable_id(self) -> str:
+        payload = self.model_dump(mode="json")
+        encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+        return hashlib.sha1(encoded).hexdigest()[:10]  # noqa: S324
 
 
 class DataCacheConfig(BaseModel):
@@ -91,6 +140,7 @@ class BacktestRunConfig(BaseModel):
     exit_rules_path: str | None = None
     trigger: TriggerSelection | None = None
     exit_rules: ExitRulesSelection | None = None
+    model_policy: BacktestModelPolicyConfig | None = None
     broker: BrokerConfig | None = None
     analyzers: AnalyzerConfig = Field(default_factory=AnalyzerConfig)
     execution: BacktestExecutionConfig = Field(default_factory=BacktestExecutionConfig)
@@ -168,6 +218,12 @@ class BacktestRunConfig(BaseModel):
             if not self.exit_rules_path:
                 raise ValueError("Run must define either 'exit_rules' or 'exit_rules_path'")
             self.exit_rules = load_exit_rules_selection(self.exit_rules_path, base_dir=base_dir)
+
+        if self.model_policy is not None:
+            if self.model_policy.forecast_model is not None:
+                self.model_policy.forecast_model = self.model_policy.forecast_model.resolve_paths(base_dir=base_dir)
+            if self.model_policy.risk_model is not None:
+                self.model_policy.risk_model = self.model_policy.risk_model.resolve_paths(base_dir=base_dir)
         return self
 
 

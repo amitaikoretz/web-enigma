@@ -69,6 +69,7 @@ export function ModelTrainingLaunchDialog({
   onSubmit,
 }: ModelTrainingLaunchDialogProps) {
   const [randomSeed, setRandomSeed] = useState('7')
+  const [name, setName] = useState('')
   const [lookbackBars, setLookbackBars] = useState('60')
   const [horizonBars, setHorizonBars] = useState('5')
   const [allowShort, setAllowShort] = useState(true)
@@ -83,6 +84,7 @@ export function ModelTrainingLaunchDialog({
       return
     }
     const defaults = buildDefaultRequest(family)
+    setName('')
     setRandomSeed(String(defaults.train_config.random_seed ?? 7))
     if (family === 'return_forecast') {
       setLookbackBars(String(defaults.train_config.lookback_bars ?? 60))
@@ -97,6 +99,7 @@ export function ModelTrainingLaunchDialog({
       family === 'risk'
         ? {
             ...baseRequest,
+            ...(name.trim() ? { name: name.trim() } : {}),
             train_config: {
               ...baseRequest.train_config,
               random_seed: Number(randomSeed) || 7,
@@ -104,6 +107,7 @@ export function ModelTrainingLaunchDialog({
           }
         : {
             ...baseRequest,
+            ...(name.trim() ? { name: name.trim() } : {}),
             train_config: {
               ...baseRequest.train_config,
               random_seed: Number(randomSeed) || 7,
@@ -130,6 +134,13 @@ export function ModelTrainingLaunchDialog({
           <Typography>
             Selected backtests on this page: <b>{selectedBacktestCount}</b>
           </Typography>
+          <TextField
+            label="Model name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            size="small"
+            helperText="Optional display name for this training run."
+          />
           <TextField
             label="Random seed"
             value={randomSeed}

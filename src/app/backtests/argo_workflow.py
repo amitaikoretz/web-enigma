@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import base64
 import os
+import textwrap
 from typing import Any
 
 WORKFLOW_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_WORKFLOW_RESULTS_MOUNT = "/data/backtest-results"
+WORKFLOW_RETRY_LIMIT = 3
+WORKFLOW_RETRY_MEMORY_TIERS = ("4Gi", "8Gi", "16Gi", "32Gi")
 
 
 def workflow_results_mount() -> str:
@@ -63,9 +66,39 @@ def _step_parameters(pairs: list[tuple[str, str]]) -> dict[str, Any]:
     }
 
 
+def _retry_strategy() -> dict[str, Any]:
+    return {
+        "limit": WORKFLOW_RETRY_LIMIT,
+        "retryPolicy": "Always",
+    }
+
+
+def _memory_retry_pod_spec_patch() -> str:
+    memory_expr = " : ".join(
+        [
+            f"retries == {index} ? '{memory}'"
+            for index, memory in enumerate(WORKFLOW_RETRY_MEMORY_TIERS[:-1])
+        ]
+        + [f"'{WORKFLOW_RETRY_MEMORY_TIERS[-1]}'"]
+    )
+    return textwrap.dedent(
+        f"""\
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{{{={memory_expr}}}}}"
+              limits:
+                memory: "{{{{={memory_expr}}}}}"
+        """
+    )
+
+
 def _print_payload_template() -> dict[str, Any]:
     return {
         "name": "print-payload",
+        "retryStrategy": _retry_strategy(),
+        "podSpecPatch": _memory_retry_pod_spec_patch(),
         "inputs": {
             "parameters": [
                 {"name": "api-base-url"},
@@ -118,6 +151,8 @@ def _print_payload_template() -> dict[str, Any]:
 def _plan_shards_template() -> dict[str, Any]:
     return {
         "name": "plan-shards",
+        "retryStrategy": _retry_strategy(),
+        "podSpecPatch": _memory_retry_pod_spec_patch(),
         "inputs": {
             "parameters": [
                 {"name": "config-path"},
@@ -182,6 +217,8 @@ def _run_shard_template() -> dict[str, Any]:
                 "workflows.argoproj.io/progress": "0/100",
             },
         },
+        "retryStrategy": _retry_strategy(),
+        "podSpecPatch": _memory_retry_pod_spec_patch(),
         "inputs": {
             "parameters": [
                 {"name": "shard-id"},
@@ -229,6 +266,8 @@ def _run_shard_template() -> dict[str, Any]:
 def _merge_reports_template() -> dict[str, Any]:
     return {
         "name": "merge-reports",
+        "retryStrategy": _retry_strategy(),
+        "podSpecPatch": _memory_retry_pod_spec_patch(),
         "inputs": {
             "parameters": [
                 {"name": "manifest-path"},

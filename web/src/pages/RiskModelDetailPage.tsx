@@ -2,6 +2,7 @@ import {
   fetchRiskModelDetail,
   fetchRiskModelStatus,
   fetchRiskModelWorkflowErrors,
+  updateRiskModel,
 } from '../api/riskModels'
 import { createModelDetailPage } from './modelFamilyPages'
 
@@ -12,6 +13,7 @@ const RiskModelDetailPageImpl = createModelDetailPage({
   fetchModelStatus: fetchRiskModelStatus,
   fetchModelDetail: fetchRiskModelDetail,
   fetchModelWorkflowErrors: fetchRiskModelWorkflowErrors,
+  updateModelName: (groupId, name) => updateRiskModel(groupId, { name }),
 })
 
 export function RiskModelDetailPage() {

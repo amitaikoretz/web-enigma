@@ -19,6 +19,7 @@ def _utc_now() -> datetime:
 @dataclass(frozen=True)
 class RiskModelListItem:
     group_id: str
+    name: str | None
     created_at: datetime
     updated_at: datetime
     status: str
@@ -52,6 +53,7 @@ class RiskModelTargetRow:
 @dataclass(frozen=True)
 class RiskModelDetail:
     group_id: str
+    name: str | None
     created_at: datetime
     updated_at: datetime
     status: str
@@ -100,6 +102,7 @@ class SqlAlchemyRiskModelRepository:
         self,
         *,
         group_id: str,
+        name: str | None,
         status: str,
         params: dict[str, Any],
         artifact_dir: str,
@@ -113,6 +116,7 @@ class SqlAlchemyRiskModelRepository:
             row = RiskModelGroup(
                 id=group_id,
                 family=self._family,
+                name=name,
                 status=status,
                 argo_namespace=argo_namespace,
                 argo_workflow_name=argo_workflow_name,
@@ -142,6 +146,22 @@ class SqlAlchemyRiskModelRepository:
             row.argo_workflow_name = argo_workflow_name
             row.updated_at = _utc_now()
             session.commit()
+
+    def update_group_name(self, group_id: str, name: str | None) -> RiskModelDetail | None:
+        with self._session_factory() as session:
+            row = session.get(RiskModelGroup, group_id)
+            if row is None or row.family != self._family:
+                return None
+            row.name = name
+            params = dict(row.params_json or {})
+            if name is None:
+                params.pop("name", None)
+            else:
+                params["name"] = name
+            row.params_json = params
+            row.updated_at = _utc_now()
+            session.commit()
+        return self.get_detail(group_id)
 
     def update_group_status(self, group_id: str, *, status: str, summary_metrics: dict[str, Any] | None = None) -> None:
         with self._session_factory() as session:
@@ -249,6 +269,7 @@ class SqlAlchemyRiskModelRepository:
                 out.append(
                     RiskModelListItem(
                         group_id=g.id,
+                        name=g.name,
                         created_at=g.created_at,
                         updated_at=g.updated_at,
                         status=g.status,
@@ -279,6 +300,7 @@ class SqlAlchemyRiskModelRepository:
             )
             return RiskModelDetail(
                 group_id=g.id,
+                name=g.name,
                 created_at=g.created_at,
                 updated_at=g.updated_at,
                 status=g.status,
@@ -330,6 +352,7 @@ class SqlAlchemyRiskModelRepository:
             # Snapshot metadata for caller (e.g. artifact_dir) before delete.
             list_item = RiskModelListItem(
                 group_id=g.id,
+                name=g.name,
                 created_at=g.created_at,
                 updated_at=g.updated_at,
                 status=g.status,

@@ -46,6 +46,24 @@ vi.mock('../settings/useSettings', () => ({
 import { BacktestsListPage } from './BacktestsListPage'
 
 describe('BacktestsListPage model launch modal', () => {
+  function findEnabledButton(name: RegExp) {
+    const buttons = screen.getAllByRole('button', { name })
+    const button = buttons.find((item) => !(item as HTMLButtonElement).disabled)
+    if (!button) {
+      throw new Error(`No enabled button matched ${String(name)}`)
+    }
+    return button
+  }
+
+  function clickBacktestSelection(backtestId: string) {
+    const label = screen.getByLabelText(`Select backtest ${backtestId}`)
+    const input = label.querySelector('input')
+    if (!input) {
+      throw new Error(`Checkbox input not found for ${backtestId}`)
+    }
+    fireEvent.click(input)
+  }
+
   it('launches a risk model from the pre-launch modal', async () => {
     fetchBacktestsMock.mockResolvedValue({
       items: [
@@ -61,6 +79,7 @@ describe('BacktestsListPage model launch modal', () => {
     })
     createRiskModelMock.mockResolvedValue({
       group_id: 'rm-1',
+      name: 'Momentum Risk V1',
       status: 'running',
       argo_namespace: 'ns',
       argo_workflow_name: 'wf',
@@ -72,17 +91,21 @@ describe('BacktestsListPage model launch modal', () => {
       </MemoryRouter>,
     )
 
-    await screen.findByText('bt-1')
-    fireEvent.click(screen.getByLabelText('Select backtest bt-1'))
-    fireEvent.click(screen.getByRole('button', { name: /train risk model/i }))
+    await screen.findByLabelText('Select backtest bt-1')
+    clickBacktestSelection('bt-1')
+    await waitFor(() => expect(findEnabledButton(/train risk model/i)).toBeEnabled())
+    fireEvent.click(findEnabledButton(/train risk model/i))
     expect(screen.getByText('Train risk model')).toBeInTheDocument()
 
+    await screen.findByLabelText(/model name/i)
+    fireEvent.change(screen.getByLabelText(/model name/i), { target: { value: 'Momentum Risk v1' } })
     fireEvent.change(screen.getByLabelText(/random seed/i), { target: { value: '13' } })
     fireEvent.click(screen.getByRole('button', { name: /start training/i }))
 
     await waitFor(() =>
       expect(createRiskModelMock).toHaveBeenCalledWith({
         backtest_ids: ['bt-1'],
+        name: 'Momentum Risk v1',
         targets: [
           { target_key: 'stop_prob', task_type: 'classification' },
           { target_key: 'mae', task_type: 'regression' },
@@ -91,8 +114,11 @@ describe('BacktestsListPage model launch modal', () => {
         train_config: { random_seed: 13 },
       }),
     )
-    expect(await screen.findByText('Model launched')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /risk model rm-1/i })).toHaveAttribute('href', '/models/risk/rm-1')
+    expect((await screen.findAllByText('Model launched')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /risk model momentum risk v1/i })).toHaveAttribute(
+      'href',
+      '/models/risk/rm-1',
+    )
   })
 
   it('launches a return forecast model from the pre-launch modal', async () => {
@@ -110,6 +136,7 @@ describe('BacktestsListPage model launch modal', () => {
     })
     createReturnForecastModelMock.mockResolvedValue({
       group_id: 'rf-1',
+      name: 'Short Horizon Forecast',
       status: 'running',
       argo_namespace: 'ns',
       argo_workflow_name: 'wf',
@@ -121,11 +148,14 @@ describe('BacktestsListPage model launch modal', () => {
       </MemoryRouter>,
     )
 
-    await screen.findByText('bt-2')
-    fireEvent.click(screen.getByLabelText('Select backtest bt-2'))
-    fireEvent.click(screen.getByRole('button', { name: /train return forecast/i }))
+    await screen.findByLabelText('Select backtest bt-2')
+    clickBacktestSelection('bt-2')
+    await waitFor(() => expect(findEnabledButton(/train return forecast/i)).toBeEnabled())
+    fireEvent.click(findEnabledButton(/train return forecast/i))
     expect(screen.getByText('Train return forecast model')).toBeInTheDocument()
 
+    await screen.findByLabelText(/model name/i)
+    fireEvent.change(screen.getByLabelText(/model name/i), { target: { value: 'Short Horizon Forecast' } })
     fireEvent.change(screen.getByLabelText(/random seed/i), { target: { value: '21' } })
     fireEvent.change(screen.getByLabelText(/lookback bars/i), { target: { value: '90' } })
     fireEvent.change(screen.getByLabelText(/horizon bars/i), { target: { value: '8' } })
@@ -135,6 +165,7 @@ describe('BacktestsListPage model launch modal', () => {
     await waitFor(() =>
       expect(createReturnForecastModelMock).toHaveBeenCalledWith({
         backtest_ids: ['bt-2'],
+        name: 'Short Horizon Forecast',
         targets: [{ target_key: 'forecast_return', task_type: 'regression' }],
         dataset_config: {},
         train_config: {
@@ -145,8 +176,8 @@ describe('BacktestsListPage model launch modal', () => {
         },
       }),
     )
-    expect(await screen.findByText('Model launched')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /return forecast model rf-1/i })).toHaveAttribute(
+    expect((await screen.findAllByText('Model launched')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: /return forecast model short horizon forecast/i })).toHaveAttribute(
       'href',
       '/models/returns/rf-1',
     )

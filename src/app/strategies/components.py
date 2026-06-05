@@ -60,10 +60,18 @@ def _ensure_exit_rule_decision(
 
 
 class ComposableStrategyCore(StrategyCore):
-    def __init__(self, *, trigger_name: str, trigger: TriggerCore, exit_rules: Sequence[tuple[str, ExitRuleCore]]):
+    def __init__(
+        self,
+        *,
+        trigger_name: str,
+        trigger: TriggerCore,
+        exit_rules: Sequence[tuple[str, ExitRuleCore]],
+        entry_policy: Any | None = None,
+    ):
         self._trigger_name = trigger_name
         self._trigger = trigger
         self._exit_rules = list(exit_rules)
+        self._entry_policy = entry_policy
 
     def entry_regime_label(self) -> str | None:
         label_fn = getattr(self._trigger, "entry_regime_label", None)
@@ -106,6 +114,14 @@ class ComposableStrategyCore(StrategyCore):
 
         decision = _ensure_trigger_decision(self._trigger.on_bar(context), trigger_name=self._trigger_name)
         if decision.action == "buy":
+            if self._entry_policy is not None:
+                decision = self._entry_policy.apply(context, decision)
+                if decision.action != "buy":
+                    return StrategyDecision.hold(
+                        reason=decision.reason,
+                        auditor_rejection=decision.auditor_rejection,
+                        entry_intent=decision.entry_intent,
+                    )
             reason = decision.reason or "entry"
             wrapped = StrategyDecision.buy(
                 float(decision.size or 0.0),

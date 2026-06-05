@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.backtests.models import BacktestCreateRequest, BacktestDetailResponse, BacktestTradeReplayCapsule
 from app.backtests.replay import build_trade_replay_capsule, build_trade_replay_launch_config
-from app.backtests.service import BacktestArtifactStore, build_backtest_config
+from app.backtests.service import BacktestArtifactStore, build_backtest_config, build_backtest_config_raw
 from app.engine.runner import BacktestExecutionResult
 from app.output.models import BacktestReport, CandidateRecord, OrderRecord, RunResult, RunSummary, TradeRecord
 from tests.conftest import build_backtest_client
@@ -152,6 +152,43 @@ def test_build_backtest_config_expands_symbols_and_triggers_cartesian() -> None:
         "sma_cross",
         "sma_cross",
     ]
+
+
+def test_build_backtest_config_includes_model_policy_per_run() -> None:
+    payload = BacktestCreateRequest.model_validate(
+        {
+            "start_date": "2024-01-01",
+            "end_date": "2024-01-03",
+            "resolution": "1d",
+            "symbols": ["aapl"],
+            "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "exit_rules": [
+                {
+                    "rules": [
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                    ]
+                }
+            ],
+            "model_policy": {
+                "forecast_model": {"group_id": "rf-1"},
+                "risk_model": {"group_id": "rm-1"},
+                "threshold_bps": 1.5,
+                "target_edge_bps": 6.0,
+                "max_risk_fraction": 0.002,
+                "allow_short": False,
+            },
+        }
+    )
+
+    raw = build_backtest_config_raw(payload, "job123")
+    assert raw["runs"][0]["model_policy"]["forecast_model"]["group_id"] == "rf-1"
+    assert raw["runs"][0]["model_policy"]["risk_model"]["group_id"] == "rm-1"
+    assert "models:" in raw["runs"][0]["run_id"]
+
+    config = build_backtest_config(payload, backtest_id="job123")
+    assert config.runs[0].model_policy is not None
+    assert config.runs[0].model_policy.forecast_model is not None
+    assert config.runs[0].model_policy.risk_model is not None
 
 
 def test_trade_replay_launch_config_exposes_alpaca_env_vars() -> None:

@@ -38,6 +38,7 @@ from app.output.models import (
 )
 from app.risk.build.run_auxiliary import build_risk_auxiliary_for_run
 from app.risk.models import RiskDatasetConfig, RunRiskAuxiliaryRows
+from app.backtests.model_policy import resolve_backtest_model_policy
 from app.strategies.implementations import build_portable_strategy_adapter
 from app.strategies.factory import build_strategy_core, composed_strategy_id
 
@@ -291,6 +292,15 @@ def _run_single(
     if benchmark_symbol:
         benchmark_feed = _load_benchmark_feed(run, benchmark_symbol, cache_config, cache_refresh)
 
+    strategy_id = composed_strategy_id(trigger=run.trigger, exit_rules=run.exit_rules, model_policy=run.model_policy)
+    entry_policy = resolve_backtest_model_policy(
+        run.model_policy,
+        strategy_id=strategy_id,
+        data_source=run.data.type,
+        fill_model=run.execution.fill_model,
+        risk_dataset_config=risk_dataset_config,
+    )
+
     bar_progress_callback = None
     if on_run_bar_progress is not None and run_idx is not None and total_runs is not None:
 
@@ -298,8 +308,12 @@ def _run_single(
             on_run_bar_progress(run_idx, total_runs, bar_idx, bar_progress_total)
 
     strategy_cls = build_portable_strategy_adapter(
-        strategy_name=composed_strategy_id(trigger=run.trigger, exit_rules=run.exit_rules),
-        strategy_factory=lambda _: build_strategy_core(trigger=run.trigger, exit_rules=run.exit_rules),
+        strategy_name=strategy_id,
+        strategy_factory=lambda _: build_strategy_core(
+            trigger=run.trigger,
+            exit_rules=run.exit_rules,
+            entry_policy=entry_policy,
+        ),
         strategy_params={},
         symbol=_strategy_symbol(run),
         benchmark_feed=benchmark_feed,
@@ -410,7 +424,7 @@ def _run_single(
         run_id=_result_run_id(run),
         name=run.name,
         status="success",
-        strategy=composed_strategy_id(trigger=run.trigger, exit_rules=run.exit_rules),
+        strategy=strategy_id,
         symbol=_strategy_symbol(run),
         data_source=run.data.type,
         summary=summary,

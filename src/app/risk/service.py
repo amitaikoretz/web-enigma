@@ -32,6 +32,7 @@ class RiskModelValidationError(ValueError):
 @dataclass(frozen=True)
 class CreateRiskModelResult:
     group_id: str
+    name: str | None
     status: str
     argo_namespace: str | None
     argo_workflow_name: str | None
@@ -79,6 +80,12 @@ class RiskModelService:
         base = workflow_results_mount().rstrip("/")
         return f"{base}/{self._family_slug}/{group_id}"
 
+    def _normalize_name(self, name: str | None) -> str | None:
+        if name is None:
+            return None
+        normalized = name.strip()
+        return normalized or None
+
     def _is_writable_dir(self, candidate: Path) -> bool:
         try:
             if candidate.exists():
@@ -118,6 +125,7 @@ class RiskModelService:
         report_paths = self._validate_backtests(request.backtest_ids)
 
         group_id = uuid.uuid4().hex
+        name = self._normalize_name(request.name)
         artifact_dir = self._artifact_dir_for_group(group_id)
         artifact_dir_path = Path(artifact_dir)
         skip_local_writes = os.environ.get("BACKTEST_RISK_SKIP_LOCAL_ARTIFACT_WRITES", "").lower() in {
@@ -143,6 +151,7 @@ class RiskModelService:
 
         params: dict[str, Any] = {
             "requested_at": _utc_now().isoformat(),
+            "name": name,
             "backtest_ids": request.backtest_ids,
             "targets": [t.model_dump(mode="json") for t in request.targets],
             "dataset_config": request.dataset_config,
@@ -151,6 +160,7 @@ class RiskModelService:
 
         self._risk_repo.create_group(
             group_id=group_id,
+            name=name,
             status="running",
             params=params,
             artifact_dir=artifact_dir,
@@ -175,6 +185,7 @@ class RiskModelService:
         self._risk_repo.update_group_workflow(group_id, argo_namespace=wf_ns, argo_workflow_name=wf_name)
         return CreateRiskModelResult(
             group_id=group_id,
+            name=name,
             status="running",
             argo_namespace=wf_ns,
             argo_workflow_name=wf_name,
@@ -191,6 +202,7 @@ class RiskModelService:
             request = RiskModelCreateRequest.model_validate(
                 {
                     "backtest_ids": params.get("backtest_ids", []),
+                    "name": params.get("name", detail.name),
                     "targets": params.get("targets", []),
                     "dataset_config": params.get("dataset_config", {}),
                     "train_config": params.get("train_config", {}),
@@ -202,6 +214,13 @@ class RiskModelService:
             ) from exc
 
         return self.create_and_submit_argo(request)
+
+    def update_group_name(self, group_id: str, name: str | None):
+        normalized_name = self._normalize_name(name)
+        updated = self._risk_repo.update_group_name(group_id, normalized_name)
+        if updated is None:
+            raise RiskModelValidationError(f"{self._family_label} '{group_id}' not found")
+        return updated
 
     def get_argo_phase(self, group_id: str) -> str | None:
         detail = self._risk_repo.get_detail(group_id)

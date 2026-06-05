@@ -251,6 +251,7 @@ class RiskModelGroup(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     family: Mapped[str] = mapped_column(String(32), nullable=False, default="risk", server_default="risk")
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     argo_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
     argo_workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)

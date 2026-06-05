@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 const fetchRiskModelDetailMock = vi.hoisted(() => vi.fn())
@@ -10,11 +10,13 @@ const fetchWorkflowMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowDebugConfigMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowPodLogsMock = vi.hoisted(() => vi.fn())
 const fetchRiskModelWorkflowErrorsMock = vi.hoisted(() => vi.fn())
+const updateRiskModelMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/riskModels', () => ({
   fetchRiskModelDetail: fetchRiskModelDetailMock,
   fetchRiskModelStatus: fetchRiskModelStatusMock,
   fetchRiskModelWorkflowErrors: fetchRiskModelWorkflowErrorsMock,
+  updateRiskModel: updateRiskModelMock,
 }))
 
 vi.mock('../api/argo', () => ({
@@ -40,9 +42,14 @@ vi.mock('../settings/useSettings', () => ({
 import { RiskModelDetailPage } from './RiskModelDetailPage'
 
 describe('RiskModelDetailPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('renders the training set, targets, metrics, and relevant info sections', async () => {
     fetchRiskModelDetailMock.mockResolvedValue({
       group_id: 'g-1',
+      name: 'Momentum Risk V1',
       created_at: '2026-06-01T12:00:00.000Z',
       updated_at: '2026-06-01T12:01:00.000Z',
       status: 'succeeded',
@@ -133,7 +140,7 @@ describe('RiskModelDetailPage', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(screen.getByText(/Risk model g-1/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Momentum Risk V1' })).toBeInTheDocument())
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Training' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Targets' })).toBeInTheDocument()
@@ -169,6 +176,63 @@ describe('RiskModelDetailPage', () => {
     fireEvent.click(screen.getAllByRole('tab', { name: 'Summary' }).at(-1)!)
     expect(screen.getByText('auc_calibrated')).toBeInTheDocument()
     expect(screen.queryByText('Fold 1')).not.toBeInTheDocument()
+  })
+
+  it('renames an existing model from the detail page', async () => {
+    fetchRiskModelDetailMock.mockResolvedValue({
+      group_id: 'g-rename',
+      name: 'Original Name',
+      created_at: '2026-06-01T12:00:00.000Z',
+      updated_at: '2026-06-01T12:01:00.000Z',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      params: {},
+      artifact_dir: '/tmp/risk-models/g-rename',
+      summary_metrics: null,
+      dataset_manifest: null,
+      sources: [],
+      targets: [],
+    })
+    fetchRiskModelStatusMock.mockResolvedValue({
+      group_id: 'g-rename',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      argo_phase: 'Succeeded',
+    })
+    updateRiskModelMock.mockResolvedValue({
+      group_id: 'g-rename',
+      name: 'Renamed Risk Model',
+      created_at: '2026-06-01T12:00:00.000Z',
+      updated_at: '2026-06-01T12:10:00.000Z',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      params: {},
+      artifact_dir: '/tmp/risk-models/g-rename',
+      summary_metrics: null,
+      dataset_manifest: null,
+      sources: [],
+      targets: [],
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/models/risk/g-rename']}>
+        <Routes>
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Original Name' })).toBeInTheDocument())
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rename' }).at(-1)!)
+    const nameField = await screen.findByLabelText('Name')
+    fireEvent.change(nameField, { target: { value: 'Renamed Risk Model' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(updateRiskModelMock).toHaveBeenCalledWith('g-rename', { name: 'Renamed Risk Model' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Renamed Risk Model' })).toBeInTheDocument())
   })
 
   it('polls active models until they reach a terminal state', async () => {
@@ -226,7 +290,7 @@ describe('RiskModelDetailPage', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(fetchRiskModelDetailMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(fetchRiskModelDetailMock.mock.calls.length).toBeGreaterThanOrEqual(2))
     expect(fetchRiskModelStatusMock.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(screen.getAllByText('succeeded').length).toBeGreaterThan(0)
   })

@@ -15,6 +15,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   LinearProgress,
   Paper,
@@ -28,6 +32,7 @@ import {
   TableRow,
   Stack,
   Tooltip,
+  TextField,
   Typography,
 } from '@mui/material'
 import { useEffect, useMemo, useState } from 'react'
@@ -60,6 +65,7 @@ export interface ModelFamilyConfig {
   fetchModelWorkflowErrors: (groupId: string) => Promise<ModelWorkflowErrorResponse>
   retryModel?: (groupId: string) => Promise<ModelCreateResponse>
   deleteModel?: (groupId: string) => Promise<void>
+  updateModelName?: (groupId: string, name: string | null) => Promise<ModelDetail>
 }
 
 type MainTab = 'overview' | 'training' | 'targets' | 'performance' | 'debug'
@@ -89,6 +95,16 @@ const MAIN_TABS: Array<{ id: MainTab; label: string }> = [
 
 function lowerLabel(value: string): string {
   return value.trim().toLowerCase()
+}
+
+function normalizedName(value?: string | null): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+function entityLabelForModel(singularLabel: string, groupId: string, name?: string | null): string {
+  const displayName = normalizedName(name)
+  return displayName ? `${singularLabel} ${displayName}` : `${singularLabel} ${groupId}`
 }
 
 function formatTrainingDateRange(startDate?: string | null, endDate?: string | null): string {
@@ -1457,6 +1473,7 @@ function ModelListContent({ config }: { config: ModelFamilyConfig }) {
             <TableHead>
               <TableRow>
                 <TableCell>Group</TableCell>
+                <TableCell>Name</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Progress</TableCell>
                 <TableCell>Backtests</TableCell>
@@ -1475,6 +1492,7 @@ function ModelListContent({ config }: { config: ModelFamilyConfig }) {
                   onClick={() => openDetail(item.group_id)}
                 >
                   <TableCell sx={{ fontFamily: 'monospace' }}>{item.group_id}</TableCell>
+                  <TableCell>{normalizedName(item.name) ?? '—'}</TableCell>
                   <TableCell>
                     <Chip size="small" label={item.status} color={statusChipColor(item.status)} />
                   </TableCell>
@@ -1579,7 +1597,11 @@ function ModelListContent({ config }: { config: ModelFamilyConfig }) {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={deleteTarget ? `Delete ${singularLower} ${deleteTarget.group_id}?` : `Delete ${singularLower}`}
+        title={
+          deleteTarget
+            ? `Delete ${singularLower} ${normalizedName(deleteTarget.name) ?? deleteTarget.group_id}?`
+            : `Delete ${singularLower}`
+        }
         intent="error"
         confirmLabel="Delete"
         cancelLabel="Cancel"
@@ -1607,6 +1629,9 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
   const [workflowErrorsOpen, setWorkflowErrorsOpen] = useState(false)
   const [workflowStepsOpen, setWorkflowStepsOpen] = useState(false)
   const [mainTab, setMainTab] = useState<MainTab>('overview')
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingName, setSavingName] = useState(false)
   const refreshIntervalMs = platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const timezone = platformSettings.platform_behavior.timezone
   const timeDisplayFormat = appearance.time_display_format
@@ -1663,6 +1688,10 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
       cancelled = true
     }
   }, [config, groupId, singularLower])
+
+  useEffect(() => {
+    setNameDraft((detail?.name ?? '').toString())
+  }, [detail?.name])
 
   const activeStatus = status?.status ?? detail?.status ?? null
   const isActive = activeStatus ? isModelActive(activeStatus) : false
@@ -1736,9 +1765,42 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
   const targetCount = detail?.targets.length ?? 0
   const hasFailedWorkflow = (detail?.status ?? status?.status) === 'failed'
   const trainingRange = formatTrainingDateRange(detail?.training_start_date, detail?.training_end_date)
+  const detailName = normalizedName(detail?.name)
+  const detailDisplayLabel = detail ? entityLabelForModel(config.singularLabel, detail.group_id, detail.name) : ''
+  const trimmedNameDraft = nameDraft.trim()
+  const normalizedCurrentName = (detail?.name ?? '').toString()
+  const normalizedNameDraft = trimmedNameDraft ? trimmedNameDraft : ''
+  const nameDirty = Boolean(detail) && normalizedNameDraft !== normalizedCurrentName
+
+  async function saveName() {
+    if (!detail || !config.updateModelName || !nameDirty) {
+      return
+    }
+
+    setSavingName(true)
+    setError(null)
+    try {
+      const updated = await config.updateModelName(detail.group_id, trimmedNameDraft ? trimmedNameDraft : null)
+      setDetail(updated)
+      setStatus((current) =>
+        current
+          ? {
+              ...current,
+              name: updated.name ?? null,
+            }
+          : current,
+      )
+      setRenameDialogOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to update ${singularLower} name`)
+    } finally {
+      setSavingName(false)
+    }
+  }
 
   const overviewRows = useMemo(
     () => [
+      { label: 'Name', value: detailName ?? '—' },
       { label: 'Status', value: detail?.status ?? '—' },
       { label: 'Argo phase', value: status?.argo_phase ?? '—' },
       { label: 'Created', value: detail ? formatTimestamp(detail.created_at, timezone, timeDisplayFormat) : '—' },
@@ -1750,6 +1812,7 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
     ],
     [
       detail,
+      detailName,
       sourceCount,
       status?.argo_phase,
       targetCount,
@@ -1840,12 +1903,29 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
 
             <Stack spacing={1.25}>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                <Typography variant="h4" component="h1">
-                  {config.singularLabel} {detail.group_id}
-                </Typography>
+                <Stack spacing={0.25}>
+                  <Typography variant="h4" component="h1">
+                    {detailName ?? `${config.singularLabel} ${detail.group_id}`}
+                  </Typography>
+                  {detailName && (
+                    <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                      {detail.group_id}
+                    </Typography>
+                  )}
+                </Stack>
                 <Chip size="small" label={detail.status} color={statusChipColor(detail.status)} />
                 {status?.argo_phase && <Chip size="small" label={status.argo_phase} variant="outlined" />}
                 {hasFailedWorkflow && <Chip size="small" color="error" variant="outlined" label="workflow failed" />}
+                {config.updateModelName && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setRenameDialogOpen(true)}
+                    sx={{ ml: { xs: 0, sm: 1 } }}
+                  >
+                    Rename
+                  </Button>
+                )}
               </Stack>
               <Typography color="text.secondary" sx={{ maxWidth: 760 }}>
                 Dashboard view for the training set, targets, metrics, and operational metadata behind this{' '}
@@ -2198,12 +2278,49 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
         )}
       </Stack>
 
+      <Dialog
+        open={renameDialogOpen}
+        onClose={() => {
+          if (!savingName) {
+            setRenameDialogOpen(false)
+          }
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Rename {singularLower}</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Stack spacing={1.5} sx={{ pt: 0.5 }}>
+            <TextField
+              autoFocus
+              fullWidth
+              label="Name"
+              value={nameDraft}
+              onChange={(event) => setNameDraft(event.target.value)}
+              helperText="Leave blank to clear the model name."
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRenameDialogOpen(false)} disabled={savingName}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => void saveName()}
+            disabled={!nameDirty || savingName}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <ModelWorkflowErrorDialog
         groupId={workflowErrorsOpen ? detail.group_id : null}
         open={workflowErrorsOpen}
         onClose={() => setWorkflowErrorsOpen(false)}
         entityKind={config.singularLabel}
-        entityLabel={`${config.singularLabel} ${detail.group_id}`}
+        entityLabel={detailDisplayLabel}
         fetchWorkflowErrors={config.fetchModelWorkflowErrors}
       />
 
@@ -2211,10 +2328,10 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
         open={workflowStepsOpen}
         onClose={() => setWorkflowStepsOpen(false)}
         entityKind={config.singularLabel}
-        entityLabel={`${config.singularLabel} ${detail.group_id}`}
+        entityLabel={detailDisplayLabel}
         workflowName={detail.argo_workflow_name ?? ''}
         namespace={detail.argo_namespace ?? null}
-        workflowTitle={detail.group_id}
+        workflowTitle={detailName ? `${detailName} (${detail.group_id})` : detail.group_id}
       />
     </Box>
   )

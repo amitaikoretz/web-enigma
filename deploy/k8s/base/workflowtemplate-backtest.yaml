@@ -98,6 +98,17 @@ spec:
                   value: "{{workflow.parameters.backtest-id}}"
 
     - name: print-payload
+      retryStrategy:
+        limit: 3
+        retryPolicy: Always
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+              limits:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       inputs:
         parameters:
           - name: api-base-url
@@ -155,6 +166,17 @@ spec:
               path: /tmp/error-traceback.txt
 
     - name: plan-shards
+      retryStrategy:
+        limit: 3
+        retryPolicy: Always
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+              limits:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       inputs:
         parameters:
           - name: config-path
@@ -226,7 +248,6 @@ spec:
       retryStrategy:
         limit: 3
         retryPolicy: Always
-        expression: "{{=lastRetry.exitCode == 137}}"
       podSpecPatch: |
         containers:
           - name: main
@@ -293,6 +314,17 @@ spec:
               default: ""
 
     - name: merge-reports
+      retryStrategy:
+        limit: 3
+        retryPolicy: Always
+      podSpecPatch: |
+        containers:
+          - name: main
+            resources:
+              requests:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+              limits:
+                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       inputs:
         parameters:
           - name: manifest-path

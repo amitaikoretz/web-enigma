@@ -4,6 +4,7 @@ import type {
   RiskModelCreateResponse,
   RiskModelDetail,
   RiskModelListItem,
+  RiskModelUpdateRequest,
   RiskModelStatusResponse,
   RiskModelWorkflowErrorResponse,
 } from '../types/riskModels'
@@ -57,6 +58,23 @@ export async function fetchRiskModelDetail(groupId: string): Promise<RiskModelDe
   if (!response.ok) {
     throw new Error(await readApiError(response, 'Failed to load risk model'))
   }
+  return response.json() as Promise<RiskModelDetail>
+}
+
+export async function updateRiskModel(
+  groupId: string,
+  payload: RiskModelUpdateRequest,
+): Promise<RiskModelDetail> {
+  const response = await fetch(`/api/risk-models/${groupId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to update risk model'))
+  }
+
   return response.json() as Promise<RiskModelDetail>
 }
 

@@ -59,6 +59,7 @@ def _insert_model_group(
     group_id: str,
     family: str,
     backtest_ids: list[str],
+    name: str | None = None,
 ) -> None:
     now = datetime.now(UTC)
     session.add(
@@ -68,6 +69,7 @@ def _insert_model_group(
             status="running",
             argo_namespace=None,
             argo_workflow_name=None,
+            name=name,
             params_json={"backtest_ids": backtest_ids, "targets": [], "dataset_config": {}, "train_config": {}},
             artifact_dir=f"/tmp/{family}/{group_id}",
             summary_metrics_json=None,
@@ -127,3 +129,40 @@ def test_return_forecast_models_create_validates_backtest_artifacts(tmp_path) ->
         },
     )
     assert response.status_code == 422
+
+
+def test_return_forecast_models_can_rename_existing_model(tmp_path) -> None:
+    client = build_backtest_client(tmp_path)
+
+    labels_path = tmp_path / "labels.parquet"
+    features_path = tmp_path / "features.parquet"
+    pd.DataFrame([{"candidate_id": "c1", "label_hit_stop": 0, "label_mae": 0.1}]).to_parquet(
+        labels_path,
+        index=False,
+    )
+    pd.DataFrame([{"candidate_id": "c1", "f1": 1.0}]).to_parquet(features_path, index=False)
+
+    session_gen = client.app.dependency_overrides[get_db_session]()  # type: ignore[misc]
+    session = next(session_gen)
+    _insert_backtest_job(session, "b-return", labels_path=str(labels_path), features_path=str(features_path))
+    _insert_model_group(
+        session,
+        group_id="return-1",
+        family="return_forecast",
+        backtest_ids=["b-return"],
+        name="Old Return Name",
+    )
+    session.commit()
+    session.close()
+
+    response = client.patch("/return-forecast-models/return-1", json={"name": "Updated Return Name"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["name"] == "Updated Return Name"
+    assert payload["params"]["name"] == "Updated Return Name"
+
+    clear_response = client.patch("/return-forecast-models/return-1", json={"name": None})
+    assert clear_response.status_code == 200
+    clear_payload = clear_response.json()
+    assert clear_payload["name"] is None
+    assert "name" not in clear_payload["params"]

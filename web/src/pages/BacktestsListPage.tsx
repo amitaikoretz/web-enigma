@@ -40,6 +40,7 @@ interface LaunchResultState {
   status: 'success' | 'failed'
   message: string
   backtestId?: string
+  modelName?: string | null
   family: ModelTrainingFamily
 }
 
@@ -316,6 +317,7 @@ export function BacktestsListPage() {
             ? 'Risk model launch submitted successfully.'
             : 'Return forecast model launch submitted successfully.',
         backtestId: response.group_id,
+        modelName: response.name ?? null,
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to launch model'
@@ -432,7 +434,8 @@ export function BacktestsListPage() {
                   component={RouterLink}
                   to={launchResult.family === 'risk' ? `/models/risk/${launchResult.backtestId}` : `/models/returns/${launchResult.backtestId}`}
                 >
-                  {launchResult.family === 'risk' ? 'risk model' : 'return forecast model'} {launchResult.backtestId}
+                  {launchResult.family === 'risk' ? 'risk model' : 'return forecast model'}{' '}
+                  {launchResult.modelName ?? launchResult.backtestId}
                 </Link>
                 .
               </Typography>

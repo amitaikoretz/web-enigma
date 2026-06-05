@@ -100,6 +100,25 @@ def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
     assert "/tmp/merged-output-path.txt" in merge_args
 
 
+def test_build_backtest_workflow_spec_retries_each_step_with_increasing_memory() -> None:
+    spec = build_backtest_workflow_spec(
+        config_path="/data/config.yaml",
+        output_path="/data/output.json",
+        split_by="symbol",
+        backtest_id="abc123",
+    )
+
+    expected_retry = {"limit": 3, "retryPolicy": "Always"}
+    for template_name in {"print-payload", "plan-shards", "run-shard", "merge-reports"}:
+        template = next(item for item in spec["templates"] if item["name"] == template_name)
+        assert template["retryStrategy"] == expected_retry
+        assert "podSpecPatch" in template
+        assert "retries == 0 ? '4Gi'" in template["podSpecPatch"]
+        assert "retries == 1 ? '8Gi'" in template["podSpecPatch"]
+        assert "retries == 2 ? '16Gi'" in template["podSpecPatch"]
+        assert "'32Gi'" in template["podSpecPatch"]
+
+
 def test_build_backtest_workflow_spec_uses_configured_service_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

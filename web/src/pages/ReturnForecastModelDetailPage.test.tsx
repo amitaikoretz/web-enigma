@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 const fetchReturnForecastModelDetailMock = vi.hoisted(() => vi.fn())
@@ -11,12 +11,14 @@ const fetchWorkflowDebugConfigMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowPodLogsMock = vi.hoisted(() => vi.fn())
 const fetchReturnForecastModelWorkflowErrorsMock = vi.hoisted(() => vi.fn())
 const deleteReturnForecastModelMock = vi.hoisted(() => vi.fn())
+const updateReturnForecastModelMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/returnForecastModels', () => ({
   fetchReturnForecastModelDetail: fetchReturnForecastModelDetailMock,
   fetchReturnForecastModelStatus: fetchReturnForecastModelStatusMock,
   fetchReturnForecastModelWorkflowErrors: fetchReturnForecastModelWorkflowErrorsMock,
   deleteReturnForecastModel: deleteReturnForecastModelMock,
+  updateReturnForecastModel: updateReturnForecastModelMock,
 }))
 
 vi.mock('../api/argo', () => ({
@@ -42,9 +44,14 @@ vi.mock('../settings/useSettings', () => ({
 import { ReturnForecastModelDetailPage } from './ReturnForecastModelDetailPage'
 
 describe('ReturnForecastModelDetailPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('renders the training set, targets, metrics, and relevant info sections', async () => {
     fetchReturnForecastModelDetailMock.mockResolvedValue({
       group_id: 'rf-1',
+      name: 'Short Horizon Forecast',
       created_at: '2026-06-01T12:00:00.000Z',
       updated_at: '2026-06-01T12:01:00.000Z',
       status: 'succeeded',
@@ -134,7 +141,9 @@ describe('ReturnForecastModelDetailPage', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(screen.getByText(/Return forecast model rf-1/i)).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Short Horizon Forecast' })).toBeInTheDocument(),
+    )
     expect(screen.getByRole('tab', { name: 'Overview' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Training' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Targets' })).toBeInTheDocument()
@@ -147,6 +156,67 @@ describe('ReturnForecastModelDetailPage', () => {
     expect(await screen.findByText('Feature browser')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Groups' }))
     expect(screen.getByText('alpha.mean, alpha.std')).toBeInTheDocument()
+  })
+
+  it('renames an existing model from the detail page', async () => {
+    fetchReturnForecastModelDetailMock.mockResolvedValue({
+      group_id: 'rf-rename',
+      name: 'Old Return Name',
+      created_at: '2026-06-01T12:00:00.000Z',
+      updated_at: '2026-06-01T12:01:00.000Z',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      params: {},
+      artifact_dir: '/tmp/return-forecast-models/rf-rename',
+      summary_metrics: null,
+      dataset_manifest: null,
+      sources: [],
+      targets: [],
+    })
+    fetchReturnForecastModelStatusMock.mockResolvedValue({
+      group_id: 'rf-rename',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      argo_phase: 'Succeeded',
+    })
+    updateReturnForecastModelMock.mockResolvedValue({
+      group_id: 'rf-rename',
+      name: 'Renamed Return Forecast',
+      created_at: '2026-06-01T12:00:00.000Z',
+      updated_at: '2026-06-01T12:10:00.000Z',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      params: {},
+      artifact_dir: '/tmp/return-forecast-models/rf-rename',
+      summary_metrics: null,
+      dataset_manifest: null,
+      sources: [],
+      targets: [],
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/models/returns/rf-rename']}>
+        <Routes>
+          <Route path="/models/returns/:groupId" element={<ReturnForecastModelDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Old Return Name' })).toBeInTheDocument())
+    fireEvent.click(screen.getAllByRole('button', { name: 'Rename' }).at(-1)!)
+    const nameField = await screen.findByLabelText('Name')
+    fireEvent.change(nameField, { target: { value: 'Renamed Return Forecast' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() =>
+      expect(updateReturnForecastModelMock).toHaveBeenCalledWith('rf-rename', { name: 'Renamed Return Forecast' }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Renamed Return Forecast' })).toBeInTheDocument(),
+    )
   })
 
   it('opens workflow steps and workflow errors', async () => {

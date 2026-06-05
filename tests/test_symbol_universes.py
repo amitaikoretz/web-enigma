@@ -17,11 +17,6 @@ from app.universes.registry import UNIVERSE_REGISTRY
 
 
 def _build_client(tmp_path) -> tuple[TestClient, sessionmaker[Session]]:
-    app = create_app(
-        DataCacheConfig(directory=str(tmp_path)),
-        output_dir=tmp_path / "api-results",
-        log_file=tmp_path / "api.log",
-    )
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         future=True,
@@ -30,6 +25,12 @@ def _build_client(tmp_path) -> tuple[TestClient, sessionmaker[Session]]:
     )
     Base.metadata.create_all(engine)
     test_session_factory = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    app = create_app(
+        DataCacheConfig(directory=str(tmp_path)),
+        output_dir=tmp_path / "api-results",
+        log_file=tmp_path / "api.log",
+        session_factory=test_session_factory,
+    )
 
     def override_db_session():
         session = test_session_factory()
@@ -42,11 +43,13 @@ def _build_client(tmp_path) -> tuple[TestClient, sessionmaker[Session]]:
     return TestClient(app), test_session_factory
 
 
-def test_list_universes_empty(tmp_path):
+def test_list_universes_includes_registry_seeded_universes(tmp_path):
     client, _session_factory = _build_client(tmp_path)
     response = client.get("/universes")
     assert response.status_code == 200
-    assert response.json() == []
+    items = response.json()
+    keys = {item["key"] for item in items}
+    assert {"sp500", "nasdaq100", "dow30", "bluechip_etfs"}.issubset(keys)
 
 
 def test_sync_registry_seeds_bluechip_etfs_universe(tmp_path):

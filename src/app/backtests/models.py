@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.config.models import AnalyzerConfig, BacktestExecutionConfig, BrokerConfig
+from app.config.models import AnalyzerConfig, BacktestExecutionConfig, BacktestModelPolicyConfig, BrokerConfig
 from app.output.models import BacktestReport
 from app.output.models import TradeRecord
 from app.strategies.exit_rules import ExitRulesSelection
@@ -52,6 +52,7 @@ class BacktestCreateRequest(BaseModel):
     symbols: list[str] = Field(min_length=1)
     triggers: list[BacktestTriggerSelection] = Field(min_length=1)
     exit_rules: list[ExitRulesSelection] = Field(min_length=1)
+    model_policy: BacktestModelPolicyConfig | None = None
     broker: BrokerConfig | None = None
     analyzers: AnalyzerConfig | None = None
     execution: BacktestExecutionConfig | None = None

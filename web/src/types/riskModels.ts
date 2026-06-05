@@ -7,6 +7,7 @@ export type {
   ModelSourceRow as RiskModelSourceRow,
   ModelStatus as RiskModelStatus,
   ModelStatusResponse as RiskModelStatusResponse,
+  ModelUpdateRequest as RiskModelUpdateRequest,
   ModelTargetRow as RiskModelTargetRow,
   ModelTaskType as RiskModelTaskType,
   ModelTargetSpec as RiskModelTargetSpec,

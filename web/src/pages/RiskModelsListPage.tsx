@@ -4,6 +4,7 @@ import {
   fetchRiskModels,
   fetchRiskModelWorkflowErrors,
   retryRiskModel,
+  updateRiskModel,
 } from '../api/riskModels'
 import { createModelListPage } from './modelFamilyPages'
 
@@ -16,6 +17,7 @@ const RiskModelsListPageImpl = createModelListPage({
   fetchModelWorkflowErrors: fetchRiskModelWorkflowErrors,
   retryModel: retryRiskModel,
   deleteModel: deleteRiskModel,
+  updateModelName: (groupId, name) => updateRiskModel(groupId, { name }),
 })
 
 export function RiskModelsListPage() {

@@ -9,6 +9,7 @@ export interface ModelTargetSpec {
 
 export interface ModelCreateRequest {
   backtest_ids: string[]
+  name?: string | null
   targets: ModelTargetSpec[]
   dataset_config: Record<string, unknown>
   train_config: Record<string, unknown>
@@ -16,13 +17,19 @@ export interface ModelCreateRequest {
 
 export interface ModelCreateResponse {
   group_id: string
+  name?: string | null
   status: ModelStatus
   argo_namespace?: string | null
   argo_workflow_name?: string | null
 }
 
+export interface ModelUpdateRequest {
+  name?: string | null
+}
+
 export interface ModelStatusResponse {
   group_id: string
+  name?: string | null
   status: ModelStatus
   argo_namespace?: string | null
   argo_workflow_name?: string | null
@@ -63,6 +70,7 @@ export interface DatasetManifestSummary {
 
 export interface ModelListItem {
   group_id: string
+  name?: string | null
   created_at: string
   updated_at: string
   status: ModelStatus
@@ -100,6 +108,7 @@ export interface ModelSourceRow {
 
 export interface ModelDetail {
   group_id: string
+  name?: string | null
   created_at: string
   updated_at: string
   status: ModelStatus

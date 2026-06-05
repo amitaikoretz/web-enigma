@@ -4,6 +4,7 @@ import {
   fetchReturnForecastModelWorkflowErrors,
   fetchReturnForecastModels,
   retryReturnForecastModel,
+  updateReturnForecastModel,
 } from '../api/returnForecastModels'
 import { createModelListPage } from './modelFamilyPages'
 
@@ -16,6 +17,7 @@ const ReturnForecastModelsListPageImpl = createModelListPage({
   fetchModelWorkflowErrors: fetchReturnForecastModelWorkflowErrors,
   retryModel: retryReturnForecastModel,
   deleteModel: deleteReturnForecastModel,
+  updateModelName: (groupId, name) => updateReturnForecastModel(groupId, { name }),
 })
 
 export function ReturnForecastModelsListPage() {

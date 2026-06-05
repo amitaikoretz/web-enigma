@@ -4,6 +4,7 @@ import type {
   ReturnForecastModelCreateResponse,
   ReturnForecastModelDetail,
   ReturnForecastModelListItem,
+  ReturnForecastModelUpdateRequest,
   ReturnForecastModelStatusResponse,
   ReturnForecastModelWorkflowErrorResponse,
 } from '../types/returnForecastModels'
@@ -61,6 +62,23 @@ export async function fetchReturnForecastModelDetail(groupId: string): Promise<R
   if (!response.ok) {
     throw new Error(await readApiError(response, 'Failed to load return forecast model'))
   }
+  return response.json() as Promise<ReturnForecastModelDetail>
+}
+
+export async function updateReturnForecastModel(
+  groupId: string,
+  payload: ReturnForecastModelUpdateRequest,
+): Promise<ReturnForecastModelDetail> {
+  const response = await fetch(`/api/return-forecast-models/${groupId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'Failed to update return forecast model'))
+  }
+
   return response.json() as Promise<ReturnForecastModelDetail>
 }
 

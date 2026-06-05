@@ -65,7 +65,33 @@ class SymbolUniverseService:
             return {"symbols": _normalize_symbol_list(spec.symbols)}
         return {}
 
+    def _get_universe_record(self, session: Session, *, key: str) -> SymbolUniverse | None:
+        normalized = key.strip().lower()
+        return session.execute(select(SymbolUniverse).where(SymbolUniverse.key == normalized)).scalar_one_or_none()
+
+    def _seed_registry_universes(self, session: Session) -> dict[str, int]:
+        created = 0
+        for key, spec in UNIVERSE_REGISTRY.items():
+            if self._get_universe_record(session, key=key) is not None:
+                continue
+            record = SymbolUniverse(
+                key=spec.key,
+                kind="registry",
+                name=spec.name,
+                description=spec.description,
+                provider=spec.provider,
+                provider_ref=self._registry_provider_ref(spec),
+                is_active=1,
+            )
+            session.add(record)
+            created += 1
+        if created:
+            session.commit()
+        return {"created": created}
+
     def list_universes(self, session: Session, *, active_only: bool) -> list[dict]:
+        self._seed_registry_universes(session)
+
         # Auto-migrate legacy universes stored with the deprecated "fmp" provider to "wikipedia"
         # so the UI/API never surface "fmp" again.
         migrated = False
@@ -135,7 +161,7 @@ class SymbolUniverseService:
 
         desired_keys = set(UNIVERSE_REGISTRY.keys())
         for key, spec in UNIVERSE_REGISTRY.items():
-            record = self.get_universe(session, key=key)
+            record = self._get_universe_record(session, key=key)
             if record is None:
                 record = SymbolUniverse(
                     key=spec.key,
@@ -199,7 +225,13 @@ class SymbolUniverseService:
 
     def get_universe(self, session: Session, *, key: str) -> SymbolUniverse | None:
         normalized = key.strip().lower()
-        return session.execute(select(SymbolUniverse).where(SymbolUniverse.key == normalized)).scalar_one_or_none()
+        record = self._get_universe_record(session, key=normalized)
+        if record is not None:
+            return record
+        if normalized in UNIVERSE_REGISTRY:
+            self._seed_registry_universes(session)
+            return self._get_universe_record(session, key=normalized)
+        return None
 
     def create_universe(self, session: Session, *, payload: dict) -> SymbolUniverse:
         record = SymbolUniverse(

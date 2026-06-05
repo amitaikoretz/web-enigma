@@ -33,10 +33,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { createBacktest, fetchBacktestInputConfig } from '../api/backtests'
+import { BacktestModelPolicyForm } from '../components/BacktestModelPolicyForm'
 import { fetchExitRules, fetchStrategies } from '../api/strategies'
 import { createUserUniverse, fetchUniverseConstituents, fetchUniverses } from '../api/universes'
 import { useSettings } from '../settings/useSettings'
-import type { BacktestFeed } from '../types/backtests'
+import type { BacktestFeed, BacktestModelPolicyInput } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 import type { StrategyMetadata, StrategyParameterMetadata } from '../types/strategies'
 import type { SymbolUniverse } from '../types/universes'
@@ -273,6 +274,8 @@ export function BacktestWizardPage() {
   const [triggerOverrides, setTriggerOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const [selectedExitRuleNames, setSelectedExitRuleNames] = useState<string[]>([])
   const [exitRuleOverrides, setExitRuleOverrides] = useState<Record<string, Record<string, unknown>>>({})
+  const [modelPolicy, setModelPolicy] = useState<BacktestModelPolicyInput | null>(null)
+  const [prefillModelPolicy, setPrefillModelPolicy] = useState<BacktestModelPolicyInput | null>(null)
   const [pendingExitRuleToAdd, setPendingExitRuleToAdd] = useState<StrategyMetadata | null>(null)
   const [submitBroker, setSubmitBroker] = useState(platformSettings.backtest_defaults.broker)
   const [submitAnalyzers, setSubmitAnalyzers] = useState(platformSettings.backtest_defaults.analyzers)
@@ -642,6 +645,8 @@ export function BacktestWizardPage() {
         setTriggerOverrides(nextTriggerOverrides)
         setSelectedExitRuleNames(nextExitRuleNames)
         setExitRuleOverrides(nextExitRuleOverrides)
+        setPrefillModelPolicy(prefill.modelPolicy ?? null)
+        setModelPolicy(prefill.modelPolicy ?? null)
         setSubmitBroker(prefill.broker ?? platformSettings.backtest_defaults.broker)
         setSubmitAnalyzers(prefill.analyzers ?? platformSettings.backtest_defaults.analyzers)
         setSubmitExecution(prefill.execution ?? platformSettings.backtest_defaults.execution)
@@ -833,6 +838,7 @@ export function BacktestWizardPage() {
             })),
           },
         ],
+        model_policy: modelPolicy ?? undefined,
         broker: submitBroker,
         analyzers: submitAnalyzers,
         execution: submitExecution,
@@ -1344,6 +1350,17 @@ export function BacktestWizardPage() {
 
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
+            <Typography variant="h6">Model policy</Typography>
+            <BacktestModelPolicyForm
+              disabled={submitting}
+              initialValue={prefillModelPolicy}
+              onChange={setModelPolicy}
+            />
+          </Stack>
+        </Paper>
+
+        <Paper sx={{ p: 3 }}>
+          <Stack spacing={2}>
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               <TuneIcon color="primary" />
               <Typography variant="h6">Exit rules</Typography>
@@ -1579,6 +1596,18 @@ export function BacktestWizardPage() {
               <Box>
                 <Typography variant="overline">Exit rules</Typography>
                 <Typography variant="h5">{selectedExitRuleNames.length}</Typography>
+              </Box>
+              <Box>
+                <Typography variant="overline">Model policy</Typography>
+                <Chip
+                  size="small"
+                  label={
+                    modelPolicy
+                      ? `${modelPolicy.forecast_model ? 'forecast' : ''}${modelPolicy.forecast_model && modelPolicy.risk_model ? ' + ' : ''}${modelPolicy.risk_model ? 'risk' : ''}`
+                      : 'trigger-only'
+                  }
+                  color={modelPolicy ? 'primary' : 'default'}
+                />
               </Box>
               <Box>
                 <Typography variant="overline">Expanded runs</Typography>

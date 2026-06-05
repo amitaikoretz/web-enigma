@@ -35,6 +35,7 @@ describe('RiskModelsListPage', () => {
     fetchRiskModelsMock.mockResolvedValue([
       {
         group_id: 'g-1',
+        name: 'Momentum Risk v1',
         created_at: '2026-06-01T12:00:00.000Z',
         updated_at: '2026-06-01T12:01:00.000Z',
         status: 'succeeded',
@@ -57,7 +58,8 @@ describe('RiskModelsListPage', () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() => expect(screen.getByText('g-1')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText('Momentum Risk v1')).toBeInTheDocument())
+    expect(screen.getByText('g-1')).toBeInTheDocument()
     expect(screen.getByText('2024-01-01 to 2024-01-10')).toBeInTheDocument()
     fireEvent.click(screen.getByText('g-1'))
 
@@ -68,6 +70,7 @@ describe('RiskModelsListPage', () => {
     fetchRiskModelsMock.mockResolvedValue([
       {
         group_id: 'g-failed',
+        name: 'Momentum Risk v1',
         created_at: '2026-06-01T12:00:00.000Z',
         updated_at: '2026-06-01T12:01:00.000Z',
         status: 'failed',

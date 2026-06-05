@@ -1,4 +1,8 @@
-import type { BacktestCreateRequest, BacktestFeed } from '../types/backtests'
+import type {
+  BacktestCreateRequest,
+  BacktestFeed,
+  BacktestModelPolicyInput,
+} from '../types/backtests'
 import type { BacktestListItem } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 
@@ -10,6 +14,7 @@ export interface BacktestWizardPrefill {
   symbols: string[]
   triggers: Array<{ name: string; params: Record<string, unknown> }>
   exitRules: Array<{ name: string; params: Record<string, unknown> }>
+  modelPolicy?: BacktestModelPolicyInput | null
   broker?: BacktestCreateRequest['broker']
   analyzers?: BacktestCreateRequest['analyzers']
   execution?: BacktestCreateRequest['execution']
@@ -72,6 +77,68 @@ function parseExecution(value: unknown): BacktestCreateRequest['execution'] | un
   return { fill_model }
 }
 
+function parseModelArtifactRef(value: unknown): BacktestModelPolicyInput['forecast_model'] {
+  if (!isRecord(value)) {
+    return undefined
+  }
+  const groupId = typeof value.group_id === 'string' && value.group_id.trim() ? value.group_id.trim() : null
+  const artifactPath =
+    typeof value.model_artifact_path === 'string' && value.model_artifact_path.trim()
+      ? value.model_artifact_path.trim()
+      : null
+  const targetKey = typeof value.target_key === 'string' && value.target_key.trim() ? value.target_key.trim() : null
+  if (!groupId && !artifactPath) {
+    return undefined
+  }
+  return {
+    group_id: groupId,
+    model_artifact_path: artifactPath,
+    target_key: targetKey,
+  }
+}
+
+function parseModelPolicy(value: unknown): BacktestModelPolicyInput | undefined {
+  if (!isRecord(value)) {
+    return undefined
+  }
+  const forecast_model = parseModelArtifactRef(value.forecast_model)
+  const risk_model = parseModelArtifactRef(value.risk_model)
+  if (
+    forecast_model === undefined &&
+    risk_model === undefined &&
+    typeof value.threshold_bps !== 'number' &&
+    typeof value.target_edge_bps !== 'number' &&
+    typeof value.max_risk_fraction !== 'number' &&
+    typeof value.allow_short !== 'boolean' &&
+    typeof value.min_signal_score !== 'number'
+  ) {
+    return undefined
+  }
+  const modelPolicy: BacktestModelPolicyInput = {}
+  if (forecast_model !== undefined) {
+    modelPolicy.forecast_model = forecast_model
+  }
+  if (risk_model !== undefined) {
+    modelPolicy.risk_model = risk_model
+  }
+  if (typeof value.threshold_bps === 'number') {
+    modelPolicy.threshold_bps = value.threshold_bps
+  }
+  if (typeof value.target_edge_bps === 'number') {
+    modelPolicy.target_edge_bps = value.target_edge_bps
+  }
+  if (typeof value.max_risk_fraction === 'number') {
+    modelPolicy.max_risk_fraction = value.max_risk_fraction
+  }
+  if (typeof value.allow_short === 'boolean') {
+    modelPolicy.allow_short = value.allow_short
+  }
+  if (typeof value.min_signal_score === 'number') {
+    modelPolicy.min_signal_score = value.min_signal_score
+  }
+  return modelPolicy
+}
+
 export function parseInputConfigToPrefill(
   inputConfig: Record<string, unknown>,
 ): BacktestWizardPrefill | null {
@@ -92,6 +159,7 @@ export function parseInputConfigToPrefill(
   let broker: BacktestCreateRequest['broker'] | undefined
   let analyzers: BacktestCreateRequest['analyzers'] | undefined
   let execution: BacktestCreateRequest['execution'] | undefined
+  let modelPolicy: BacktestModelPolicyInput | undefined
 
   for (const runRaw of runsRaw) {
     if (!isRecord(runRaw)) {
@@ -169,6 +237,9 @@ export function parseInputConfigToPrefill(
     if (execution === undefined) {
       execution = parseExecution(runRaw.execution)
     }
+    if (modelPolicy === undefined) {
+      modelPolicy = parseModelPolicy(runRaw.model_policy)
+    }
   }
 
   if (
@@ -200,6 +271,7 @@ export function parseInputConfigToPrefill(
     broker,
     analyzers,
     execution,
+    modelPolicy,
   }
 }
 
