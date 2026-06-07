@@ -46,6 +46,9 @@ import { RiskModelsListPage } from './pages/RiskModelsListPage'
 import { RiskModelDetailPage } from './pages/RiskModelDetailPage'
 import { ReturnForecastModelsListPage } from './pages/ReturnForecastModelsListPage'
 import { ReturnForecastModelDetailPage } from './pages/ReturnForecastModelDetailPage'
+import { DailyIndexForecastModelsListPage } from './pages/DailyIndexForecastModelsListPage'
+import { DailyIndexForecastModelDetailPage } from './pages/DailyIndexForecastModelDetailPage'
+import { DailyIndexForecastWizardPage } from './pages/DailyIndexForecastWizardPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
@@ -214,6 +217,9 @@ function App() {
           <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
           <Route path="/models/returns" element={<ReturnForecastModelsListPage />} />
           <Route path="/models/returns/:groupId" element={<ReturnForecastModelDetailPage />} />
+          <Route path="/models/daily-index" element={<DailyIndexForecastModelsListPage />} />
+          <Route path="/models/daily-index/new" element={<DailyIndexForecastWizardPage />} />
+          <Route path="/models/daily-index/:groupId" element={<DailyIndexForecastModelDetailPage />} />
           <Route path="/data/downloads" element={<DataDownloadsListPage />} />
           <Route path="/data/downloads/new" element={<DataDownloadWizardPage />} />
           <Route path="/data/downloads/:jobId" element={<DataDownloadDetailPage />} />

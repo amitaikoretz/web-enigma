@@ -144,3 +144,44 @@ def test_alembic_upgrade_creates_backtest_jobs_table(tmp_path, monkeypatch):
 
     assert "fast" in stored
     assert runtime_status == "created"
+
+
+def test_alembic_upgrade_creates_daily_index_forecast_tables(tmp_path, monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    database_path = tmp_path / "daily-index.db"
+    alembic_ini = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(alembic_ini))
+    config.set_main_option("script_location", str(alembic_ini.parent / "alembic"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path}")
+    os.environ.pop("DATABASE_URL", None)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(f"sqlite:///{database_path}", future=True)
+    inspector = inspect(engine)
+
+    assert "daily_index_feature_runs" in inspector.get_table_names()
+
+    feature_run_columns = {column["name"] for column in inspector.get_columns("daily_index_feature_runs")}
+    assert {
+        "id",
+        "symbol",
+        "benchmark_symbol",
+        "decision_times_json",
+        "start_date",
+        "end_date",
+        "status",
+        "argo_namespace",
+        "argo_workflow_name",
+        "params_json",
+        "artifact_dir",
+        "manifest_path",
+        "features_parquet_path",
+        "labels_parquet_path",
+        "summary_metrics_json",
+        "created_at",
+        "updated_at",
+    }.issubset(feature_run_columns)
+
+    group_columns = {column["name"] for column in inspector.get_columns("risk_model_groups")}
+    assert "feature_run_id" in group_columns

@@ -38,6 +38,7 @@ interface CandlestickChartProps {
   data: MarketDataResponse | null
   orders?: OrderRecord[]
   trades?: TradeRecord[]
+  annotationMarkers?: SeriesMarker<Time>[]
   focusWindow?: TradeChartFocusWindowMs | null
   onResetFocusWindow?: () => void
   showViewportWindow?: boolean
@@ -196,6 +197,7 @@ function toAnnotationMarkers(
   data: MarketDataResponse,
   orders: OrderRecord[],
   trades: TradeRecord[],
+  annotationMarkers: SeriesMarker<Time>[] = [],
 ): SeriesMarker<Time>[] {
   const barTimes = new Set(data.rows.map((row) => String(toChartTime(row.timestamp, data.resolution))))
   const markers: SeriesMarker<Time>[] = []
@@ -218,6 +220,7 @@ function toAnnotationMarkers(
   }
 
   markers.push(...toTradeMarkers(data, trades))
+  markers.push(...annotationMarkers.filter((marker) => barTimes.has(String(marker.time))))
   return markers.sort((left, right) => Number(left.time) - Number(right.time))
 }
 
@@ -306,6 +309,7 @@ export function CandlestickChart({
   data,
   orders = [],
   trades = [],
+  annotationMarkers = [],
   focusWindow = null,
   onResetFocusWindow,
   showViewportWindow = false,
@@ -719,12 +723,21 @@ export function CandlestickChart({
 
     series.setData(toCandlestickData(data))
     volumeSeries.setData(toVolumeData(data, appearance.chart_up_color, appearance.chart_down_color))
-    markers.setMarkers(toAnnotationMarkers(data, orders, trades))
+    markers.setMarkers(toAnnotationMarkers(data, orders, trades, annotationMarkers ?? []))
     if (!focusRange) {
       chart.timeScale().fitContent()
     }
     updateBoundaryPositions()
-  }, [appearance.chart_down_color, appearance.chart_up_color, data, focusRange, orders, trades, updateBoundaryPositions])
+  }, [
+    appearance.chart_down_color,
+    appearance.chart_up_color,
+    annotationMarkers,
+    data,
+    focusRange,
+    orders,
+    trades,
+    updateBoundaryPositions,
+  ])
 
   useEffect(() => {
     const chart = chartRef.current

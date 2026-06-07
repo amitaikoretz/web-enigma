@@ -187,6 +187,21 @@ api-serve: ## Run the Python API on the host (Argo Workflows in local k3s/docker
 	export REDIS_LOCAL_PORT="$(REDIS_LOCAL_PORT)"; \
 	export ARGO_SERVER_PORT="$(ARGO_SERVER_PORT)"; \
 	export ARGO_SERVER_URL="$${ARGO_SERVER_URL:-$(ARGO_SERVER_URL)}"; \
+	check_tcp() { (echo >/dev/tcp/localhost/$(POSTGRES_LOCAL_PORT)) >/dev/null 2>&1; }; \
+	if ! check_tcp; then \
+		echo "Postgres port-forward on localhost:$(POSTGRES_LOCAL_PORT) is not reachable; starting api-port-forwards..."; \
+		$(MAKE) api-port-forwards; \
+		i=0; \
+		until check_tcp || [ $$i -ge 20 ]; do \
+			i=$$((i + 1)); \
+			sleep 1; \
+		done; \
+	fi; \
+	if ! check_tcp; then \
+		echo "Postgres is still unreachable on localhost:$(POSTGRES_LOCAL_PORT). Run 'make api-port-forwards' and try again." >&2; \
+		exit 1; \
+	fi; \
+	alembic upgrade head; \
 	chmod +x scripts/print_api_serve_prerequisites.sh; \
 	./scripts/print_api_serve_prerequisites.sh; \
 	if command -v kalyxctl >/dev/null 2>&1; then \

@@ -1,0 +1,257 @@
+serviceAccountName: __SERVICE_ACCOUNT__
+ttlStrategy:
+  secondsAfterCompletion: __TTL_SECONDS__
+entrypoint: main
+arguments:
+  parameters:
+    - {name: group-id, value: __GROUP_ID__}
+    - {name: backtest-ids-json, value: __BACKTEST_IDS_JSON__}
+    - {name: dataset-config-json, value: __DATASET_CONFIG_JSON__}
+    - {name: train-config-json, value: __TRAIN_CONFIG_JSON__}
+    - {name: artifact-dir, value: __ARTIFACT_DIR__}
+    - {name: family, value: __FAMILY__}
+volumes:
+  - name: workspace
+    emptyDir: {}
+  - name: backtest-results
+    persistentVolumeClaim:
+      claimName: __RESULTS_CLAIM__
+  - name: backtest-cache
+    persistentVolumeClaim:
+      claimName: __CACHE_CLAIM__
+templates:
+  - name: main
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: backtest-ids-json}
+        - {name: dataset-config-json}
+        - {name: train-config-json}
+        - {name: artifact-dir}
+        - {name: family}
+    steps:
+      - - name: build-dataset
+          template: build-dataset
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{inputs.parameters.group-id}}"}
+              - {name: backtest-ids-json, value: "{{inputs.parameters.backtest-ids-json}}"}
+              - {name: dataset-config-json, value: "{{inputs.parameters.dataset-config-json}}"}
+              - {name: artifact-dir, value: "{{inputs.parameters.artifact-dir}}"}
+      - - name: train-stop
+          template: train-stop
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{inputs.parameters.group-id}}"}
+              - {name: dataset-path, value: "{{steps.build-dataset.outputs.parameters.dataset-path}}"}
+              - {name: manifest-path, value: "{{steps.build-dataset.outputs.parameters.manifest-path}}"}
+              - {name: feature-cols, value: "{{steps.build-dataset.outputs.parameters.feature-cols}}"}
+              - {name: train-config-json, value: "{{inputs.parameters.train-config-json}}"}
+              - {name: artifact-dir, value: "{{inputs.parameters.artifact-dir}}"}
+      - - name: train-mae
+          template: train-mae
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{inputs.parameters.group-id}}"}
+              - {name: dataset-path, value: "{{steps.build-dataset.outputs.parameters.dataset-path}}"}
+              - {name: manifest-path, value: "{{steps.build-dataset.outputs.parameters.manifest-path}}"}
+              - {name: feature-cols, value: "{{steps.build-dataset.outputs.parameters.feature-cols}}"}
+              - {name: train-config-json, value: "{{inputs.parameters.train-config-json}}"}
+              - {name: artifact-dir, value: "{{inputs.parameters.artifact-dir}}"}
+      - - name: register-results
+          template: register-results
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{inputs.parameters.group-id}}"}
+              - {name: family, value: "{{inputs.parameters.family}}"}
+              - {name: manifest-path, value: "{{steps.build-dataset.outputs.parameters.manifest-path}}"}
+              - {name: feature-cols, value: "{{steps.build-dataset.outputs.parameters.feature-cols}}"}
+              - {name: stop-model-path, value: "{{steps.train-stop.outputs.parameters.model-path}}"}
+              - {name: stop-metrics-path, value: "{{steps.train-stop.outputs.parameters.metrics-path}}"}
+              - {name: mae-model-path, value: "{{steps.train-mae.outputs.parameters.model-path}}"}
+              - {name: mae-metrics-path, value: "{{steps.train-mae.outputs.parameters.metrics-path}}"}
+  - name: build-dataset
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: backtest-ids-json}
+        - {name: dataset-config-json}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.risk_build_dataset_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --backtest-ids-json
+        - "{{inputs.parameters.backtest-ids-json}}"
+        - --dataset-config-json
+        - "{{inputs.parameters.dataset-config-json}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+        - --dataset-path-out
+        - /tmp/dataset-path.txt
+        - --manifest-path-out
+        - /tmp/manifest-path.txt
+        - --feature-cols-out
+        - /tmp/feature-cols.json
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+        - {name: backtest-cache, mountPath: /data/cache}
+    outputs:
+      parameters:
+        - {name: dataset-path, valueFrom: {path: /tmp/dataset-path.txt}}
+        - {name: manifest-path, valueFrom: {path: /tmp/manifest-path.txt}}
+        - {name: feature-cols, valueFrom: {path: /tmp/feature-cols.json}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: train-stop
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: dataset-path}
+        - {name: manifest-path}
+        - {name: feature-cols}
+        - {name: train-config-json}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.risk_train_stop_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --dataset-path
+        - "{{inputs.parameters.dataset-path}}"
+        - --manifest-path
+        - "{{inputs.parameters.manifest-path}}"
+        - --feature-cols-json
+        - "{{inputs.parameters.feature-cols}}"
+        - --train-config-json
+        - "{{inputs.parameters.train-config-json}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+        - --model-path-out
+        - /tmp/model-path.txt
+        - --metrics-path-out
+        - /tmp/metrics-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+        - {name: backtest-cache, mountPath: /data/cache}
+    outputs:
+      parameters:
+        - {name: model-path, valueFrom: {path: /tmp/model-path.txt}}
+        - {name: metrics-path, valueFrom: {path: /tmp/metrics-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: train-mae
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: dataset-path}
+        - {name: manifest-path}
+        - {name: feature-cols}
+        - {name: train-config-json}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.risk_train_mae_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --dataset-path
+        - "{{inputs.parameters.dataset-path}}"
+        - --manifest-path
+        - "{{inputs.parameters.manifest-path}}"
+        - --feature-cols-json
+        - "{{inputs.parameters.feature-cols}}"
+        - --train-config-json
+        - "{{inputs.parameters.train-config-json}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+        - --model-path-out
+        - /tmp/model-path.txt
+        - --metrics-path-out
+        - /tmp/metrics-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+        - {name: backtest-cache, mountPath: /data/cache}
+    outputs:
+      parameters:
+        - {name: model-path, valueFrom: {path: /tmp/model-path.txt}}
+        - {name: metrics-path, valueFrom: {path: /tmp/metrics-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: register-results
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: family}
+        - {name: manifest-path}
+        - {name: feature-cols}
+        - {name: stop-model-path}
+        - {name: stop-metrics-path}
+        - {name: mae-model-path}
+        - {name: mae-metrics-path}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.risk_register_results_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --family
+        - "{{inputs.parameters.family}}"
+        - --manifest-path
+        - "{{inputs.parameters.manifest-path}}"
+        - --feature-cols-json
+        - "{{inputs.parameters.feature-cols}}"
+        - --stop-model-path
+        - "{{inputs.parameters.stop-model-path}}"
+        - --stop-metrics-path
+        - "{{inputs.parameters.stop-metrics-path}}"
+        - --mae-model-path
+        - "{{inputs.parameters.mae-model-path}}"
+        - --mae-metrics-path
+        - "{{inputs.parameters.mae-metrics-path}}"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+        - {name: backtest-cache, mountPath: /data/cache}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}

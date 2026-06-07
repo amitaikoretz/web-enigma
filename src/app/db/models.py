@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy import Uuid as SqlUuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -247,6 +247,7 @@ class RiskModelGroup(Base):
         Index("ix_risk_model_groups_created_at", "created_at"),
         Index("ix_risk_model_groups_status", "status"),
         Index("ix_risk_model_groups_family_created_at", "family", "created_at"),
+        Index("ix_risk_model_groups_feature_run_id", "feature_run_id"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -255,6 +256,7 @@ class RiskModelGroup(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     argo_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
     argo_workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    feature_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     params_json: Mapped[dict] = mapped_column(json_type, nullable=False, default=dict)
     artifact_dir: Mapped[str] = mapped_column(Text, nullable=False)
     summary_metrics_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
@@ -279,6 +281,39 @@ class RiskModelSource(Base):
     backtest_id: Mapped[str] = mapped_column(String(64), ForeignKey("backtest_jobs.id"), nullable=False)
     source_report_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class DailyIndexFeatureRun(Base):
+    __tablename__ = "daily_index_feature_runs"
+    __table_args__ = (
+        Index("ix_daily_index_feature_runs_created_at", "created_at"),
+        Index("ix_daily_index_feature_runs_status", "status"),
+        Index("ix_daily_index_feature_runs_symbol", "symbol"),
+        Index("ix_daily_index_feature_runs_feature_run_id", "id", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    benchmark_symbol: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    decision_times_json: Mapped[list[str]] = mapped_column(json_type, nullable=False, default=list)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    argo_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    argo_workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    params_json: Mapped[dict] = mapped_column(json_type, nullable=False, default=dict)
+    artifact_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    features_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    labels_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_metrics_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 class RiskModelTarget(Base):

@@ -1,0 +1,288 @@
+serviceAccountName: __SERVICE_ACCOUNT__
+entrypoint: daily-index-forecast
+arguments:
+  parameters:
+    - {name: group-id, value: __GROUP_ID__}
+    - {name: feature-run-id, value: __FEATURE_RUN_ID__}
+    - {name: universe-json, value: __UNIVERSE_JSON__}
+    - {name: feature-config-json, value: __FEATURE_CONFIG_JSON__}
+    - {name: walk-forward-json, value: __WALK_FORWARD_JSON__}
+    - {name: train-config-json, value: __TRAIN_CONFIG_JSON__}
+    - {name: costs-json, value: __COSTS_JSON__}
+    - {name: data-cache-json, value: __DATA_CACHE_JSON__}
+    - {name: artifact-dir, value: __ARTIFACT_DIR__}
+    - {name: feature-artifact-dir, value: __FEATURE_ARTIFACT_DIR__}
+    - {name: family, value: __FAMILY__}
+volumes:
+  - name: workspace
+    emptyDir: {}
+  - name: backtest-results
+    persistentVolumeClaim:
+      claimName: backtest-results
+templates:
+  - name: daily-index-forecast
+    steps:
+      - - name: extract-features
+          template: extract-features
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{workflow.parameters.group-id}}"}
+              - {name: feature-run-id, value: "{{workflow.parameters.feature-run-id}}"}
+              - {name: universe-json, value: "{{workflow.parameters.universe-json}}"}
+              - {name: feature-config-json, value: "{{workflow.parameters.feature-config-json}}"}
+              - {name: costs-json, value: "{{workflow.parameters.costs-json}}"}
+              - {name: data-cache-json, value: "{{workflow.parameters.data-cache-json}}"}
+              - {name: artifact-dir, value: "{{workflow.parameters.feature-artifact-dir}}"}
+      - - name: generate-labels
+          template: generate-labels
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{workflow.parameters.group-id}}"}
+              - {name: feature-run-id, value: "{{workflow.parameters.feature-run-id}}"}
+              - {name: universe-json, value: "{{workflow.parameters.universe-json}}"}
+              - {name: feature-config-json, value: "{{workflow.parameters.feature-config-json}}"}
+              - {name: costs-json, value: "{{workflow.parameters.costs-json}}"}
+              - {name: data-cache-json, value: "{{workflow.parameters.data-cache-json}}"}
+              - {name: artifact-dir, value: "{{workflow.parameters.feature-artifact-dir}}"}
+      - - name: train-evaluate
+          template: train-evaluate
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{workflow.parameters.group-id}}"}
+              - {name: feature-run-id, value: "{{workflow.parameters.feature-run-id}}"}
+              - {name: dataset-path, value: "{{steps.extract-features.outputs.parameters.dataset-path}}"}
+              - {name: features-path, value: "{{steps.extract-features.outputs.parameters.features-path}}"}
+              - {name: labels-path, value: "{{steps.generate-labels.outputs.parameters.labels-path}}"}
+              - {name: walk-forward-json, value: "{{workflow.parameters.walk-forward-json}}"}
+              - {name: train-config-json, value: "{{workflow.parameters.train-config-json}}"}
+              - {name: costs-json, value: "{{workflow.parameters.costs-json}}"}
+              - {name: artifact-dir, value: "{{workflow.parameters.artifact-dir}}"}
+      - - name: register-results
+          template: register-results
+          arguments:
+            parameters:
+              - {name: group-id, value: "{{workflow.parameters.group-id}}"}
+              - {name: feature-run-id, value: "{{workflow.parameters.feature-run-id}}"}
+              - {name: manifest-path, value: "{{steps.extract-features.outputs.parameters.manifest-path}}"}
+              - {name: model-path, value: "{{steps.train-evaluate.outputs.parameters.model-path}}"}
+              - {name: metrics-path, value: "{{steps.train-evaluate.outputs.parameters.metrics-path}}"}
+              - {name: features-path, value: "{{steps.extract-features.outputs.parameters.features-path}}"}
+              - {name: labels-path, value: "{{steps.generate-labels.outputs.parameters.labels-path}}"}
+              - {name: artifact-dir, value: "{{workflow.parameters.artifact-dir}}"}
+  - name: extract-features
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: feature-run-id}
+        - {name: universe-json}
+        - {name: feature-config-json}
+        - {name: costs-json}
+        - {name: data-cache-json}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.daily_index_extract_features_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --feature-run-id
+        - "{{inputs.parameters.feature-run-id}}"
+        - --universe-json
+        - "{{inputs.parameters.universe-json}}"
+        - --feature-config-json
+        - "{{inputs.parameters.feature-config-json}}"
+        - --costs-json
+        - "{{inputs.parameters.costs-json}}"
+        - --data-cache-json
+        - "{{inputs.parameters.data-cache-json}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+        - --dataset-path-out
+        - /tmp/dataset-path.txt
+        - --features-path-out
+        - /tmp/features-path.txt
+        - --labels-path-out
+        - /tmp/labels-path.txt
+        - --manifest-path-out
+        - /tmp/manifest-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      env:
+        - name: ARGO_PROGRESS_FILE
+          value: /tmp/argo-progress.txt
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: dataset-path, valueFrom: {path: /tmp/dataset-path.txt}}
+        - {name: features-path, valueFrom: {path: /tmp/features-path.txt}}
+        - {name: labels-path, valueFrom: {path: /tmp/labels-path.txt}}
+        - {name: manifest-path, valueFrom: {path: /tmp/manifest-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: generate-labels
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: feature-run-id}
+        - {name: universe-json}
+        - {name: feature-config-json}
+        - {name: costs-json}
+        - {name: data-cache-json}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.daily_index_generate_labels_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --feature-run-id
+        - "{{inputs.parameters.feature-run-id}}"
+        - --universe-json
+        - "{{inputs.parameters.universe-json}}"
+        - --feature-config-json
+        - "{{inputs.parameters.feature-config-json}}"
+        - --costs-json
+        - "{{inputs.parameters.costs-json}}"
+        - --data-cache-json
+        - "{{inputs.parameters.data-cache-json}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+        - --labels-path-out
+        - /tmp/labels-path.txt
+        - --manifest-path-out
+        - /tmp/manifest-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      env:
+        - name: ARGO_PROGRESS_FILE
+          value: /tmp/argo-progress.txt
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: labels-path, valueFrom: {path: /tmp/labels-path.txt}}
+        - {name: manifest-path, valueFrom: {path: /tmp/manifest-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: train-evaluate
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: feature-run-id}
+        - {name: dataset-path}
+        - {name: features-path}
+        - {name: labels-path}
+        - {name: walk-forward-json}
+        - {name: train-config-json}
+        - {name: costs-json}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.daily_index_train_evaluate_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --feature-run-id
+        - "{{inputs.parameters.feature-run-id}}"
+        - --dataset-path
+        - "{{inputs.parameters.dataset-path}}"
+        - --features-path
+        - "{{inputs.parameters.features-path}}"
+        - --labels-path
+        - "{{inputs.parameters.labels-path}}"
+        - --walk-forward-json
+        - "{{inputs.parameters.walk-forward-json}}"
+        - --train-config-json
+        - "{{inputs.parameters.train-config-json}}"
+        - --costs-json
+        - "{{inputs.parameters.costs-json}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+        - --model-path-out
+        - /tmp/model-path.txt
+        - --metrics-path-out
+        - /tmp/metrics-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      env:
+        - name: ARGO_PROGRESS_FILE
+          value: /tmp/argo-progress.txt
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: model-path, valueFrom: {path: /tmp/model-path.txt}}
+        - {name: metrics-path, valueFrom: {path: /tmp/metrics-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: register-results
+    inputs:
+      parameters:
+        - {name: group-id}
+        - {name: feature-run-id}
+        - {name: manifest-path}
+        - {name: model-path}
+        - {name: metrics-path}
+        - {name: features-path}
+        - {name: labels-path}
+        - {name: artifact-dir}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.daily_index_register_results_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --group-id
+        - "{{inputs.parameters.group-id}}"
+        - --feature-run-id
+        - "{{inputs.parameters.feature-run-id}}"
+        - --manifest-path
+        - "{{inputs.parameters.manifest-path}}"
+        - --model-path
+        - "{{inputs.parameters.model-path}}"
+        - --metrics-path
+        - "{{inputs.parameters.metrics-path}}"
+        - --features-path
+        - "{{inputs.parameters.features-path}}"
+        - --labels-path
+        - "{{inputs.parameters.labels-path}}"
+        - --artifact-dir
+        - "{{inputs.parameters.artifact-dir}}"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      env:
+        - name: ARGO_PROGRESS_FILE
+          value: /tmp/argo-progress.txt
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}

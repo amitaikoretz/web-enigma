@@ -1,0 +1,274 @@
+entrypoint: backtest-batch
+serviceAccountName: __SERVICE_ACCOUNT__
+parallelism: "__SHARD_PARALLELISM__"
+ttlStrategy:
+  secondsAfterCompletion: 604800
+arguments:
+  parameters:
+    - name: api-base-url
+      value: __API_BASE_URL__
+    - name: config-path
+      value: __CONFIG_PATH__
+    - name: output-path
+      value: __OUTPUT_PATH__
+    - name: split-by
+      value: __SPLIT_BY__
+    - name: backtest-id
+      value: __BACKTEST_ID__
+    - name: config-b64
+      value: __CONFIG_B64__
+    - name: shard-parallelism
+      value: "__SHARD_PARALLELISM__"
+volumeClaimTemplates:
+  - metadata:
+      name: workspace
+    spec:
+      accessModes: [ReadWriteOnce]
+      resources:
+        requests:
+          storage: 5Gi
+volumes:
+  - name: backtest-results
+    persistentVolumeClaim:
+      claimName: __RESULTS_CLAIM__
+  - name: backtest-cache
+    persistentVolumeClaim:
+      claimName: __CACHE_CLAIM__
+templates:
+  - name: backtest-batch
+    steps:
+      - - name: print-payload
+          template: print-payload
+          arguments:
+            parameters:
+              - name: api-base-url
+                value: "{{workflow.parameters.api-base-url}}"
+              - name: config-path
+                value: "{{workflow.parameters.config-path}}"
+              - name: config-b64
+                value: "{{workflow.parameters.config-b64}}"
+              - name: split-by
+                value: "{{workflow.parameters.split-by}}"
+              - name: backtest-id
+                value: "{{workflow.parameters.backtest-id}}"
+              - name: output-path
+                value: "{{workflow.parameters.output-path}}"
+      - - name: plan
+          template: plan-shards
+          arguments:
+            parameters:
+              - name: config-path
+                value: "{{workflow.parameters.config-path}}"
+              - name: config-b64
+                value: "{{workflow.parameters.config-b64}}"
+              - name: split-by
+                value: "{{workflow.parameters.split-by}}"
+              - name: backtest-id
+                value: "{{workflow.parameters.backtest-id}}"
+      - - name: run-shards
+          template: run-shard
+          arguments:
+            parameters:
+              - name: shard-id
+                value: "{{item.shard_id}}"
+              - name: shard-config-path
+                value: "{{item.config_path}}"
+              - name: shard-output-path
+                value: "{{item.output_path}}"
+          withParam: "{{steps.plan.outputs.parameters.shards}}"
+      - - name: merge
+          template: merge-reports
+          arguments:
+            parameters:
+              - name: manifest-path
+                value: "{{steps.plan.outputs.parameters.manifest-path}}"
+              - name: output-path
+                value: "{{workflow.parameters.output-path}}"
+              - name: backtest-id
+                value: "{{workflow.parameters.backtest-id}}"
+  - name: print-payload
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            requests:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+            limits:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+    inputs:
+      parameters:
+        - name: api-base-url
+        - name: config-path
+        - name: config-b64
+        - name: split-by
+        - name: backtest-id
+        - name: output-path
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.print_argo_payload"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --api-base-url
+        - "{{inputs.parameters.api-base-url}}"
+        - --config-path
+        - "{{inputs.parameters.config-path}}"
+        - --config-b64
+        - "{{inputs.parameters.config-b64}}"
+        - --split-by
+        - "{{inputs.parameters.split-by}}"
+        - --backtest-id
+        - "{{inputs.parameters.backtest-id}}"
+        - --launch-curl-out
+        - /tmp/launch-curl.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: launch-curl, valueFrom: {path: /tmp/launch-curl.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: plan-shards
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            requests:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+            limits:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+    inputs:
+      parameters:
+        - name: config-path
+        - name: config-b64
+        - name: split-by
+        - name: backtest-id
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.plan_shards_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --config-path
+        - "{{inputs.parameters.config-path}}"
+        - --config-b64
+        - "{{inputs.parameters.config-b64}}"
+        - --split-by
+        - "{{inputs.parameters.split-by}}"
+        - --backtest-id
+        - "{{inputs.parameters.backtest-id}}"
+        - --manifest-path-out
+        - /tmp/manifest-path.txt
+        - --work-dir-out
+        - /tmp/work-dir.txt
+        - --shards-param-out
+        - /tmp/shards-param.json
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: shards, valueFrom: {path: /tmp/shards-param.json}}
+        - {name: manifest-path, valueFrom: {path: /tmp/manifest-path.txt}}
+        - {name: work-dir, valueFrom: {path: /tmp/work-dir.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+  - name: run-shard
+    metadata:
+      annotations:
+        workflows.argoproj.io/progress: "0/100"
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            requests:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+            limits:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+    inputs:
+      parameters:
+        - name: shard-id
+        - name: shard-config-path
+        - name: shard-output-path
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.run_shard_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --shard-id
+        - "{{inputs.parameters.shard-id}}"
+        - --config
+        - "{{inputs.parameters.shard-config-path}}"
+        - --output
+        - "{{inputs.parameters.shard-output-path}}"
+        - --cache-dir
+        - /data/cache
+        - --shard-output-path-out
+        - /tmp/shard-output-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+        - {name: backtest-cache, mountPath: /data/cache}
+    outputs:
+      parameters:
+        - {name: shard-output-path, valueFrom: {path: /tmp/shard-output-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: merge-reports
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    podSpecPatch: |
+      containers:
+        - name: main
+          resources:
+            requests:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+            limits:
+              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+    inputs:
+      parameters:
+        - name: manifest-path
+        - name: output-path
+        - name: backtest-id
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.merge_reports_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --manifest
+        - "{{inputs.parameters.manifest-path}}"
+        - --output
+        - "{{inputs.parameters.output-path}}"
+        - --backtest-id
+        - "{{inputs.parameters.backtest-id}}"
+        - --merged-output-path-out
+        - /tmp/merged-output-path.txt
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: output-path, valueFrom: {path: /tmp/merged-output-path.txt}}
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}

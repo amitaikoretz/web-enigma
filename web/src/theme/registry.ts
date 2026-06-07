@@ -10,7 +10,10 @@ import {
 export const ADAPTIVE_THEME_PRESETS: ThemePreset[] = ['default']
 
 export const LIGHT_THEME_PRESETS: ThemePreset[] = [
+  'soft_tonal',
+  'compact_light',
   'alpine',
+  'slate_harbor',
   'fjord',
   'fjord_porcelain',
   'oslo',
@@ -27,6 +30,7 @@ export const LIGHT_THEME_PRESETS: ThemePreset[] = [
 export const DARK_THEME_PRESETS: ThemePreset[] = [
   'solaris',
   'aurora',
+  'halo',
   'fjord_ink_fx',
   'deep_fjord_fx',
   'aurora_slate',

@@ -64,6 +64,7 @@ export function createAppTheme(
   const elevatedGlass =
     presetId === 'fjord_porcelain' ||
     presetId === 'glacier_lilac' ||
+    presetId === 'halo' ||
     presetId === 'fjord_ink_fx' ||
     presetId === 'deep_fjord_fx' ||
     presetId === 'aurora_slate'

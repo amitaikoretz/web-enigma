@@ -27,6 +27,8 @@ from app.scans.service import ScanJobService
 from app.settings import PlatformSettingsService
 from app.risk.persistence import SqlAlchemyRiskModelRepository
 from app.risk.service import RiskModelService
+from app.daily_index_forecast.persistence import SqlAlchemyDailyIndexForecastRepository
+from app.daily_index_forecast.service import DailyIndexForecastService
 
 
 def create_app(
@@ -86,6 +88,7 @@ def create_app(
     backtest_repo = SqlAlchemyBacktestJobRepository(resolved_session_factory)
     risk_repo = SqlAlchemyRiskModelRepository(resolved_session_factory, family="risk")
     return_forecast_repo = SqlAlchemyRiskModelRepository(resolved_session_factory, family="return_forecast")
+    daily_index_repo = SqlAlchemyDailyIndexForecastRepository(resolved_session_factory, family="daily_index_forecast")
     app.state.deps = ApiDependencies(
         cache_config=resolved_cache_config,
         output_dir=resolved_output_dir,
@@ -123,6 +126,15 @@ def create_app(
             family_label="Return forecast model",
         ),
         return_forecast_models_repo=return_forecast_repo,
+        daily_index_forecast_models=DailyIndexForecastService(
+            session_factory=resolved_session_factory,
+            repo=daily_index_repo,
+            argo_submitter=ArgoWorkflowSubmitter(),
+            family="daily_index_forecast",
+            family_slug="daily-index-forecast-models",
+            family_label="Daily Index Forecast",
+        ),
+        daily_index_forecast_models_repo=daily_index_repo,
     )
 
     register_exception_handlers(app, logger)

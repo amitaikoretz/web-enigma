@@ -1,0 +1,29 @@
+serviceAccountName: __SERVICE_ACCOUNT__
+ttlStrategy:
+  secondsAfterCompletion: 604800
+entrypoint: refresh
+templates:
+  - name: refresh
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c"]
+      args:
+        - "printf '%s\n' __COMMAND_LINE__ > /tmp/argo-command-line.txt; exec __COMMAND_LINE__"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/argo-command-line.txt}}
+  - name: sync-registry
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["sh", "-c"]
+      args:
+        - "printf '%s\n' __COMMAND_LINE__ > /tmp/argo-command-line.txt; exec __COMMAND_LINE__"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/argo-command-line.txt}}

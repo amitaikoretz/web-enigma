@@ -12,6 +12,8 @@ from app.scans.service import ScanJobService
 from app.settings import PlatformSettingsService
 from app.risk.persistence import SqlAlchemyRiskModelRepository
 from app.risk.service import RiskModelService
+from app.daily_index_forecast.persistence import SqlAlchemyDailyIndexForecastRepository
+from app.daily_index_forecast.service import DailyIndexForecastService
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,8 @@ class ApiDependencies:
     risk_models_repo: SqlAlchemyRiskModelRepository
     return_forecast_models: RiskModelService
     return_forecast_models_repo: SqlAlchemyRiskModelRepository
+    daily_index_forecast_models: DailyIndexForecastService
+    daily_index_forecast_models_repo: SqlAlchemyDailyIndexForecastRepository
 
 
 def get_deps(request: Request) -> ApiDependencies:

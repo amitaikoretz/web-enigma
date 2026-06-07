@@ -19,13 +19,16 @@ function stripTrailingSlash(value: string): string {
   return value.endsWith('/') && value.length > 1 ? value.slice(0, -1) : value
 }
 
-function familyFromPath(pathname: string): 'risk' | 'returns' | 'overview' {
+function familyFromPath(pathname: string): 'risk' | 'returns' | 'daily-index' | 'overview' {
   const normalized = stripTrailingSlash(pathname)
   if (normalized.startsWith('/models/risk')) {
     return 'risk'
   }
   if (normalized.startsWith('/models/returns')) {
     return 'returns'
+  }
+  if (normalized.startsWith('/models/daily-index')) {
+    return 'daily-index'
   }
   return 'overview'
 }
@@ -41,8 +44,8 @@ export function ModelsLandingPage() {
           Models
         </Typography>
         <Typography color="text.secondary" sx={{ maxWidth: 820 }}>
-          Browse risk models and return forecast models from one shared entry point. Both families preserve the same
-          workflow diagnostics and status scaffolding.
+          Browse risk models, return forecast models, and the new Daily Index Forecast family from one shared entry
+          point. All three preserve the same workflow diagnostics and status scaffolding.
         </Typography>
       </Stack>
 
@@ -68,6 +71,14 @@ export function ModelsLandingPage() {
           label="Return Forecast Models"
           component={RouterLink}
           to="/models/returns"
+          icon={<BoltIcon />}
+          iconPosition="start"
+        />
+        <Tab
+          value="daily-index"
+          label="Daily Index Forecast"
+          component={RouterLink}
+          to="/models/daily-index"
           icon={<BoltIcon />}
           iconPosition="start"
         />
@@ -110,6 +121,24 @@ export function ModelsLandingPage() {
           <CardActions sx={{ px: 2, pb: 2 }}>
             <Button component={RouterLink} to="/models/returns" endIcon={<ArrowForwardIcon />}>
               Open return forecasts
+            </Button>
+          </CardActions>
+        </Card>
+
+        <Card variant="outlined">
+          <CardContent>
+            <Stack spacing={1.25}>
+              <BoltIcon color="info" />
+              <Typography variant="h6">Daily Index Forecast</Typography>
+              <Typography color="text.secondary">
+                Research-only daily forecast runs with reusable session-level features, walk-forward evaluation, and
+                holdout metrics.
+              </Typography>
+            </Stack>
+          </CardContent>
+          <CardActions sx={{ px: 2, pb: 2 }}>
+            <Button component={RouterLink} to="/models/daily-index" endIcon={<ArrowForwardIcon />}>
+              Open daily index forecasts
             </Button>
           </CardActions>
         </Card>
