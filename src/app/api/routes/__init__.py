@@ -16,6 +16,8 @@ from app.api.routes import (
     settings,
     symbol_universes,
     daily_index_forecast_models,
+    market_overview,
+    datasets,
     risk_models,
     return_forecast_models,
     strategies,
@@ -38,6 +40,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(risk_models.router)
     app.include_router(return_forecast_models.router)
     app.include_router(daily_index_forecast_models.router)
+    app.include_router(market_overview.router)
+    app.include_router(datasets.router)
     app.include_router(trading_contracts.router)
     app.include_router(live_runtime.router)
     app.include_router(symbol_universes.router)

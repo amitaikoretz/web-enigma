@@ -7,6 +7,8 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import ApiDependencies, get_deps
+from app.feature_importance.io import load_feature_importance_artifact
+from app.feature_importance.models import FeatureImportanceTarget
 from app.daily_index_forecast.models import (
     DailyIndexForecastCreateRequest,
     DailyIndexForecastCreateResponse,
@@ -50,10 +52,26 @@ def _resolve_existing_path(*candidates: str | None) -> str | None:
     return None
 
 
+def _load_feature_importance_for_path(*candidates: str | None):
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.is_dir():
+            path = path / "feature_importance.json"
+        else:
+            path = path.with_name("feature_importance.json")
+        importance = load_feature_importance_artifact(path)
+        if importance is not None and importance.targets:
+            return importance.targets[0]
+    return None
+
+
 def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastDetailResponse:
     feature_run = detail.feature_run
     feature_run_response = None
     manifest = None
+    feature_importance = _load_feature_importance_for_path(detail.artifact_dir)
     if feature_run is not None:
         manifest = _load_manifest_summary(feature_run.manifest_path)
         feature_run_response = {
@@ -80,6 +98,13 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
             manifest = _load_manifest_summary(target.dataset_manifest_path)
             if manifest is not None:
                 break
+    target_importances: dict[str, FeatureImportanceTarget] = {}
+    for target in detail.targets:
+        target_importance = _load_feature_importance_for_path(target.model_artifact_path, detail.artifact_dir)
+        if target_importance is not None:
+            target_importances[target.target_key] = target_importance
+            if feature_importance is None:
+                feature_importance = target_importance
     return DailyIndexForecastDetailResponse(
         group_id=detail.group_id,
         feature_run_id=detail.feature_run_id,
@@ -105,11 +130,13 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
                 "metrics": target.metrics,
                 "dataset_manifest_path": target.dataset_manifest_path,
                 "feature_columns": target.feature_columns,
+                "feature_importance": target_importances.get(target.target_key),
                 "created_at": target.created_at,
                 "updated_at": target.updated_at,
             }
             for target in detail.targets
         ],
+        feature_importance=feature_importance,
     )
 
 

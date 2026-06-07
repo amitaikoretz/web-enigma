@@ -18,6 +18,7 @@ export const defaultPlatformSettings: PlatformSettings = {
     date_range_preset: '30D',
     resolution: '5m',
     feed: 'iex',
+    dataset_storage_root: '/data/datasets',
     broker: {
       cash: 10000,
       commission: 0,
@@ -53,6 +54,7 @@ export const defaultPlatformSettings: PlatformSettings = {
   platform_behavior: {
     timezone: 'America/New_York',
     auto_refresh_interval_seconds: 1.5,
+    market_overview_refresh_interval_seconds: 300,
     confirm_before_launch: false,
     preferred_landing_page: 'backtests',
     backtest_execution_backend: 'argo',

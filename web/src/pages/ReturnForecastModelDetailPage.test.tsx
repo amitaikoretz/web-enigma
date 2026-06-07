@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { defaultPlatformSettings } from '../settings/defaults'
 
 const fetchReturnForecastModelDetailMock = vi.hoisted(() => vi.fn())
 const fetchReturnForecastModelStatusMock = vi.hoisted(() => vi.fn())
@@ -30,7 +31,9 @@ vi.mock('../api/argo', () => ({
 vi.mock('../settings/useSettings', () => ({
   useSettings: () => ({
     platformSettings: {
+      ...defaultPlatformSettings,
       platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
         auto_refresh_interval_seconds: 60,
         timezone: 'UTC',
       },
@@ -120,10 +123,26 @@ describe('ReturnForecastModelDetailPage', () => {
           },
           dataset_manifest_path: '/tmp/return-forecast-models/rf-1/dataset/manifest.json',
           feature_columns: ['alpha.mean', 'alpha.std', 'beta.value', 'plain_feature', 'plain_other', 'gamma.level'],
+          feature_importance: {
+            target_key: 'forecast_return',
+            rows: [
+              { feature: 'alpha.mean', importance: 0.5, signed_importance: 0.25 },
+              { feature: 'beta.value', importance: 0.3, signed_importance: -0.12 },
+              { feature: 'plain_feature', importance: 0.2, signed_importance: 0.07 },
+            ],
+          },
           created_at: '2026-06-01T12:00:10.000Z',
           updated_at: '2026-06-01T12:01:10.000Z',
         },
       ],
+      feature_importance: {
+        target_key: 'forecast_return',
+        rows: [
+          { feature: 'alpha.mean', importance: 0.5, signed_importance: 0.25 },
+          { feature: 'beta.value', importance: 0.3, signed_importance: -0.12 },
+          { feature: 'plain_feature', importance: 0.2, signed_importance: 0.07 },
+        ],
+      },
     })
     fetchReturnForecastModelStatusMock.mockResolvedValue({
       group_id: 'rf-1',
@@ -148,6 +167,7 @@ describe('ReturnForecastModelDetailPage', () => {
     expect(screen.getByRole('tab', { name: 'Training' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Targets' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Performance' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Feature Importance' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Debug' })).toBeInTheDocument()
     expect(screen.getAllByText('Error metrics').length).toBeGreaterThan(0)
     expect(screen.getByText('How far predictions miss the realized target values on average.')).toBeInTheDocument()
@@ -156,6 +176,11 @@ describe('ReturnForecastModelDetailPage', () => {
     expect(await screen.findByText('Feature browser')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Groups' }))
     expect(screen.getByText('alpha.mean, alpha.std')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Feature Importance' }))
+    expect(await screen.findByText('Feature importance')).toBeInTheDocument()
+    expect(screen.getByText('alpha.mean')).toBeInTheDocument()
+    expect(screen.getByText('50.0%')).toBeInTheDocument()
   })
 
   it('renames an existing model from the detail page', async () => {

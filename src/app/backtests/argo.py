@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -7,9 +8,11 @@ from typing import Any
 
 import httpx
 
+from app.argo_submission_logging import log_argo_workflow_submission
 from app.backtests.argo_workflow import build_backtest_workflow_spec
 
 _DEFAULT_SHARD_PARALLELISM = 8
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -119,11 +122,20 @@ class ArgoWorkflowSubmitter:
         return headers
 
     def _http_request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        endpoint_name = kwargs.pop("endpoint_name", None)
         if not self.config.server_url:
             raise RuntimeError(
                 "ARGO_SERVER_URL is not configured; set it to the Argo Workflows server HTTP endpoint"
             )
         url = f"{self.config.server_url}{path}"
+        if method.upper() == "POST" and endpoint_name is not None:
+            log_argo_workflow_submission(
+                logger,
+                endpoint_name=str(endpoint_name),
+                method=method,
+                path=path,
+                payload=kwargs.get("json"),
+            )
         try:
             return self._http_client_instance().request(method, url, headers=self._http_headers(), **kwargs)
         except httpx.ConnectError as exc:
@@ -169,9 +181,11 @@ class ArgoWorkflowSubmitter:
                 config_yaml=config_yaml,
             ),
         }
+        endpoint_name = "backtests.argo.submit"
         response = self._http_request(
             "POST",
             f"/api/v1/workflows/{self.config.namespace}",
+            endpoint_name=endpoint_name,
             json=body,
         )
         if response.status_code >= 400:

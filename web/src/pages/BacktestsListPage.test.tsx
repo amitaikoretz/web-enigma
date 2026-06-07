@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
+import { defaultPlatformSettings } from '../settings/defaults'
 
 const fetchBacktestsMock = vi.hoisted(() => vi.fn())
 const createRiskModelMock = vi.hoisted(() => vi.fn())
@@ -29,7 +30,9 @@ vi.mock('../api/returnForecastModels', () => ({
 vi.mock('../settings/useSettings', () => ({
   useSettings: () => ({
     platformSettings: {
+      ...defaultPlatformSettings,
       platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
         auto_refresh_interval_seconds: 60,
         timezone: 'UTC',
       },
@@ -93,13 +96,15 @@ describe('BacktestsListPage model launch modal', () => {
 
     await screen.findByLabelText('Select backtest bt-1')
     clickBacktestSelection('bt-1')
-    await waitFor(() => expect(findEnabledButton(/train risk model/i)).toBeEnabled())
-    fireEvent.click(findEnabledButton(/train risk model/i))
+    await waitFor(() => expect(findEnabledButton(/train model/i)).toBeEnabled())
+    fireEvent.click(findEnabledButton(/train model/i))
     expect(screen.getByText('Train risk model')).toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
     await screen.findByLabelText(/model name/i)
     fireEvent.change(screen.getByLabelText(/model name/i), { target: { value: 'Momentum Risk v1' } })
     fireEvent.change(screen.getByLabelText(/random seed/i), { target: { value: '13' } })
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
     fireEvent.click(screen.getByRole('button', { name: /start training/i }))
 
     await waitFor(() =>
@@ -150,8 +155,10 @@ describe('BacktestsListPage model launch modal', () => {
 
     await screen.findByLabelText('Select backtest bt-2')
     clickBacktestSelection('bt-2')
-    await waitFor(() => expect(findEnabledButton(/train return forecast/i)).toBeEnabled())
-    fireEvent.click(findEnabledButton(/train return forecast/i))
+    await waitFor(() => expect(findEnabledButton(/train model/i)).toBeEnabled())
+    fireEvent.click(findEnabledButton(/train model/i))
+    fireEvent.click(screen.getByRole('button', { name: /return forecast model/i }))
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
     expect(screen.getByText('Train return forecast model')).toBeInTheDocument()
 
     await screen.findByLabelText(/model name/i)
@@ -160,6 +167,7 @@ describe('BacktestsListPage model launch modal', () => {
     fireEvent.change(screen.getByLabelText(/lookback bars/i), { target: { value: '90' } })
     fireEvent.change(screen.getByLabelText(/horizon bars/i), { target: { value: '8' } })
     fireEvent.click(screen.getByLabelText(/allow short signals/i))
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
     fireEvent.click(screen.getByRole('button', { name: /start training/i }))
 
     await waitFor(() =>

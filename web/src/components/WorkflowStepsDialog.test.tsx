@@ -7,11 +7,15 @@ const fetchWorkflowMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowDebugConfigMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowPodLogsMock = vi.hoisted(() => vi.fn())
 
-vi.mock('../api/argo', () => ({
-  fetchWorkflow: fetchWorkflowMock,
-  fetchWorkflowDebugConfig: fetchWorkflowDebugConfigMock,
-  fetchWorkflowPodLogs: fetchWorkflowPodLogsMock,
-}))
+vi.mock('../api/argo', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/argo')>()
+  return {
+    ...actual,
+    fetchWorkflow: fetchWorkflowMock,
+    fetchWorkflowDebugConfig: fetchWorkflowDebugConfigMock,
+    fetchWorkflowPodLogs: fetchWorkflowPodLogsMock,
+  }
+})
 
 import { WorkflowStepsDialog } from './WorkflowStepsDialog'
 
@@ -148,6 +152,61 @@ describe('WorkflowStepsDialog', () => {
     expect(screen.getByText('RuntimeError: boom')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: /logs/i }))
     await screen.findByText(/pod-2 logs/)
+  })
+
+  it('downloads the submitted workflow JSON from the dialog header', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const createObjectURLMock = vi.fn<(blob: Blob) => string>(() => 'blob:workflow-json')
+    const revokeObjectURLMock = vi.fn<(url: string) => void>()
+    Object.defineProperty(window.URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURLMock,
+    })
+    Object.defineProperty(window.URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURLMock,
+    })
+
+    fetchWorkflowMock.mockResolvedValue(buildWorkflowResponse())
+    fetchWorkflowDebugConfigMock.mockResolvedValue({
+      workflow_name: 'wf-1',
+      namespace: 'ns',
+      pod_name: 'pod-1',
+      terminal_command: 'python -m app.standalone.load_data --symbol AAPL',
+      launch_configuration: { type: 'debugpy' },
+      snippet: '{"type":"debugpy"}',
+    })
+    fetchWorkflowPodLogsMock.mockResolvedValue({
+      workflow_name: 'wf-1',
+      namespace: 'ns',
+      pod_name: 'pod-1',
+      container_name: 'main',
+      logs: 'pod-1 logs',
+    })
+
+    render(
+      <WorkflowStepsDialog
+        open
+        onClose={() => undefined}
+        entityKind="Backtest"
+        entityLabel="Backtest demo-1"
+        workflowName="wf-1"
+        namespace="ns"
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /download json/i })).toBeEnabled())
+    fireEvent.click(screen.getByRole('button', { name: /download json/i }))
+
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1)
+    const blob = createObjectURLMock.mock.calls[0][0]
+    const text = await blob.text()
+    expect(text).toContain('"metadata"')
+    expect(text).toContain('"status"')
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:workflow-json')
+
+    clickSpy.mockRestore()
   })
 
   it('shows an empty state when the workflow only contains nodes without a pod identifier', async () => {

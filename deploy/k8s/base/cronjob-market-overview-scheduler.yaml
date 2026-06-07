@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: market-overview-scheduler
+  labels:
+    app.kubernetes.io/name: market-overview-scheduler
+    app.kubernetes.io/component: market-overview
+spec:
+  schedule: "*/1 * * * *"
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: market-overview-scheduler
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: scheduler
+              image: backtest-app:latest
+              imagePullPolicy: IfNotPresent
+              command:
+                - kalyxctl
+                - market-overview-scheduler
+              envFrom:
+                - secretRef:
+                    name: app-secrets

@@ -1,6 +1,7 @@
 import { Chip } from '@mui/material'
 
 import type { DataDownloadJobStatus } from '../types/dataDownloads'
+import { StatusPill, titleCaseStatus } from './StatusPill'
 
 interface DataDownloadStatusChipProps {
   status: DataDownloadJobStatus
@@ -16,7 +17,7 @@ export function DataDownloadStatusChip({ status }: DataDownloadStatusChipProps) 
           ? 'info'
           : 'warning'
 
-  return <Chip label={status.replace('_', ' ')} color={color} size="small" />
+  return <StatusPill label={titleCaseStatus(status)} color={color} pulseDot={status === 'running'} />
 }
 
 interface CacheStatusChipProps {

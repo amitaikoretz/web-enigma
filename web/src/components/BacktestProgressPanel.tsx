@@ -6,12 +6,14 @@ interface BacktestProgressPanelProps {
   progressPct: number
   isIndeterminate?: boolean
   startedAt?: string | null
+  title?: string
 }
 
 export function BacktestProgressPanel({
   progressPct,
   isIndeterminate = false,
   startedAt = null,
+  title = 'Backtest in progress',
 }: BacktestProgressPanelProps) {
   const nowMs = Date.now()
   const startMs = Date.parse(startedAt ?? '')
@@ -32,7 +34,7 @@ export function BacktestProgressPanel({
   return (
     <Paper sx={{ p: 3 }}>
       <Stack spacing={1.5}>
-        <Typography variant="h6">Backtest in progress</Typography>
+        <Typography variant="h6">{title}</Typography>
         <LinearProgress
           variant={isIndeterminate ? 'indeterminate' : 'determinate'}
           value={pct}

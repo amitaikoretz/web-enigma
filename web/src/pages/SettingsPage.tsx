@@ -284,6 +284,21 @@ export function SettingsPage() {
               }}
               fullWidth
             />
+            <TextField
+              label="Dataset storage root"
+              value={draft.backtest_defaults.dataset_storage_root}
+              helperText="Parquet files for dataset jobs are written under this directory."
+              onChange={(event) =>
+                handleDraftChange({
+                  ...draft,
+                  backtest_defaults: {
+                    ...draft.backtest_defaults,
+                    dataset_storage_root: event.target.value,
+                  },
+                })
+              }
+              fullWidth
+            />
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
               <TextField
                 label="Seed symbols"
@@ -620,6 +635,21 @@ export function SettingsPage() {
                     },
                   })
                 }
+              />
+              <TextField
+                label="Market overview refresh interval (seconds)"
+                type="number"
+                value={draft.platform_behavior.market_overview_refresh_interval_seconds}
+                onChange={(event) =>
+                  handleDraftChange({
+                    ...draft,
+                    platform_behavior: {
+                      ...draft.platform_behavior,
+                      market_overview_refresh_interval_seconds: Number(event.target.value),
+                    },
+                  })
+                }
+                helperText="Controls how often the market overview workflow is launched."
               />
               <SelectField
                 label="Preferred landing page"

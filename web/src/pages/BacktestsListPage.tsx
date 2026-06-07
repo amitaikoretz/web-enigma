@@ -22,6 +22,8 @@ import {
   Tooltip,
   Typography,
   Link,
+  Tabs,
+  Tab,
 } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
@@ -98,6 +100,7 @@ export function BacktestsListPage() {
   const [launchSubmitting, setLaunchSubmitting] = useState(false)
   const [launchError, setLaunchError] = useState<string | null>(null)
   const [launchResult, setLaunchResult] = useState<LaunchResultState | null>(null)
+  const activeTab = location.pathname.startsWith('/backtests/datasets') ? 'datasets' : 'backtests'
 
   const visibleColumns = useMemo(
     () =>
@@ -300,14 +303,16 @@ export function BacktestsListPage() {
     setLaunchError(null)
     setError(null)
     try {
-      const request = {
-        ...payload.request,
-        backtest_ids: ids,
-      }
       const response =
         payload.family === 'risk'
-          ? await createRiskModel(request)
-          : await createReturnForecastModel(request)
+          ? await createRiskModel({
+              ...(payload.request as any),
+              backtest_ids: ids,
+            })
+          : await createReturnForecastModel({
+              ...(payload.request as any),
+              backtest_ids: ids,
+            })
       setLaunchFamily(null)
       setLaunchResult({
         family: payload.family,
@@ -361,6 +366,10 @@ export function BacktestsListPage() {
 
   return (
     <Stack spacing={3}>
+      <Tabs value={activeTab} onChange={(_, value) => navigate(value === 'datasets' ? '/backtests/datasets' : '/backtests')} aria-label="Backtests sections">
+        <Tab value="backtests" label="Backtests" />
+        <Tab value="datasets" label="Datasets" />
+      </Tabs>
       <Stack
         direction={{ xs: 'column', md: 'row' }}
         spacing={1}
@@ -373,14 +382,7 @@ export function BacktestsListPage() {
             disabled={selectedOnPageCount === 0 || bulkDeleting}
             onClick={() => setLaunchFamily('risk')}
           >
-            Train risk model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
-          </Button>
-          <Button
-            variant="outlined"
-            disabled={selectedOnPageCount === 0 || bulkDeleting}
-            onClick={() => setLaunchFamily('return_forecast')}
-          >
-            Train return forecast{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
+            Train model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
           </Button>
           <Button
             color="error"
@@ -442,7 +444,7 @@ export function BacktestsListPage() {
             )}
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
           <Button onClick={() => setLaunchResult(null)} variant="contained">
             Close
           </Button>
@@ -588,8 +590,9 @@ export function BacktestsListPage() {
 
       <ModelTrainingLaunchDialog
         open={launchFamily !== null}
-        family={launchFamily ?? 'risk'}
-        selectedBacktestCount={selectedOnPageCount}
+        allowedFamilies={['risk', 'return_forecast']}
+        selectedCount={selectedOnPageCount}
+        selectionLabel="backtests"
         submitting={launchSubmitting}
         error={launchError}
         onClose={() => {

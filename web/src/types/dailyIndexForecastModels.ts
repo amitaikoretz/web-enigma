@@ -1,4 +1,5 @@
 import type { MarketDataResponse } from './marketData'
+import type { FeatureImportanceTarget } from './modelFamilies'
 
 export type DailyIndexForecastStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled'
 export type DailyIndexForecastSplitLabel = 'train' | 'validation' | 'test' | 'holdout' | 'other'
@@ -108,6 +109,7 @@ export interface DailyIndexForecastTargetRow {
   metrics?: Record<string, unknown> | null
   dataset_manifest_path?: string | null
   feature_columns?: string[] | null
+  feature_importance?: FeatureImportanceTarget | null
   created_at: string
   updated_at: string
 }
@@ -169,6 +171,7 @@ export interface DailyIndexForecastDetail {
   feature_run?: DailyIndexForecastFeatureRun | null
   dataset_manifest?: DailyIndexForecastDatasetManifestSummary | null
   targets: DailyIndexForecastTargetRow[]
+  feature_importance?: FeatureImportanceTarget | null
 }
 
 export interface DailyIndexForecastStatusResponse {

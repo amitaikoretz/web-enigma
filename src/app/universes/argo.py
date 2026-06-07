@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -7,11 +8,14 @@ from typing import Any
 
 import httpx
 
+from app.argo_submission_logging import log_argo_workflow_submission
 from app.backtests.argo import ArgoWorkflowConfig, load_argo_workflow_config
 from app.universes.argo_workflow import (
     build_symbol_universe_refresh_workflow_spec,
     build_symbol_universe_registry_sync_workflow_spec,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -57,9 +61,18 @@ class SymbolUniverseWorkflowSubmitter:
         return headers
 
     def _http_request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
+        endpoint_name = kwargs.pop("endpoint_name", None)
         if not self.argo.server_url:
             raise RuntimeError("ARGO_SERVER_URL is not configured")
         url = f"{self.argo.server_url}{path}"
+        if method.upper() == "POST" and endpoint_name is not None:
+            log_argo_workflow_submission(
+                logger,
+                endpoint_name=str(endpoint_name),
+                method=method,
+                path=path,
+                payload=kwargs.get("json"),
+            )
         return self._http_client_instance().request(method, url, headers=self._http_headers(), **kwargs)
 
     def submit_refresh(self, *, universe_key: str | None, as_of: str) -> tuple[str, str]:
@@ -85,6 +98,7 @@ class SymbolUniverseWorkflowSubmitter:
         response = self._http_request(
             "POST",
             f"/api/v1/workflows/{self.config.namespace}",
+            endpoint_name="universes.argo.submit_refresh",
             json=body,
         )
         if response.status_code >= 400:
@@ -114,6 +128,7 @@ class SymbolUniverseWorkflowSubmitter:
         response = self._http_request(
             "POST",
             f"/api/v1/workflows/{self.config.namespace}",
+            endpoint_name="universes.argo.submit_sync_registry",
             json=body,
         )
         if response.status_code >= 400:

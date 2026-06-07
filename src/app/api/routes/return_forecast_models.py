@@ -147,6 +147,7 @@ def list_return_forecast_models(
             argo_namespace=i.argo_namespace,
             argo_workflow_name=i.argo_workflow_name,
             backtest_ids=i.backtest_ids,
+            dataset_ids=i.dataset_ids,
             targets=i.targets,
             targets_total=i.targets_total,
             targets_done=i.targets_done,

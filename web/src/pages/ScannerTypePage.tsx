@@ -215,7 +215,7 @@ export function ScannerTypePage() {
             )}
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
           <Button onClick={() => setLaunchResult(null)} variant="contained">
             Close
           </Button>
@@ -255,7 +255,7 @@ export function ScannerTypePage() {
             ) : (
               <Alert severity="warning">Params schema not available for this scan type.</Alert>
             )}
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'flex-start' }}>
               <Button
                 variant="contained"
                 startIcon={creating ? <CircularProgress size={18} /> : <PlayArrowIcon />}

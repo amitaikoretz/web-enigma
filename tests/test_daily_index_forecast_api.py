@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from pathlib import Path
@@ -326,6 +327,26 @@ def test_daily_index_forecast_api_create_detail_retry_delete(tmp_path: Path, mon
         """.strip(),
         encoding="utf-8",
     )
+    importance_path = Path("/tmp/daily-index-forecast/group/feature_importance.json")
+    importance_path.parent.mkdir(parents=True, exist_ok=True)
+    importance_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-01T12:03:00.000Z",
+                "source": "daily_index_forecast:model.json",
+                "targets": [
+                    {
+                        "target_key": "daily_index_forecast",
+                        "rows": [
+                            {"feature": "open_price", "importance": 0.6, "signed_importance": 0.4},
+                            {"feature": "rolling_return_20", "importance": 0.4, "signed_importance": -0.2},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
 
     _seed_completed_daily_index_model(client, group_id=group_id, feature_run_id=feature_run_id, manifest_path=manifest_path)
 
@@ -345,6 +366,8 @@ def test_daily_index_forecast_api_create_detail_retry_delete(tmp_path: Path, mon
     assert detail_payload["feature_run"]["decision_times"] == ["09:45"]
     assert detail_payload["dataset_manifest"]["feature_rows"] == 9
     assert detail_payload["targets"][0]["target_key"] == "regression"
+    assert detail_payload["feature_importance"]["target_key"] == "daily_index_forecast"
+    assert detail_payload["targets"][0]["feature_importance"]["rows"][0]["feature"] == "open_price"
 
     status_response = client.get(f"/daily-index-forecast-models/{group_id}/status")
     assert status_response.status_code == 200

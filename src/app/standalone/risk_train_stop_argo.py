@@ -14,6 +14,7 @@ import pandas as pd
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.feature_importance.io import build_linear_feature_importance, write_feature_importance_artifact
 from app.risk.dataset.feature_columns import select_risk_feature_columns
 from app.risk.walk_forward import make_walk_forward_folds, resolve_walk_forward_config
 
@@ -296,6 +297,7 @@ def main(
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "model.json"
     metrics_path = out_dir / "metrics.json"
+    feature_importance_path = out_dir / "feature_importance.json"
 
     serialized = _serialize_stop_model(
         model=last_model,
@@ -315,6 +317,18 @@ def main(
         train_positive_rate=last_train_positive_rate,
     )
     model_path.write_text(json.dumps(serialized, indent=2, default=_json_default), encoding="utf-8")
+    coef_values = list(np.asarray(getattr(last_model, "coef_", []), dtype=float).ravel())
+    if coef_values:
+        write_feature_importance_artifact(
+            feature_importance_path,
+            build_linear_feature_importance(
+                target_key="stop_prob",
+                feature_names=feature_cols[: len(coef_values)],
+                coefficients=coef_values,
+                source="risk:targets/stop_prob/model.json",
+                metadata={"group_id": group_id, "selected_fold_id": last_fold_id, "calibration_type": "isotonic" if last_calibrator is not None else "identity"},
+            ),
+        )
 
     metrics = StopMetrics(
         generated_at=_utc_now(),

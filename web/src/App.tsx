@@ -6,6 +6,7 @@ import InsightsIcon from '@mui/icons-material/Insights'
 import MenuIcon from '@mui/icons-material/Menu'
 import ManageSearchIcon from '@mui/icons-material/ManageSearch'
 import MonitorHeartIcon from '@mui/icons-material/MonitorHeart'
+import QueryStatsIcon from '@mui/icons-material/QueryStats'
 import SettingsSuggestIcon from '@mui/icons-material/SettingsSuggest'
 import ShieldIcon from '@mui/icons-material/Shield'
 import {
@@ -31,6 +32,9 @@ import { navActiveBackground, ThemeAtmosphere } from './theme/atmosphere'
 import { getAppBarBackground, getPageBackground } from './theme/registry'
 import { BacktestDetailPage } from './pages/BacktestDetailPage'
 import { BacktestsListPage } from './pages/BacktestsListPage'
+import { DatasetsListPage } from './pages/DatasetsListPage'
+import { DatasetWizardPage } from './pages/DatasetWizardPage'
+import { DatasetDetailPage } from './pages/DatasetDetailPage'
 import { BacktestWizardPage } from './pages/BacktestWizardPage'
 import { ContractsPage } from './pages/ContractsPage'
 import { DataDownloadDetailPage } from './pages/DataDownloadDetailPage'
@@ -49,9 +53,11 @@ import { ReturnForecastModelDetailPage } from './pages/ReturnForecastModelDetail
 import { DailyIndexForecastModelsListPage } from './pages/DailyIndexForecastModelsListPage'
 import { DailyIndexForecastModelDetailPage } from './pages/DailyIndexForecastModelDetailPage'
 import { DailyIndexForecastWizardPage } from './pages/DailyIndexForecastWizardPage'
+import { MarketOverviewPage } from './pages/MarketOverviewPage'
 
 const NAV_ITEMS = [
   { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
+  { label: 'Overview', to: '/market-overview', icon: <QueryStatsIcon /> },
   { label: 'Models', to: '/models', icon: <ShieldIcon /> },
   { label: 'Data', to: '/data/downloads', icon: <CloudDownloadIcon /> },
   { label: 'Scanners', to: '/scanners', icon: <ManageSearchIcon /> },
@@ -209,7 +215,11 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to={landingPage} replace />} />
           <Route path="/chart" element={<ChartPage />} />
+          <Route path="/market-overview" element={<MarketOverviewPage />} />
           <Route path="/backtests" element={<BacktestsListPage />} />
+          <Route path="/backtests/datasets" element={<DatasetsListPage />} />
+          <Route path="/backtests/datasets/new" element={<DatasetWizardPage />} />
+          <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
           <Route path="/backtests/new" element={<BacktestWizardPage />} />
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
           <Route path="/models" element={<ModelsLandingPage />} />

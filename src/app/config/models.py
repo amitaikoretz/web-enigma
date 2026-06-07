@@ -114,6 +114,11 @@ class CsvDataSource(BaseModel):
     date_format: str = "%Y-%m-%d"
 
 
+class ParquetDataSource(BaseModel):
+    type: Literal["parquet"]
+    path: str
+
+
 class YahooDataSource(BaseModel):
     type: Literal["yahoo"]
     symbol: str
@@ -127,7 +132,14 @@ class AlpacaDataSource(BaseModel):
     feed: Literal["iex", "sip", "otc"] = "iex"
 
 
-DataSource = CsvDataSource | YahooDataSource | AlpacaDataSource
+class AlpacaOptionsDataSource(BaseModel):
+    type: Literal["alpaca-options"]
+    symbol: str
+    interval: str = "1d"
+    feed: Literal["indicative", "opra"] = "indicative"
+
+
+DataSource = CsvDataSource | ParquetDataSource | YahooDataSource | AlpacaDataSource | AlpacaOptionsDataSource
 
 
 class BacktestRunConfig(BaseModel):

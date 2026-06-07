@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.feature_importance.models import FeatureImportanceTarget
+
 from app.api.schemas.market_data import MarketDataResponse
 
 from app.config.models import AlpacaDataSource, CsvDataSource, DataCacheConfig, YahooDataSource
@@ -153,6 +155,7 @@ class DailyIndexForecastTargetRowResponse(BaseModel):
     metrics: dict[str, Any] | None = None
     dataset_manifest_path: str | None = None
     feature_columns: list[str] | None = None
+    feature_importance: FeatureImportanceTarget | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -220,6 +223,7 @@ class DailyIndexForecastDetailResponse(BaseModel):
     feature_run: DailyIndexForecastFeatureRunResponse | None = None
     dataset_manifest: DailyIndexForecastDatasetManifestSummary | None = None
     targets: list[DailyIndexForecastTargetRowResponse] = Field(default_factory=list)
+    feature_importance: FeatureImportanceTarget | None = None
 
 
 class DailyIndexForecastStatusResponse(BaseModel):

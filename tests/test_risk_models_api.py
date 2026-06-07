@@ -560,6 +560,26 @@ def test_risk_model_detail_includes_dataset_manifest_summary(tmp_path) -> None:
             updated_at=now,
         )
     )
+    importance_path = tmp_path / "risk-artifacts" / "g1" / "feature_importance.json"
+    importance_path.parent.mkdir(parents=True, exist_ok=True)
+    importance_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-01T12:03:00.000Z",
+                "source": "risk:targets/stop_prob/model.json",
+                "targets": [
+                    {
+                        "target_key": "stop_prob",
+                        "rows": [
+                            {"feature": "f1", "importance": 0.7, "signed_importance": 0.42},
+                            {"feature": "f2", "importance": 0.3, "signed_importance": -0.18},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     session.add(RiskModelSource(group_id="g1", backtest_id="b1", source_report_path="/tmp/report-a.json"))
     session.add(
         RiskModelTarget(
@@ -584,6 +604,8 @@ def test_risk_model_detail_includes_dataset_manifest_summary(tmp_path) -> None:
     assert payload["dataset_manifest"]["joined_rows"] == 15
     assert payload["dataset_manifest"]["source_report_paths"] == ["/tmp/report-a.json", "/tmp/report-b.json"]
     assert payload["targets"][0]["dataset_manifest_path"] == str(manifest_path)
+    assert payload["feature_importance"]["target_key"] == "stop_prob"
+    assert payload["targets"][0]["feature_importance"]["rows"][0]["feature"] == "f1"
 
 
 def test_risk_model_detail_omits_dataset_manifest_when_missing(tmp_path) -> None:

@@ -101,14 +101,6 @@ spec:
       retryStrategy:
         limit: 3
         retryPolicy: Always
-      podSpecPatch: |
-        containers:
-          - name: main
-            resources:
-              requests:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-              limits:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       inputs:
         parameters:
           - name: api-base-url
@@ -139,6 +131,11 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
+        resources:
+          requests:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+          limits:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -169,14 +166,6 @@ spec:
       retryStrategy:
         limit: 3
         retryPolicy: Always
-      podSpecPatch: |
-        containers:
-          - name: main
-            resources:
-              requests:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-              limits:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       inputs:
         parameters:
           - name: config-path
@@ -207,6 +196,11 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
+        resources:
+          requests:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+          limits:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -248,14 +242,6 @@ spec:
       retryStrategy:
         limit: 3
         retryPolicy: Always
-      podSpecPatch: |
-        containers:
-          - name: main
-            resources:
-              requests:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-              limits:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       container:
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
@@ -317,14 +303,6 @@ spec:
       retryStrategy:
         limit: 3
         retryPolicy: Always
-      podSpecPatch: |
-        containers:
-          - name: main
-            resources:
-              requests:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-              limits:
-                memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
       inputs:
         parameters:
           - name: manifest-path
@@ -348,6 +326,11 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
+        resources:
+          requests:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
+          limits:
+            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace

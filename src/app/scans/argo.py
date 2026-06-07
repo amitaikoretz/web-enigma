@@ -73,7 +73,12 @@ class ScanArgoSubmitter:
         )
         namespace = self.config.namespace
         body = {"namespace": namespace, "serverDryRun": False, "workflow": resource}
-        response = self.http._http_request("POST", f"/api/v1/workflows/{namespace}", json=body)
+        response = self.http._http_request(
+            "POST",
+            f"/api/v1/workflows/{namespace}",
+            endpoint_name="scans.argo.submit",
+            json=body,
+        )
         if response.status_code >= 400:
             raise RuntimeError(f"Failed to submit Argo workflow: {response.status_code} {response.text}")
         return resource["metadata"]["name"], namespace

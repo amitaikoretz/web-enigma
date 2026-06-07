@@ -278,7 +278,8 @@ class RiskModelSource(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_id: Mapped[str] = mapped_column(String(64), ForeignKey("risk_model_groups.id"), nullable=False)
-    backtest_id: Mapped[str] = mapped_column(String(64), ForeignKey("backtest_jobs.id"), nullable=False)
+    backtest_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("backtest_jobs.id"), nullable=True)
+    dataset_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("dataset_jobs.id"), nullable=True)
     source_report_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -307,6 +308,38 @@ class DailyIndexFeatureRun(Base):
     features_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     labels_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_metrics_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class DatasetJob(Base):
+    __tablename__ = "dataset_jobs"
+    __table_args__ = (
+        Index("ix_dataset_jobs_created_at", "created_at"),
+        Index("ix_dataset_jobs_status_updated_at", "status", "updated_at"),
+        Index("ix_dataset_jobs_symbol_created_at", "symbol", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    resolution: Mapped[str] = mapped_column(String(16), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    argo_namespace: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    argo_workflow_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    params_json: Mapped[dict] = mapped_column(json_type, nullable=False, default=dict)
+    output_dir: Mapped[str] = mapped_column(Text, nullable=False)
+    dataset_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

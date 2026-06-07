@@ -41,6 +41,7 @@ import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ModelWorkflowErrorDialog } from '../components/ModelWorkflowErrorDialog'
 import { WorkflowStepsDialog } from '../components/WorkflowStepsDialog'
+import { FeatureImportanceTab } from '../components/FeatureImportanceTab'
 import { useSettings } from '../settings/useSettings'
 import type {
   ModelCreateResponse,
@@ -68,7 +69,7 @@ export interface ModelFamilyConfig {
   updateModelName?: (groupId: string, name: string | null) => Promise<ModelDetail>
 }
 
-type MainTab = 'overview' | 'training' | 'targets' | 'performance' | 'debug'
+type MainTab = 'overview' | 'training' | 'targets' | 'performance' | 'feature-importance' | 'debug'
 type FeatureBrowserTab = 'summary' | 'groups' | 'all'
 type DetailMetricsTab = 'summary' | 'folds'
 
@@ -90,6 +91,7 @@ const MAIN_TABS: Array<{ id: MainTab; label: string }> = [
   { id: 'training', label: 'Training' },
   { id: 'targets', label: 'Targets' },
   { id: 'performance', label: 'Performance' },
+  { id: 'feature-importance', label: 'Feature Importance' },
   { id: 'debug', label: 'Debug' },
 ]
 
@@ -2162,6 +2164,27 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
                 </Typography>
               )}
             </Stack>
+          </Stack>
+        )}
+
+        {mainTab === 'feature-importance' && (
+          <Stack spacing={2}>
+            <Paper variant="outlined" sx={{ p: 2.5, bgcolor: 'background.paper' }}>
+              <Stack spacing={1.5}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                  Feature importance
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  This view reads the persisted importance artifact written with the trained model.
+                </Typography>
+                <FeatureImportanceTab
+                  target={detail.feature_importance ?? null}
+                  targets={detail.targets.map((target) => target.feature_importance).filter(Boolean) as NonNullable<
+                    typeof detail.targets[number]['feature_importance']
+                  >[]}
+                />
+              </Stack>
+            </Paper>
           </Stack>
         )}
 

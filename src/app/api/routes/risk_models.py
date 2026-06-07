@@ -6,6 +6,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import ApiDependencies, get_deps
+from app.feature_importance.io import load_feature_importance_artifact
+from app.feature_importance.models import FeatureImportanceTarget
 from app.risk.models_api import (
     RiskDatasetManifestSummary,
     RiskModelCreateRequest,
@@ -42,7 +44,30 @@ def _load_dataset_manifest_summary(detail: RiskModelDetailRecord) -> RiskDataset
     return None
 
 
+def _load_feature_importance_for_path(*candidates: str | None):
+    for candidate in candidates:
+        if not candidate:
+            continue
+        path = Path(candidate)
+        if path.is_dir():
+            path = path / "feature_importance.json"
+        else:
+            path = path.with_name("feature_importance.json")
+        importance = load_feature_importance_artifact(path)
+        if importance is not None and importance.targets:
+            return importance.targets[0]
+    return None
+
+
 def _detail_response(detail: RiskModelDetailRecord) -> RiskModelDetailResponse:
+    target_importances: dict[str, FeatureImportanceTarget] = {}
+    feature_importance = _load_feature_importance_for_path(detail.artifact_dir)
+    for target in detail.targets:
+        target_importance = _load_feature_importance_for_path(target.model_artifact_path, detail.artifact_dir)
+        if target_importance is not None:
+            target_importances[target.target_key] = target_importance
+            if feature_importance is None:
+                feature_importance = target_importance
     return RiskModelDetailResponse(
         group_id=detail.group_id,
         name=detail.name,
@@ -67,11 +92,13 @@ def _detail_response(detail: RiskModelDetailRecord) -> RiskModelDetailResponse:
                 "metrics": t.metrics,
                 "dataset_manifest_path": t.dataset_manifest_path,
                 "feature_columns": t.feature_columns,
+                "feature_importance": target_importances.get(t.target_key),
                 "created_at": t.created_at,
                 "updated_at": t.updated_at,
             }
             for t in detail.targets
         ],
+        feature_importance=feature_importance,
         training_start_date=detail.training_start_date,
         training_end_date=detail.training_end_date,
     )
@@ -147,6 +174,7 @@ def list_risk_models(
             argo_namespace=i.argo_namespace,
             argo_workflow_name=i.argo_workflow_name,
             backtest_ids=i.backtest_ids,
+            dataset_ids=i.dataset_ids,
             targets=i.targets,
             targets_total=i.targets_total,
             targets_done=i.targets_done,

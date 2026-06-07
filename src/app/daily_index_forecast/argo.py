@@ -63,9 +63,9 @@ class DailyIndexForecastArgoSubmitter:
         response = self.submitter._http_request(
             "POST",
             f"/api/v1/workflows/{self.submitter.config.namespace}",
+            endpoint_name="daily-index-forecast.argo.submit",
             json=body,
         )
         if response.status_code >= 400:
             raise RuntimeError(f"Failed to submit Argo workflow: {response.status_code} {response.text}")
         return workflow_name, self.submitter.config.namespace
-

@@ -22,6 +22,7 @@ resources:
   - statefulset-workers.yaml
   - cronjob-reconciler.yaml
   - cronjob-backtest-reconciler.yaml
+  - cronjob-market-overview-scheduler.yaml
   - deployment-web.yaml
   - service-web.yaml
 

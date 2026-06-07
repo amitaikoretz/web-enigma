@@ -58,3 +58,18 @@ export async function fetchWorkflowPodLogs(
   }
   return response.json() as Promise<ArgoWorkflowPodLogsResponse>
 }
+
+export function downloadWorkflowJson(workflowName: string, workflow: ArgoWorkflow): void {
+  const blob = new Blob([`${JSON.stringify(workflow, null, 2)}\n`], {
+    type: 'application/json;charset=utf-8',
+  })
+  const url = window.URL.createObjectURL(blob)
+  try {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${workflowName}.json`
+    link.click()
+  } finally {
+    window.URL.revokeObjectURL(url)
+  }
+}

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from unittest.mock import MagicMock
 
 import httpx
@@ -7,6 +9,12 @@ import pytest
 
 from app.backtests.argo import ArgoWorkflowConfig, ArgoWorkflowSubmitter, load_argo_workflow_config
 from app.backtests.argo_workflow import WORKFLOW_TTL_SECONDS, build_backtest_workflow_spec, workflow_results_mount
+
+
+def _submission_payload_from_record(record: logging.LogRecord) -> dict[str, object]:
+    message = record.getMessage()
+    payload_text = message.split(" payload=", 1)[1]
+    return json.loads(payload_text)
 
 
 def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
@@ -202,7 +210,7 @@ def test_submit_requires_server_url() -> None:
         )
 
 
-def test_submit_via_http_posts_workflow_to_argo_server() -> None:
+def test_submit_via_http_posts_workflow_to_argo_server(caplog: pytest.LogCaptureFixture) -> None:
     config = ArgoWorkflowConfig(
         namespace="backtest",
         enabled=True,
@@ -216,6 +224,7 @@ def test_submit_via_http_posts_workflow_to_argo_server() -> None:
     mock_response.text = ""
     mock_client.request.return_value = mock_response
     submitter._http_client = mock_client
+    caplog.set_level(logging.INFO)
 
     workflow_name, namespace = submitter.submit(
         config_path="/data/config.yaml",
@@ -239,6 +248,13 @@ def test_submit_via_http_posts_workflow_to_argo_server() -> None:
     assert workflow["metadata"]["labels"]["backtest-id"] == "abc123def456"
     assert workflow["spec"]["entrypoint"] == "backtest-batch"
     assert "workflowTemplateRef" not in workflow["spec"]
+
+    submission_records = [record for record in caplog.records if "argo workflow submission" in record.getMessage()]
+    assert len(submission_records) == 1
+    submission_record = submission_records[0]
+    assert "endpoint=backtests.argo.submit" in submission_record.getMessage()
+    assert "route=POST /api/v1/workflows/backtest" in submission_record.getMessage()
+    assert _submission_payload_from_record(submission_record) == body
 
 
 def test_submit_via_http_raises_on_error_response() -> None:

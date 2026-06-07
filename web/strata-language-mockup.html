@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Strata Language Mockup</title>
+    <style>
+      :root {
+        --bg: #f2f1ee;
+        --ink: #12110f;
+        --muted: rgba(18, 17, 15, 0.62);
+        --line: rgba(18, 17, 15, 0.14);
+        --line-strong: rgba(18, 17, 15, 0.34);
+        --field: #f7f7f5;
+        --field-2: #ececeb;
+        --field-3: #e1e2e4;
+        --accent: #b74e4e;
+        --accent-2: #365f86;
+        --accent-3: #5a6d4d;
+        --warm: #d8a3a3;
+        --cool: #8abec2;
+        --shadow: rgba(16, 12, 8, 0.08);
+        --shadow-deep: rgba(16, 12, 8, 0.14);
+        --max: 1440px;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        font-family: "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 12% 10%, rgba(55, 95, 134, 0.1), transparent 24%),
+          radial-gradient(circle at 88% 16%, rgba(184, 78, 78, 0.08), transparent 20%),
+          radial-gradient(circle at 76% 88%, rgba(90, 109, 77, 0.08), transparent 20%),
+          linear-gradient(180deg, #f5f5f3 0%, #ecebe8 100%);
+      }
+
+      .shell {
+        max-width: var(--max);
+        margin: 0 auto;
+        padding: 28px 20px 36px;
+      }
+
+      .banner {
+        display: grid;
+        grid-template-columns: 1.35fr 0.65fr;
+        gap: 18px;
+        align-items: stretch;
+        margin-bottom: 18px;
+      }
+
+      @media (max-width: 980px) {
+        .banner {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .title-block {
+        position: relative;
+        overflow: hidden;
+        padding: 28px 28px 24px;
+        background:
+          linear-gradient(135deg, rgba(255,255,255,0.6), rgba(255,255,255,0.14)),
+          linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,255,255,0.2));
+        border: 1px solid var(--line);
+        clip-path: polygon(0 0, 96% 0, 100% 12%, 100% 100%, 4% 100%, 0 88%);
+        box-shadow: 0 24px 60px var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        color: var(--muted);
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 42px;
+        height: 1px;
+        background: linear-gradient(90deg, var(--accent), transparent);
+      }
+
+      h1 {
+        margin: 14px 0 12px;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Georgia", serif;
+        font-size: clamp(3rem, 6vw, 5.3rem);
+        line-height: 0.94;
+        letter-spacing: -0.07em;
+      }
+
+      .lede {
+        max-width: 70ch;
+        margin: 0;
+        font-size: 1.05rem;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      .signal-strip {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-height: 100%;
+        padding: 18px;
+        background:
+          linear-gradient(180deg, rgba(18, 17, 15, 0.92), rgba(18, 17, 15, 0.76)),
+          linear-gradient(135deg, rgba(55, 95, 134, 0.34), rgba(184, 78, 78, 0.28));
+        color: #f8f4ed;
+        clip-path: polygon(8% 0, 100% 0, 100% 86%, 92% 100%, 0 100%, 0 12%);
+        box-shadow: 0 28px 72px rgba(18, 17, 15, 0.22);
+      }
+
+      .signal-strip .label {
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(248, 244, 237, 0.18);
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .signal-strip .metric {
+        align-self: center;
+        font-size: clamp(2.4rem, 4vw, 4.1rem);
+        line-height: 0.95;
+        letter-spacing: -0.08em;
+        font-weight: 700;
+      }
+
+      .signal-strip .metric small {
+        display: block;
+        font-size: 13px;
+        font-weight: 500;
+        line-height: 1.5;
+        letter-spacing: 0.02em;
+        margin-top: 10px;
+        color: rgba(248, 244, 237, 0.72);
+        max-width: 28ch;
+      }
+
+      .signal-grid {
+        display: grid;
+        grid-template-columns: 220px 1fr 280px;
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      @media (max-width: 1180px) {
+        .signal-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .rail,
+      .field,
+      .stack {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(247, 247, 245, 0.94), rgba(231, 232, 234, 0.9));
+        box-shadow: 0 18px 44px var(--shadow);
+      }
+
+      .rail {
+        padding: 18px;
+        clip-path: polygon(0 0, 92% 0, 100% 10%, 100% 100%, 10% 100%, 0 90%);
+      }
+
+      .rail h2,
+      .field h2,
+      .stack h2 {
+        margin: 0 0 14px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        color: var(--muted);
+      }
+
+      .rail .item {
+        display: grid;
+        gap: 10px;
+        padding: 14px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .rail .item:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .rail .item strong {
+        font-size: 0.98rem;
+        letter-spacing: -0.02em;
+      }
+
+      .rail .item span {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        background: rgba(255,255,255,0.34);
+        border: 1px solid var(--line);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .chip::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      }
+
+      .field {
+        padding: 18px;
+        min-height: 100%;
+      }
+
+      .field .frame {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 16px;
+        min-height: 100%;
+      }
+
+      @media (max-width: 980px) {
+        .field .frame {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .canvas {
+        position: relative;
+        min-height: 420px;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.46), rgba(255,255,255,0.12)),
+          linear-gradient(135deg, rgba(54,95,134,0.08), transparent 44%),
+          linear-gradient(180deg, var(--field), var(--field-2));
+        clip-path: polygon(0 0, 94% 0, 100% 10%, 100% 88%, 91% 100%, 4% 100%, 0 92%);
+        border: 1px solid var(--line);
+      }
+
+      .canvas::before {
+        content: "";
+        position: absolute;
+        inset: 24px;
+        border: 1px solid rgba(18, 17, 15, 0.08);
+        clip-path: polygon(0 0, 98% 0, 100% 8%, 100% 94%, 92% 100%, 0 100%);
+        pointer-events: none;
+      }
+
+      .canvas .topline {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 18px 18px 0;
+        font-size: 12px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .sculpture {
+        position: absolute;
+        inset: 72px 18px 18px;
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 18px;
+      }
+
+      @media (max-width: 980px) {
+        .sculpture {
+          position: static;
+          padding: 18px;
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .poster {
+        position: relative;
+        display: grid;
+        align-content: space-between;
+        padding: 22px;
+        background:
+          linear-gradient(180deg, rgba(183,78,78,0.92), rgba(183,78,78,0.72)),
+          linear-gradient(135deg, rgba(255,255,255,0.26), transparent 40%);
+        color: #fff8ef;
+        clip-path: polygon(8% 0, 100% 0, 100% 84%, 90% 100%, 0 100%, 0 14%);
+        box-shadow: 0 24px 50px rgba(194,79,47,0.18);
+      }
+
+      .poster.alt {
+        background:
+          linear-gradient(180deg, rgba(54,95,134,0.96), rgba(54,95,134,0.7)),
+          linear-gradient(135deg, rgba(255,255,255,0.18), transparent 40%);
+      }
+
+      .poster h3 {
+        margin: 0;
+        font-family: "Iowan Old Style", "Georgia", serif;
+        font-size: clamp(1.7rem, 3vw, 2.6rem);
+        line-height: 0.98;
+        letter-spacing: -0.05em;
+      }
+
+      .poster p {
+        margin: 14px 0 0;
+        font-size: 14px;
+        line-height: 1.65;
+        max-width: 30ch;
+        color: rgba(255,248,239,0.82);
+      }
+
+      .poster .footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 18px;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: rgba(255,248,239,0.72);
+      }
+
+      .stack {
+        padding: 18px;
+        clip-path: polygon(0 0, 94% 0, 100% 8%, 100% 100%, 8% 100%, 0 92%);
+      }
+
+      .stack .slot {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 12px;
+        align-items: start;
+        padding: 14px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .stack .slot:first-of-type {
+        border-top: 0;
+        padding-top: 0;
+      }
+
+      .marker {
+        width: 18px;
+        height: 18px;
+        margin-top: 2px;
+        background: var(--accent-2);
+        clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      }
+
+      .slot strong {
+        display: block;
+        font-size: 0.98rem;
+        margin-bottom: 6px;
+      }
+
+      .slot span {
+        display: block;
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 13px;
+      }
+
+      .timeline {
+        margin-top: 18px;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 14px;
+      }
+
+      @media (max-width: 980px) {
+        .timeline {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .phase {
+        position: relative;
+        padding: 16px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(255,255,255,0.24));
+        border: 1px solid var(--line);
+        min-height: 150px;
+        clip-path: polygon(0 0, 95% 0, 100% 12%, 100% 100%, 6% 100%, 0 88%);
+      }
+
+      .phase::before {
+        content: "";
+        position: absolute;
+        left: 16px;
+        top: 16px;
+        width: 54px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--accent-2), transparent);
+      }
+
+      .phase h4 {
+        margin: 18px 0 8px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+      }
+
+      .phase p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 13px;
+      }
+
+      .footer-note {
+        margin: 16px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="banner">
+        <div class="title-block">
+          <div class="eyebrow">New language proposal</div>
+          <h1>Strata</h1>
+          <p class="lede">
+            Strata is a UI language built around layered planes, directional cuts, and banded
+            information. It avoids the familiar “card + rounded button” vocabulary and instead
+            treats interface as a composed surface: framed fields, editorial strips, and
+            asymmetric modules that feel printed, anchored, and tactile.
+          </p>
+        </div>
+
+        <aside class="signal-strip">
+          <div class="label">
+            <span>Field signal</span>
+            <span>03 / 08</span>
+          </div>
+          <div class="metric">
+            128
+            <small>
+              Active channels are displayed as bands, not badges. The whole screen behaves like a
+              measured board rather than a stack of floating components.
+            </small>
+          </div>
+          <div class="label" style="border-bottom: 0; padding-bottom: 0; border-top: 1px solid rgba(248,244,237,0.18); padding-top: 12px;">
+            <span>State</span>
+            <span>Aligned</span>
+          </div>
+        </aside>
+      </section>
+
+      <section class="signal-grid" aria-label="Strata design language mockup">
+        <div class="rail">
+          <h2>Rail</h2>
+          <div class="item">
+            <strong>Navigation is a spine</strong>
+            <span>Sections are read as a vertical flow of anchored steps. Active context is marked by a cut line, not a glowing pill.</span>
+          </div>
+          <div class="item">
+            <strong>Labels become captions</strong>
+            <span>Small type stays useful but never decorative. The language leans into editorial annotation rather than chrome.</span>
+          </div>
+          <div class="item">
+            <strong>Shapes are directional</strong>
+            <span>Panels use clipped corners and slanted edges to imply motion, pressure, and structure without relying on shadows.</span>
+          </div>
+          <div class="chip-row">
+            <span class="chip">spine</span>
+            <span class="chip">cut line</span>
+            <span class="chip">band</span>
+            <span class="chip">field</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <h2>Field</h2>
+          <div class="frame">
+            <div class="canvas">
+              <div class="topline">
+                <span>Field / 14</span>
+                <span>Route: north-south</span>
+              </div>
+              <div class="sculpture">
+                <div class="poster">
+                  <div>
+                    <h3>Operational atlas</h3>
+                    <p>
+                      The primary region is not a card. It is a poster-like plate, with strong
+                      hierarchy, almost no radius, and a single decisive accent for emphasis.
+                    </p>
+                  </div>
+                  <div class="footer">
+                    <span>window 03</span>
+                    <span>layer 1</span>
+                  </div>
+                </div>
+
+                <div class="poster alt">
+                  <div>
+                    <h3>Ambient control</h3>
+                    <p>
+                      Secondary surfaces are softer and cooler, but still clipped and structured.
+                      The result feels less like a product dashboard and more like an instrument
+                      panel made for quiet environments.
+                    </p>
+                  </div>
+                  <div class="footer">
+                    <span>window 04</span>
+                    <span>layer 2</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="stack">
+              <h2>Stack</h2>
+              <div class="slot">
+                <div class="marker"></div>
+                <div>
+                  <strong>Events are bands, not cards</strong>
+                  <span>Recent activity is rendered as a stacked ribbon system. Each band has its own thickness, weight, and left edge cut, making importance visible from shape alone.</span>
+                </div>
+              </div>
+              <div class="slot">
+                <div class="marker" style="background: var(--accent);"></div>
+                <div>
+                  <strong>Controls are instruments</strong>
+                  <span>Buttons are treated as calibrated tools, not rounded tokens. Primary actions span wider, secondary actions stay narrow and structural.</span>
+                </div>
+              </div>
+              <div class="slot">
+                <div class="marker" style="background: var(--accent-3);"></div>
+                <div>
+                  <strong>Whitespace is a structural material</strong>
+                  <span>Empty space is distributed like load-bearing material, separating zones by pressure rather than just margin.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="stack">
+          <h2>Behaviors</h2>
+          <div class="slot">
+            <div class="marker"></div>
+            <div>
+              <strong>Active context snaps to the margin</strong>
+              <span>The current area is marked at the edge of the screen and inside the current field, so orientation is always visible without relying on tabs.</span>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="marker" style="background: var(--cool);"></div>
+            <div>
+              <strong>Information prefers asymmetry</strong>
+              <span>Every surface is offset slightly. The composition feels hand-arranged but still systematic.</span>
+            </div>
+          </div>
+          <div class="slot">
+            <div class="marker" style="background: var(--warm);"></div>
+            <div>
+              <strong>Accent is rare and functional</strong>
+              <span>Color is not the primary organizing tool. It appears only when something needs urgency, priority, or emphasis.</span>
+            </div>
+          </div>
+
+          <div class="timeline">
+            <div class="phase">
+              <h4>Phase 01</h4>
+              <p>Establish the spine. Navigation and global state live along the edge, with a hard line and stable rhythm.</p>
+            </div>
+            <div class="phase">
+              <h4>Phase 02</h4>
+              <p>Stack the field. Related content forms banded layers, with each band varying in thickness and opacity.</p>
+            </div>
+            <div class="phase">
+              <h4>Phase 03</h4>
+              <p>Reveal the action. Primary tasks emerge as a strong plate while tertiary tasks collapse into narrow instruments.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <p class="footer-note">
+        Strata deliberately avoids the familiar Apple-HIG or Material vocabulary of rounded cards,
+        floating surfaces, and bubbly controls. It is built as a layered board system: clipped
+        panels, edge-led navigation, and editorial bands.
+      </p>
+    </main>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import DownloadIcon from '@mui/icons-material/Download'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import CloseIcon from '@mui/icons-material/Close'
 import {
@@ -25,8 +26,8 @@ import {
 import { alpha } from '@mui/material/styles'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
-import { fetchWorkflow, fetchWorkflowDebugConfig, fetchWorkflowPodLogs } from '../api/argo'
-import type { WorkflowStepsDescriptor } from '../types/argo'
+import { downloadWorkflowJson, fetchWorkflow, fetchWorkflowDebugConfig, fetchWorkflowPodLogs } from '../api/argo'
+import type { ArgoWorkflow, WorkflowStepsDescriptor } from '../types/argo'
 import { normalizeWorkflowSteps, type WorkflowStepSummary } from '../utils/workflowSteps'
 
 type WorkflowFilter = 'all' | 'pending' | 'running' | 'succeeded' | 'failed' | 'error' | 'skipped'
@@ -193,6 +194,7 @@ export function WorkflowStepsDialog({
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'))
   const [workflowLoading, setWorkflowLoading] = useState(false)
   const [workflowError, setWorkflowError] = useState<string | null>(null)
+  const [workflowDocument, setWorkflowDocument] = useState<ArgoWorkflow | null>(null)
   const [workflow, setWorkflow] = useState<WorkflowStepSummary[]>([])
   const [workflowPhase, setWorkflowPhase] = useState<string | null>(null)
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
@@ -255,6 +257,7 @@ export function WorkflowStepsDialog({
     /* eslint-disable react-hooks/set-state-in-effect */
     setWorkflowLoading(true)
     setWorkflowError(null)
+    setWorkflowDocument(null)
     setWorkflow([])
     setWorkflowPhase(null)
     setSelectedStepId(null)
@@ -269,6 +272,7 @@ export function WorkflowStepsDialog({
           return
         }
         const nextSteps = normalizeWorkflowSteps(response)
+        setWorkflowDocument(response)
         setWorkflow(nextSteps)
         setWorkflowPhase(response.status?.phase ?? null)
         if (nextSteps.length > 0) {
@@ -430,6 +434,7 @@ export function WorkflowStepsDialog({
         ? logsErrorOutputs.map((entry) => `${entry.name}: ${entry.value}`).join('\n')
         : selectedStep?.rawNode.message ?? null
   const debugSnippet = debugState?.snippet ?? null
+  const canDownloadWorkflowJson = Boolean(workflowDocument && workflowName)
 
   async function handleCopyDebugSnippet() {
     if (!debugSnippet) {
@@ -443,6 +448,14 @@ export function WorkflowStepsDialog({
     } catch {
       setSnackbarMessage('Unable to copy debug configuration')
     }
+  }
+
+  function handleDownloadWorkflowJson() {
+    if (!workflowDocument || !workflowName) {
+      return
+    }
+    downloadWorkflowJson(workflowName, workflowDocument)
+    setSnackbarMessage('Workflow JSON download started')
   }
 
   const hasLoadedSteps = workflow.length > 0
@@ -483,40 +496,48 @@ export function WorkflowStepsDialog({
           id="workflow-steps-dialog-title"
           sx={{
             pb: 1.5,
-            pr: 7,
+            pr: 2,
             borderBottom: '1px solid',
             borderColor: 'divider',
             bgcolor: 'background.paper',
-            position: 'relative',
           }}
         >
-          <Stack spacing={1}>
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-              <Typography variant="h5" component="span" sx={{ fontWeight: 700 }}>
-                Workflow steps
+          <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography variant="h5" component="span" sx={{ fontWeight: 700 }}>
+                  Workflow steps
+                </Typography>
+                {workflowPhase && <Chip size="small" label={workflowPhase} color={getStatusColor(workflowPhase)} />}
+                <Chip size="small" variant="outlined" label={entityKind} />
+              </Stack>
+              <Typography color="text.secondary" variant="body2">
+                {entityLabel}
+                {workflowTitle ? ` · ${workflowTitle}` : ''}
+                {workflowName ? ` · ${workflowName}` : ''}
+                {namespace ? ` (${namespace})` : ''}
               </Typography>
-              {workflowPhase && <Chip size="small" label={workflowPhase} color={getStatusColor(workflowPhase)} />}
-              <Chip size="small" variant="outlined" label={entityKind} />
             </Stack>
-            <Typography color="text.secondary" variant="body2">
-              {entityLabel}
-              {workflowTitle ? ` · ${workflowTitle}` : ''}
-              {workflowName ? ` · ${workflowName}` : ''}
-              {namespace ? ` (${namespace})` : ''}
-            </Typography>
+
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <Tooltip title={canDownloadWorkflowJson ? 'Download Argo workflow JSON' : 'Workflow JSON is not available yet'}>
+                <span>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    disabled={!canDownloadWorkflowJson}
+                    onClick={handleDownloadWorkflowJson}
+                  >
+                    Download JSON
+                  </Button>
+                </span>
+              </Tooltip>
+              <IconButton aria-label="Close workflow steps dialog" onClick={onClose} size="small">
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Stack>
           </Stack>
-          <IconButton
-            aria-label="Close workflow steps dialog"
-            onClick={onClose}
-            size="small"
-            sx={{
-              position: 'absolute',
-              top: 12,
-              right: 12,
-            }}
-          >
-            <CloseIcon fontSize="small" />
-          </IconButton>
         </DialogTitle>
 
         <DialogContent

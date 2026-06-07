@@ -601,6 +601,7 @@ export function BacktestDetailPage() {
             backtestId={metadata.id}
             inputConfigPath={report.input_config_path}
             configSha256={report.config_sha256}
+            downloadable={metadata.status === 'completed'}
           />
 
           {resolvedAggregates?.isDerived && (

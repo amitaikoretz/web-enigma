@@ -1,0 +1,89 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: datasets-download-template
+spec:
+  entrypoint: main
+  serviceAccountName: __SERVICE_ACCOUNT__
+  arguments:
+    parameters:
+      - name: symbol
+      - name: provider
+      - name: resolution
+      - name: start-date
+      - name: end-date
+      - name: options-enabled
+      - name: options-feed
+      - name: output-dir
+      - name: options-enabled-flag
+  volumes:
+    - name: datasets-results
+      persistentVolumeClaim:
+        claimName: backtest-results
+  templates:
+    - name: main
+      container:
+        image: __WORKFLOW_IMAGE__
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "app.standalone.datasets_download_argo"]
+        args:
+          - "--symbol"
+          - "{{workflow.parameters.symbol}}"
+          - "--provider"
+          - "{{workflow.parameters.provider}}"
+          - "--resolution"
+          - "{{workflow.parameters.resolution}}"
+          - "--start-date"
+          - "{{workflow.parameters.start-date}}"
+          - "--end-date"
+          - "{{workflow.parameters.end-date}}"
+          - "{{workflow.parameters.options-enabled-flag}}"
+          - "--options-feed"
+          - "{{workflow.parameters.options-feed}}"
+          - "--output-dir"
+          - "{{workflow.parameters.output-dir}}"
+          - "--terminal-command-out"
+          - "/tmp/terminal-command.txt"
+          - "--dataset-path-out"
+          - "/tmp/dataset-path.txt"
+          - "--manifest-path-out"
+          - "/tmp/manifest-path.txt"
+          - "--options-dataset-path-out"
+          - "/tmp/options-dataset-path.txt"
+          - "--options-manifest-path-out"
+          - "/tmp/options-manifest-path.txt"
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: datasets-results
+            mountPath: __WORKFLOW_RESULTS_MOUNT__
+      outputs:
+        parameters:
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt
+          - name: dataset-path
+            valueFrom:
+              path: /tmp/dataset-path.txt
+          - name: manifest-path
+            valueFrom:
+              path: /tmp/manifest-path.txt
+          - name: options-dataset-path
+            valueFrom:
+              path: /tmp/options-dataset-path.txt
+          - name: options-manifest-path
+            valueFrom:
+              path: /tmp/options-manifest-path.txt

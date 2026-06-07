@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { BacktestRunResult, BacktestSelectionSummary } from '../types/backtests'
 import { BacktestRunDetailPanel } from './BacktestRunDetailPanel'
+import { defaultPlatformSettings } from '../settings/defaults'
 
 const useSettingsMock = vi.hoisted(() => vi.fn())
 
@@ -84,7 +85,9 @@ const selection: BacktestSelectionSummary = {
 beforeEach(() => {
   useSettingsMock.mockReturnValue({
     platformSettings: {
+      ...defaultPlatformSettings,
       platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
         timezone: 'UTC',
         time_display_format: '24h',
       },

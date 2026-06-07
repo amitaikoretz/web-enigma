@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,7 @@ from app.backtests.persistence import (
     SqlAlchemyBacktestJobRepository,
     report_json_is_readable,
 )
+from app.datasets.persistence import SqlAlchemyDatasetRepository
 from app.backtests.sharding import resolve_split_by
 from app.config.models import (
     AnalyzerConfig,
@@ -151,12 +152,24 @@ def config_to_yaml_text(config_raw: dict[str, Any]) -> str:
 
 
 def _build_selection_summary(payload: BacktestCreateRequest) -> BacktestSelectionSummary:
+    start_date = payload.start_date
+    end_date = payload.end_date
+    symbols = payload.symbols
+    resolution = payload.resolution
+    feed = payload.feed
+    if payload.dataset_manifest_path is not None:
+        manifest = json.loads(Path(payload.dataset_manifest_path).read_text(encoding="utf-8"))
+        if isinstance(manifest, dict):
+            start_date = _parse_date_like(manifest.get("start_date")) or start_date
+            end_date = _parse_date_like(manifest.get("end_date")) or end_date
+            if isinstance(manifest.get("symbol"), str) and manifest["symbol"].strip():
+                symbols = [manifest["symbol"].strip().upper()]
     return BacktestSelectionSummary(
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        resolution=payload.resolution,
-        feed=payload.feed,
-        symbols=payload.symbols,
+        start_date=start_date or payload.start_date or payload.end_date,
+        end_date=end_date or payload.end_date or payload.start_date,
+        resolution=resolution,
+        feed=feed,  # type: ignore[arg-type]
+        symbols=symbols or ["UNKNOWN"],
         triggers=[trigger.name for trigger in payload.triggers],
         exit_rules=[rules.stable_id() for rules in payload.exit_rules],
     )
@@ -299,6 +312,20 @@ def _parse_inline_config(config_text: str, fmt: str) -> dict[str, Any]:
     return data
 
 
+def _parse_date_like(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(str(value))
+        except ValueError:
+            return None
+
+
 def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) -> dict[str, Any]:
     broker = payload.broker or BrokerConfig()
     analyzers = payload.analyzers or AnalyzerConfig(
@@ -310,6 +337,46 @@ def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) 
     model_policy = payload.model_policy
     model_policy_id = model_policy.stable_id() if model_policy is not None else None
     runs: list[dict[str, Any]] = []
+
+    if payload.dataset_path is not None:
+        dataset_path = Path(payload.dataset_path)
+        manifest_data: dict[str, Any] = {}
+        if payload.dataset_manifest_path is not None:
+            manifest_loaded = json.loads(Path(payload.dataset_manifest_path).read_text(encoding="utf-8"))
+            if isinstance(manifest_loaded, dict):
+                manifest_data = manifest_loaded
+        start_date = _parse_date_like(manifest_data.get("start_date")) or payload.start_date
+        end_date = _parse_date_like(manifest_data.get("end_date")) or payload.end_date
+        if start_date is None or end_date is None:
+            raise ValueError("Dataset-backed backtests require dataset manifest start and end dates")
+        for trigger in payload.triggers:
+            for exit_rules in payload.exit_rules:
+                exits_id = exit_rules.stable_id()
+                run_index = len(runs) + 1
+                run_id_parts = [backtest_id, f"{run_index:03d}", f"dataset:{dataset_path.stem}", trigger.name, f"exits:{exits_id}"]
+                if model_policy_id is not None:
+                    run_id_parts.append(f"models:{model_policy_id}")
+                run_id = ":".join(run_id_parts)
+                run_name_parts = [dataset_path.stem, trigger.name, f"exits:{exits_id}"]
+                if model_policy_id is not None:
+                    run_name_parts.append(f"models:{model_policy_id}")
+                run_payload: dict[str, Any] = {
+                    "run_id": run_id,
+                    "name": " ".join(run_name_parts),
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "data": {"type": "parquet", "path": str(dataset_path)},
+                    "trigger": trigger.model_dump(mode="json"),
+                    "exit_rules": exit_rules.model_dump(mode="json"),
+                    "broker": broker.model_dump(mode="json"),
+                    "analyzers": analyzers.model_dump(mode="json"),
+                }
+                if model_policy is not None:
+                    run_payload["model_policy"] = model_policy.model_dump(mode="json")
+                if execution is not None:
+                    run_payload["execution"] = execution.model_dump(mode="json")
+                runs.append(run_payload)
+        return {"runs": runs}
 
     for trigger in payload.triggers:
         for exit_rules in payload.exit_rules:
@@ -617,12 +684,14 @@ class BacktestJobService:
         self,
         repository: BacktestArtifactStore,
         job_repository: SqlAlchemyBacktestJobRepository,
+        dataset_repository: SqlAlchemyDatasetRepository | None = None,
         cache_config: DataCacheConfig | None = None,
         settings_service: PlatformSettingsService | None = None,
         argo_submitter: ArgoWorkflowSubmitter | None = None,
     ):
         self.repository = repository
         self.job_repository = job_repository
+        self.dataset_repository = dataset_repository
         self.cache_config = cache_config or DataCacheConfig()
         self.settings_service = settings_service
         self.argo_submitter = argo_submitter or ArgoWorkflowSubmitter()
@@ -640,8 +709,31 @@ class BacktestJobService:
             return PlatformSettings()
         return self.settings_service.load()
 
+    def _resolve_dataset_backed_payload(self, payload: BacktestCreateRequest) -> BacktestCreateRequest:
+        if payload.dataset_id is None or self.dataset_repository is None:
+            return payload
+
+        dataset = self.dataset_repository.get(payload.dataset_id)
+        if dataset is None:
+            raise FileNotFoundError(f"Dataset '{payload.dataset_id}' not found")
+
+        dataset_path = payload.dataset_path or self._resolve_dataset_parquet_path(dataset)
+        manifest_path = payload.dataset_manifest_path or self._resolve_dataset_manifest_path(dataset, dataset_path)
+        if dataset_path is None:
+            raise ValueError(f"Dataset '{payload.dataset_id}' is missing a parquet artifact")
+        if manifest_path is None:
+            raise ValueError(f"Dataset '{payload.dataset_id}' is missing a manifest artifact")
+
+        return payload.model_copy(
+            update={
+                "dataset_path": str(dataset_path),
+                "dataset_manifest_path": str(manifest_path),
+            }
+        )
+
     def submit(self, payload: BacktestCreateRequest) -> BacktestCreateResponse:
         backtest_id = uuid.uuid4().hex
+        payload = self._resolve_dataset_backed_payload(payload)
         config_raw = build_backtest_config_raw(payload, backtest_id)
         return self._submit_from_config_raw(
             config_raw,
@@ -756,6 +848,49 @@ class BacktestJobService:
             detail_url=f"/backtests/{backtest_id}",
             source_backtest_id=source_backtest_id,
         )
+
+    def _resolve_dataset_path(self, dataset: object, path: Path) -> Path:
+        workflow_root = Path(workflow_results_mount()).resolve()
+        host_root = Path(getattr(dataset, "output_dir")).resolve()
+        try:
+            relative = path.resolve().relative_to(workflow_root)
+        except ValueError:
+            return path
+        return host_root / relative
+
+    def _resolve_dataset_parquet_path(self, dataset: object) -> Path | None:
+        stored_path = getattr(dataset, "dataset_parquet_path", None)
+        output_dir = getattr(dataset, "output_dir", None)
+        symbol = getattr(dataset, "symbol", None)
+        provider = getattr(dataset, "provider", None)
+        resolution = getattr(dataset, "resolution", None)
+        candidates: list[Path] = []
+        if isinstance(stored_path, str) and stored_path.strip():
+            candidates.append(self._resolve_dataset_path(dataset, Path(stored_path)))
+        if all(isinstance(value, str) and value.strip() for value in [output_dir, symbol, provider, resolution]):
+            candidates.append(Path(output_dir) / f"{symbol}-{provider}-{resolution}.parquet")
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _resolve_dataset_manifest_path(self, dataset: object, dataset_path: Path | None) -> Path | None:
+        stored_path = getattr(dataset, "manifest_path", None)
+        output_dir = getattr(dataset, "output_dir", None)
+        symbol = getattr(dataset, "symbol", None)
+        provider = getattr(dataset, "provider", None)
+        resolution = getattr(dataset, "resolution", None)
+        candidates: list[Path] = []
+        if isinstance(stored_path, str) and stored_path.strip():
+            candidates.append(self._resolve_dataset_path(dataset, Path(stored_path)))
+        if dataset_path is not None:
+            candidates.append(dataset_path.with_suffix(".manifest.json"))
+        if all(isinstance(value, str) and value.strip() for value in [output_dir, symbol, provider, resolution]):
+            candidates.append(Path(output_dir) / f"{symbol}-{provider}-{resolution}.manifest.json")
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
 
     def submit_argo(self, payload: BacktestArgoLaunchRequest) -> BacktestArgoLaunchResponse:
         if not self.argo_submitter.is_configured:

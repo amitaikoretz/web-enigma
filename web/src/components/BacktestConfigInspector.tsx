@@ -21,6 +21,7 @@ interface BacktestConfigInspectorProps {
   inputConfigPath: string | null
   configSha256: string
   defaultExpanded?: boolean
+  downloadable?: boolean
 }
 
 export function BacktestConfigInspector({
@@ -28,6 +29,7 @@ export function BacktestConfigInspector({
   inputConfigPath,
   configSha256,
   defaultExpanded = false,
+  downloadable = true,
 }: BacktestConfigInspectorProps) {
   const [yamlText, setYamlText] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -107,6 +109,7 @@ export function BacktestConfigInspector({
               size="small"
               variant="outlined"
               startIcon={<OpenInNewIcon />}
+              disabled={!downloadable}
             >
               Open YAML
             </Button>
@@ -117,6 +120,7 @@ export function BacktestConfigInspector({
               size="small"
               variant="outlined"
               startIcon={<DownloadIcon />}
+              disabled={!downloadable}
             >
               Download
             </Button>
@@ -140,6 +144,12 @@ export function BacktestConfigInspector({
           <Typography variant="body2" color="text.secondary">
             The saved YAML below matches the submitted definition. The original file path is shown for traceability.
           </Typography>
+        )}
+
+        {!downloadable && (
+          <Alert severity="info">
+            YAML downloads are only enabled after a backtest completes successfully.
+          </Alert>
         )}
 
         {!inputConfigPath && (

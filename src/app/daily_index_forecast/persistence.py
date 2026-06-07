@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import DailyIndexFeatureRun, RiskModelGroup, RiskModelTarget
 from app.daily_index_forecast.models import DailyIndexForecastDatasetManifestSummary
+from app.feature_importance.models import FeatureImportanceTarget
 
 
 def _utc_now() -> datetime:
@@ -53,6 +54,7 @@ class DailyIndexModelTargetRow:
     feature_columns: list[str] | None
     created_at: datetime
     updated_at: datetime
+    feature_importance: FeatureImportanceTarget | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,7 @@ class DailyIndexModelDetail:
     summary_metrics: dict[str, Any] | None
     feature_run: DailyIndexFeatureRunRow | None
     targets: list[DailyIndexModelTargetRow]
+    feature_importance: FeatureImportanceTarget | None = None
 
 
 class SqlAlchemyDailyIndexForecastRepository:
@@ -469,4 +472,3 @@ class SqlAlchemyDailyIndexForecastRepository:
             session.query(RiskModelGroup).filter(RiskModelGroup.id == group_id).delete(synchronize_session=False)
             session.commit()
             return list_item
-

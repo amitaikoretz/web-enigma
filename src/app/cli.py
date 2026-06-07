@@ -333,6 +333,26 @@ def _cmd_list_strategies() -> int:
     return 0
 
 
+def _cmd_market_overview_scheduler() -> int:
+    from app.market_overview.persistence import SqlAlchemyMarketOverviewRepository
+    from app.market_overview.service import MarketOverviewService
+
+    results_root = Path(os.environ.get("BACKTEST_RESULTS_DIR", ".cache/backtest-results"))
+    settings_path = results_root / "settings" / "platform-settings.json"
+    session_factory = get_session_factory()
+    service = MarketOverviewService(
+        session_factory=session_factory,
+        repo=SqlAlchemyMarketOverviewRepository(session_factory),
+        settings_service=PlatformSettingsService(settings_path),
+    )
+    result = service.launch_if_due()
+    if result is None:
+        console.print("No market overview run is due yet.")
+        return 0
+    console.print(f"Launched market overview snapshot {result.snapshot_id} workflow={result.argo_workflow_name}")
+    return 0
+
+
 def _cmd_serve(host: str, port: int, log_dir: Path) -> int:
     from app.api import app as fastapi_app
 
@@ -567,6 +587,11 @@ def alpaca_run_command(
 @app.command("list-strategies", help="List available built-in strategies")
 def list_strategies_command() -> int:
     return _cmd_list_strategies()
+
+
+@app.command("market-overview-scheduler", help="Launch a market overview run when the saved cadence says one is due")
+def market_overview_scheduler_command() -> int:
+    return _cmd_market_overview_scheduler()
 
 
 @app.command("report-html", help="Convert backtest JSON output into a Material Design HTML report")

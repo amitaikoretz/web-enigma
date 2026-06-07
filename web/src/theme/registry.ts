@@ -21,10 +21,14 @@ export const LIGHT_THEME_PRESETS: ThemePreset[] = [
   'polar',
   'frost',
   'silica',
-  'alto',
   'glacial',
   'glacier_lilac',
   'graphite_teal',
+  'strata',
+  'ink_mica',
+  'citrus_porcelain',
+  'glass_blue',
+  'azure_slate',
 ]
 
 export const DARK_THEME_PRESETS: ThemePreset[] = [
@@ -37,6 +41,7 @@ export const DARK_THEME_PRESETS: ThemePreset[] = [
   'obsidian_cobalt',
   'plum_neon',
   'steel_ember',
+  'emerald_night',
 ]
 
 export const THEME_PRESET_GROUP_LABELS: Record<ThemePresetGroup, string> = {

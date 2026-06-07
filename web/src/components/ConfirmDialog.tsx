@@ -94,7 +94,7 @@ export function ConfirmDialog({
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
+      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1, justifyContent: 'flex-start' }}>
         <Button onClick={onCancel} disabled={loading} variant="outlined" color="inherit">
           {cancelLabel}
         </Button>

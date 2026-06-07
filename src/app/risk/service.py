@@ -14,6 +14,7 @@ from sqlalchemy.orm import sessionmaker, Session
 
 from app.backtests.argo import ArgoWorkflowSubmitter
 from app.backtests.persistence import SqlAlchemyBacktestJobRepository
+from app.datasets.persistence import SqlAlchemyDatasetRepository
 from app.backtests.argo_workflow import workflow_results_mount
 from app.risk.models_api import RiskModelCreateRequest
 from app.risk.workflow_errors import WorkflowErrorDetails, extract_workflow_error_details
@@ -61,6 +62,7 @@ class RiskModelService:
         *,
         session_factory: sessionmaker[Session],
         backtest_repo: SqlAlchemyBacktestJobRepository,
+        dataset_repo: SqlAlchemyDatasetRepository,
         risk_repo: SqlAlchemyRiskModelRepository,
         argo_submitter: ArgoWorkflowSubmitter | None = None,
         family: str = "risk",
@@ -69,6 +71,7 @@ class RiskModelService:
     ):
         self._session_factory = session_factory
         self._backtest_repo = backtest_repo
+        self._dataset_repo = dataset_repo
         self._risk_repo = risk_repo
         self._argo_submitter = argo_submitter or ArgoWorkflowSubmitter()
         self._family = family
@@ -121,8 +124,24 @@ class RiskModelService:
             report_paths[backtest_id] = paths.report_json_path
         return report_paths
 
+    def _validate_datasets(self, dataset_ids: list[str]) -> list[str]:
+        if not dataset_ids:
+            raise RiskModelValidationError(f"Provide at least one dataset_id for {self._family_label.lower()}")
+        resolutions: set[str] = set()
+        for dataset_id in dataset_ids:
+            item = self._dataset_repo.get(dataset_id)
+            if item is None:
+                raise RiskModelValidationError(f"Dataset '{dataset_id}' not found")
+            if item.status != "completed":
+                raise RiskModelValidationError(f"Dataset '{dataset_id}' is not completed")
+            resolutions.add(item.resolution)
+        if len(resolutions) > 1:
+            raise RiskModelValidationError("Selected datasets must share the same resolution")
+        return dataset_ids
+
     def create_and_submit_argo(self, request: RiskModelCreateRequest) -> CreateRiskModelResult:
-        report_paths = self._validate_backtests(request.backtest_ids)
+        report_paths = self._validate_backtests(request.backtest_ids) if request.backtest_ids else {}
+        dataset_ids = self._validate_datasets(request.dataset_ids) if request.dataset_ids else []
 
         group_id = uuid.uuid4().hex
         name = self._normalize_name(request.name)
@@ -153,6 +172,7 @@ class RiskModelService:
             "requested_at": _utc_now().isoformat(),
             "name": name,
             "backtest_ids": request.backtest_ids,
+            "dataset_ids": dataset_ids,
             "targets": [t.model_dump(mode="json") for t in request.targets],
             "dataset_config": request.dataset_config,
             "train_config": request.train_config,
@@ -165,6 +185,7 @@ class RiskModelService:
             params=params,
             artifact_dir=artifact_dir,
             backtest_ids=request.backtest_ids,
+            dataset_ids=dataset_ids,
             source_report_paths=report_paths,
         )
 
@@ -202,6 +223,7 @@ class RiskModelService:
             request = RiskModelCreateRequest.model_validate(
                 {
                     "backtest_ids": params.get("backtest_ids", []),
+                    "dataset_ids": params.get("dataset_ids", []),
                     "name": params.get("name", detail.name),
                     "targets": params.get("targets", []),
                     "dataset_config": params.get("dataset_config", {}),

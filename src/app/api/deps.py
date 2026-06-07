@@ -8,12 +8,15 @@ from starlette.requests import Request
 from app.backtests import BacktestJobService
 from app.config.models import DataCacheConfig
 from app.data.downloads import DataDownloadJobRepository, DataDownloadJobService
+from app.datasets import DatasetService
 from app.scans.service import ScanJobService
 from app.settings import PlatformSettingsService
 from app.risk.persistence import SqlAlchemyRiskModelRepository
 from app.risk.service import RiskModelService
 from app.daily_index_forecast.persistence import SqlAlchemyDailyIndexForecastRepository
 from app.daily_index_forecast.service import DailyIndexForecastService
+from app.market_overview.persistence import SqlAlchemyMarketOverviewRepository
+from app.market_overview.service import MarketOverviewService
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,9 @@ class ApiDependencies:
     return_forecast_models_repo: SqlAlchemyRiskModelRepository
     daily_index_forecast_models: DailyIndexForecastService
     daily_index_forecast_models_repo: SqlAlchemyDailyIndexForecastRepository
+    market_overview: MarketOverviewService
+    market_overview_repo: SqlAlchemyMarketOverviewRepository
+    datasets: DatasetService
 
 
 def get_deps(request: Request) -> ApiDependencies:

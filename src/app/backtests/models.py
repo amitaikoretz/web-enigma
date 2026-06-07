@@ -45,11 +45,14 @@ class BacktestTriggerSelection(TriggerSelection):
 
 class BacktestCreateRequest(BaseModel):
     name: str | None = Field(default=None, description="Optional display name for this backtest")
-    start_date: date
-    end_date: date
     resolution: str = Field(description="Bar resolution such as 1m, 5m, 15m, 1h, or 1d")
+    dataset_id: str | None = Field(default=None, description="Existing dataset to backtest against")
+    dataset_path: str | None = Field(default=None, description="Resolved parquet path for an existing dataset")
+    dataset_manifest_path: str | None = Field(default=None, description="Resolved manifest JSON path for an existing dataset")
+    start_date: date | None = None
+    end_date: date | None = None
     feed: Literal["iex", "sip", "otc"] = "iex"
-    symbols: list[str] = Field(min_length=1)
+    symbols: list[str] = Field(default_factory=list)
     triggers: list[BacktestTriggerSelection] = Field(min_length=1)
     exit_rules: list[ExitRulesSelection] = Field(min_length=1)
     model_policy: BacktestModelPolicyConfig | None = None
@@ -75,14 +78,22 @@ class BacktestCreateRequest(BaseModel):
                 raise ValueError("symbols must not contain empty values")
             if item not in normalized:
                 normalized.append(item)
-        if not normalized:
-            raise ValueError("At least one symbol is required")
         return normalized
 
     @model_validator(mode="after")
     def validate_dates(self) -> "BacktestCreateRequest":
+        if self.dataset_id or self.dataset_path:
+            if self.symbols:
+                raise ValueError("Dataset-backed backtests must not set symbols")
+            if self.dataset_path is not None and not self.dataset_manifest_path:
+                raise ValueError("Dataset-backed backtests must include dataset_manifest_path")
+            return self
+        if self.start_date is None or self.end_date is None:
+            raise ValueError("start_date and end_date are required when dataset_id is not set")
         if self.start_date > self.end_date:
             raise ValueError("start_date must be <= end_date")
+        if not self.symbols:
+            raise ValueError("At least one symbol is required")
         return self
 
     @field_validator("name", mode="before")

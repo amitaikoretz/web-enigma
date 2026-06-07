@@ -1,0 +1,97 @@
+entrypoint: market-overview
+serviceAccountName: __SERVICE_ACCOUNT__
+ttlStrategy:
+  secondsAfterCompletion: 604800
+arguments:
+  parameters:
+    - name: snapshot-id
+      value: __SNAPSHOT_ID__
+    - name: output-path
+      value: __OUTPUT_PATH__
+volumes:
+  - name: market-overview-results
+    persistentVolumeClaim:
+      claimName: __RESULTS_CLAIM__
+templates:
+  - name: market-overview
+    steps:
+      - - name: generate-snapshot
+          template: generate-snapshot
+          arguments:
+            parameters:
+              - name: snapshot-id
+                value: "{{workflow.parameters.snapshot-id}}"
+              - name: output-path
+                value: "{{workflow.parameters.output-path}}"
+      - - name: reconcile-snapshot
+          template: reconcile-snapshot
+          arguments:
+            parameters:
+              - name: snapshot-id
+                value: "{{workflow.parameters.snapshot-id}}"
+              - name: output-path
+                value: "{{workflow.parameters.output-path}}"
+  - name: generate-snapshot
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    inputs:
+      parameters:
+        - name: snapshot-id
+        - name: output-path
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.market_overview_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --snapshot-id
+        - "{{inputs.parameters.snapshot-id}}"
+        - --output-path
+        - "{{inputs.parameters.output-path}}"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      resources:
+        requests:
+          memory: 1Gi
+        limits:
+          memory: 1Gi
+      volumeMounts:
+        - {name: market-overview-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
+  - name: reconcile-snapshot
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    inputs:
+      parameters:
+        - name: snapshot-id
+        - name: output-path
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.market_overview_reconcile_argo"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --snapshot-id
+        - "{{inputs.parameters.snapshot-id}}"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      resources:
+        requests:
+          memory: 1Gi
+        limits:
+          memory: 1Gi
+      volumeMounts:
+        - {name: market-overview-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}

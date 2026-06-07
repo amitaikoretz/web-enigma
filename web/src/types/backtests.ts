@@ -350,11 +350,14 @@ export interface BacktestModelPolicyInput {
 
 export interface BacktestCreateRequest {
   name?: string | null
-  start_date: string
-  end_date: string
+  start_date?: string
+  end_date?: string
   resolution: string
   feed: BacktestFeed
-  symbols: string[]
+  dataset_id?: string | null
+  dataset_path?: string | null
+  dataset_manifest_path?: string | null
+  symbols?: string[]
   triggers: BacktestStrategySelectionInput[]
   exit_rules: ExitRulesSelectionInput[]
   model_policy?: BacktestModelPolicyInput | null

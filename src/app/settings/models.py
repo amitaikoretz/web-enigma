@@ -63,6 +63,7 @@ class BacktestDefaults(BaseModel):
     date_range_preset: Literal["30D", "90D", "1Y"] = "30D"
     resolution: Literal["1m", "5m", "15m", "1h", "1d"] = "5m"
     feed: Literal["iex", "sip", "otc"] = "iex"
+    dataset_storage_root: str = "/data/datasets"
     broker: BrokerConfig = Field(default_factory=BrokerConfig)
     analyzers: AnalyzerConfig = Field(
         default_factory=lambda: AnalyzerConfig(
@@ -108,6 +109,7 @@ class BacktestDefaults(BaseModel):
 class PlatformBehaviorSettings(BaseModel):
     timezone: str = "America/New_York"
     auto_refresh_interval_seconds: float = Field(default=1.5, ge=0.5, le=60)
+    market_overview_refresh_interval_seconds: float = Field(default=300.0, ge=30.0, le=24 * 60 * 60)
     confirm_before_launch: bool = False
     preferred_landing_page: Literal["backtests", "new_backtest", "chart"] = "backtests"
     backtest_execution_backend: Literal["local", "argo"] = "argo"

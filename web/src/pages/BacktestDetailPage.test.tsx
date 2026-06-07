@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { defaultPlatformSettings } from '../settings/defaults'
 
 const fetchBacktestDetailMock = vi.hoisted(() => vi.fn())
 const fetchBacktestStatusMock = vi.hoisted(() => vi.fn())
@@ -29,7 +30,9 @@ vi.mock('../api/argo', () => ({
 vi.mock('../settings/useSettings', () => ({
   useSettings: () => ({
     platformSettings: {
+      ...defaultPlatformSettings,
       platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
         auto_refresh_interval_seconds: 60,
         timezone: 'UTC',
       },

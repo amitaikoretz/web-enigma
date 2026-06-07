@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apple HIG + Fluent 2 Theme Mockups</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page-bg: #f3f4f7;
+        --page-fg: #10151c;
+        --muted: rgba(16, 21, 28, 0.68);
+        --border: rgba(16, 21, 28, 0.1);
+        --shadow: 0 24px 60px rgba(10, 20, 35, 0.12);
+        --radius-xl: 28px;
+        --radius-lg: 20px;
+        --radius-md: 14px;
+        --radius-sm: 10px;
+        --card-padding: 22px;
+        --mono: "SFMono-Regular", ui-monospace, Menlo, Monaco, Consolas, monospace;
+        --sans: "SF Pro Display", "SF Pro Text", "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        background:
+          radial-gradient(circle at top left, rgba(83, 140, 255, 0.12), transparent 24%),
+          radial-gradient(circle at top right, rgba(69, 204, 170, 0.12), transparent 22%),
+          linear-gradient(180deg, #f8fafc 0%, #eef1f5 100%);
+        color: var(--page-fg);
+      }
+
+      .shell {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+
+      .hero {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+
+      .eyebrow {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.8rem);
+        line-height: 1.02;
+        letter-spacing: -0.04em;
+      }
+
+      .summary {
+        max-width: 72ch;
+        font-size: 1rem;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      @media (min-width: 1100px) {
+        .grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .shell { padding-inline: 14px; }
+        .grid { grid-template-columns: 1fr; }
+      }
+
+      .section-label {
+        margin: 8px 0 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 16px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .theme-card {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        min-height: 350px;
+        isolation: isolate;
+      }
+
+      .theme-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(circle at 18% 12%, color-mix(in srgb, var(--accent) 26%, transparent), transparent 30%),
+          radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--accent-2) 18%, transparent), transparent 26%),
+          linear-gradient(180deg, color-mix(in srgb, var(--surface) 98%, white), var(--surface));
+        z-index: -2;
+      }
+
+      .theme-card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(135deg, rgba(255,255,255,0.16), transparent 40%),
+          linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.08));
+        opacity: var(--overlay, 0.55);
+        z-index: -1;
+        pointer-events: none;
+      }
+
+      .theme-card.light { color: #121826; }
+      .theme-card.dark { color: #f5f7fb; }
+
+      .theme-card .meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 20px 20px 0;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--chip-bg) 78%, transparent);
+        border: 1px solid color-mix(in srgb, var(--chip-border) 58%, transparent);
+        color: var(--chip-fg);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        backdrop-filter: blur(18px);
+      }
+
+      .chip::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+
+      .theme-title {
+        margin: 14px 20px 8px;
+        font-size: 1.25rem;
+        letter-spacing: -0.02em;
+      }
+
+      .theme-copy {
+        margin: 0 20px 18px;
+        color: color-mix(in srgb, currentColor 70%, transparent);
+        line-height: 1.55;
+        font-size: 0.95rem;
+      }
+
+      .mock-window {
+        margin: 0 16px 16px;
+        border-radius: calc(var(--radius-xl) - 6px);
+        border: 1px solid color-mix(in srgb, var(--window-border) 60%, transparent);
+        background: color-mix(in srgb, var(--window-bg) 86%, transparent);
+        backdrop-filter: blur(24px);
+        box-shadow: 0 18px 42px rgba(5, 12, 22, 0.15);
+        overflow: hidden;
+      }
+
+      .window-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px;
+        border-bottom: 1px solid color-mix(in srgb, var(--window-border) 42%, transparent);
+      }
+
+      .dots {
+        display: flex;
+        gap: 6px;
+      }
+
+      .dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--dot) 70%, white);
+      }
+
+      .window-title {
+        margin-left: auto;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        color: color-mix(in srgb, currentColor 55%, transparent);
+      }
+
+      .content {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 14px;
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--row-bg) 82%, transparent);
+        border: 1px solid color-mix(in srgb, var(--row-border) 55%, transparent);
+      }
+
+      .row strong {
+        display: block;
+        font-size: 14px;
+        margin-bottom: 4px;
+      }
+
+      .row span {
+        font-size: 12px;
+        color: color-mix(in srgb, currentColor 60%, transparent);
+      }
+
+      .metric {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 66px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        color: var(--metric-fg);
+        background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 94%, white), color-mix(in srgb, var(--accent-2) 70%, black));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
+      }
+
+      .footer-note {
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .light-1 { --surface: #fafcff; --accent: #5eead4; --accent-2: #dffaf6; --chip-bg: #ecfffb; --chip-border: #ccefe8; --chip-fg: #0f4e4a; --window-bg: #ffffff; --window-border: #dff2ef; --row-bg: #f6fffd; --row-border: #e5f4f1; --dot: #9fb9b4; --metric-fg: #05322f; --overlay: 0.34; }
+      .light-2 { --surface: #fffafc; --accent: #b46bff; --accent-2: #ffd6f3; --chip-bg: #fbf0ff; --chip-border: #ead7ff; --chip-fg: #4f237c; --window-bg: #ffffff; --window-border: #f0defa; --row-bg: #fff8ff; --row-border: #f0e4fb; --dot: #b29bcf; --metric-fg: #2e1549; --overlay: 0.32; }
+      .light-3 { --surface: #fffaf4; --accent: #ff7f6b; --accent-2: #ffd9a8; --chip-bg: #fff2ea; --chip-border: #ffd9ca; --chip-fg: #7a2417; --window-bg: #ffffff; --window-border: #f5e1d8; --row-bg: #fff8f5; --row-border: #f5e8e2; --dot: #c69b8d; --metric-fg: #5c140f; --overlay: 0.30; }
+      .light-4 { --surface: #faf8f2; --accent: #111827; --accent-2: #89a3ff; --chip-bg: #f4f2eb; --chip-border: #e0ddd3; --chip-fg: #111827; --window-bg: #ffffff; --window-border: #e5e0d6; --row-bg: #fbfaf6; --row-border: #ece6dc; --dot: #a6a098; --metric-fg: #ffffff; --overlay: 0.28; }
+      .light-5 { --surface: #f7f6ef; --accent: #9adf3f; --accent-2: #fff2a8; --chip-bg: #f5ffe0; --chip-border: #dfefb8; --chip-fg: #3f5313; --window-bg: #ffffff; --window-border: #e6efce; --row-bg: #fbfdf6; --row-border: #e9f0d9; --dot: #adb79b; --metric-fg: #24300f; --overlay: 0.30; }
+      .dark-1 { --surface: #060b12; --accent: #61f0ff; --accent-2: #99ffe8; --chip-bg: #0f1b25; --chip-border: #1e3440; --chip-fg: #c8fbff; --window-bg: #0b121a; --window-border: #1b2a35; --row-bg: #0f1822; --row-border: #223140; --dot: #86abb8; --metric-fg: #041218; --overlay: 0.40; }
+      .dark-2 { --surface: #120f1b; --accent: #ff6ad5; --accent-2: #8c7bff; --chip-bg: #211528; --chip-border: #382245; --chip-fg: #ffd5f3; --window-bg: #17111f; --window-border: #30203b; --row-bg: #1d1626; --row-border: #31223b; --dot: #b497c7; --metric-fg: #1b0816; --overlay: 0.44; }
+      .dark-3 { --surface: #071312; --accent: #7bffb5; --accent-2: #b9ffe8; --chip-bg: #0d221c; --chip-border: #19372f; --chip-fg: #d7ffe9; --window-bg: #0c1917; --window-border: #17312d; --row-bg: #10221f; --row-border: #1d3732; --dot: #8bb7ae; --metric-fg: #03130d; --overlay: 0.42; }
+      .dark-4 { --surface: #160f11; --accent: #ffb000; --accent-2: #ff6b4f; --chip-bg: #291916; --chip-border: #4a2b25; --chip-fg: #ffe9d8; --window-bg: #1f1514; --window-border: #402824; --row-bg: #271715; --row-border: #432922; --dot: #cdab92; --metric-fg: #190a05; --overlay: 0.42; }
+      .dark-5 { --surface: #0a1018; --accent: #b7ff5a; --accent-2: #67d8ff; --chip-bg: #121b25; --chip-border: #253448; --chip-fg: #e8ffd1; --window-bg: #101823; --window-border: #203043; --row-bg: #131d29; --row-border: #223446; --dot: #94aabc; --metric-fg: #07110a; --overlay: 0.40; }
+
+      .theme-card .labels {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 20px 16px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 11px;
+        letter-spacing: 0.03em;
+        border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+        background: color-mix(in srgb, currentColor 6%, transparent);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="hero">
+        <div class="eyebrow">Reference mashup</div>
+        <h1>Apple HIG + Fluent 2 theme candidates</h1>
+        <div class="summary">
+          Ten mockups that mix Apple’s hierarchy, rounded interaction affordances, and translucent materials with Fluent 2’s spacing, elevation, and clean surface language. The revised set pushes each palette into a distinct direction so the options feel more original, expressive, and memorable.
+        </div>
+      </div>
+
+      <div class="section-label">
+        <strong>Light candidates</strong>
+        <span>5 variations</span>
+      </div>
+      <section class="grid" aria-label="Light theme mockups">
+        <article class="theme-card light light-1">
+          <div class="meta">
+            <div class="chip">Light 01 · Pearly Current</div>
+            <div class="tag">Icy-luminous</div>
+          </div>
+          <h2 class="theme-title">Opalescent white with electric cyan</h2>
+          <p class="theme-copy">A polished, almost mineral surface where cyan feels like light passing through glass rather than a standard brand color.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Portfolio Overview</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Active widgets</strong><span>Weightless, reflective, precise</span></div><div class="metric">92%</div></div>
+              <div class="row"><div><strong>Signals in focus</strong><span>Glass-like clarity with cool shimmer</span></div><div class="metric">18</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card light light-2">
+          <div class="meta">
+            <div class="chip">Light 02 · Lilac Fog</div>
+            <div class="tag">Dreamlike</div>
+          </div>
+          <h2 class="theme-title">Mist-lilac with pearl highlights</h2>
+          <p class="theme-copy">A softer, more editorial palette that feels like paper under diffused studio lighting rather than a conventional app shell.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Theme Studio</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Primary action</strong><span>Blooming highlight, not neon</span></div><div class="metric">Run</div></div>
+              <div class="row"><div><strong>Secondary lane</strong><span>Powdered surfaces and soft depth</span></div><div class="metric">24</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card light light-3">
+          <div class="meta">
+            <div class="chip">Light 03 · Citrus Porcelain</div>
+            <div class="tag">Optimistic</div>
+          </div>
+          <h2 class="theme-title">Apricot, cream, and glassy coral</h2>
+          <p class="theme-copy">A warmer, more surprising light mode that feels sunlit and tactile without drifting into generic beige.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Dashboard</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Focus queue</strong><span>Sun-washed, gentle, refined</span></div><div class="metric">07</div></div>
+              <div class="row"><div><strong>Review state</strong><span>Warm accents with crisp framing</span></div><div class="metric">OK</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card light light-4">
+          <div class="meta">
+            <div class="chip">Light 04 · Ink & Mica</div>
+            <div class="tag">Gallery</div>
+          </div>
+          <h2 class="theme-title">Near-black typography on luminous mica</h2>
+          <p class="theme-copy">An artsy, high-contrast light theme that borrows from print design and gallery labels instead of corporate UI convention.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Reports</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Trend lift</strong><span>Editorial, graphic, and modern</span></div><div class="metric">+14</div></div>
+              <div class="row"><div><strong>Actionable items</strong><span>Ink-on-light with glass depth</span></div><div class="metric">06</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card light light-5">
+          <div class="meta">
+            <div class="chip">Light 05 · Mineral Ledger</div>
+            <div class="tag">Structured</div>
+          </div>
+          <h2 class="theme-title">Soft mineral gray with neon-lime discipline</h2>
+          <p class="theme-copy">A data-first theme that uses one vivid accent sparingly, so the rest of the palette can stay elegant and unusually quiet.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Operations</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Pipeline health</strong><span>Precise, quiet, and scalable</span></div><div class="metric">88%</div></div>
+              <div class="row"><div><strong>Open tasks</strong><span>Single-tone restraint with a sharp accent</span></div><div class="metric">13</div></div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <div class="section-label" style="margin-top: 26px;">
+        <strong>Dark candidates</strong>
+        <span>5 variations</span>
+      </div>
+      <section class="grid" aria-label="Dark theme mockups">
+        <article class="theme-card dark dark-1">
+          <div class="meta">
+            <div class="chip">Dark 01 · Obsidian Tide</div>
+            <div class="tag">Nocturne</div>
+          </div>
+          <h2 class="theme-title">Black basalt with sea-glow cyan</h2>
+          <p class="theme-copy">A moody dark theme that feels geological and coastal, with a luminous cyan accent hovering like bioluminescence.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Night Shift</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Connections</strong><span>Deep, wet, and dimensional</span></div><div class="metric">41</div></div>
+              <div class="row"><div><strong>Latency</strong><span>Cool glow over mineral dark</span></div><div class="metric">8ms</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card dark dark-2">
+          <div class="meta">
+            <div class="chip">Dark 02 · Plum Static</div>
+            <div class="tag">Electric</div>
+          </div>
+          <h2 class="theme-title">Violet shadows with pink interference</h2>
+          <p class="theme-copy">A speculative dark palette that feels a little synthetic, a little luxurious, and very distinct from standard enterprise dark mode.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Workbench</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Primary panel</strong><span>Violet haze, hot pink trace</span></div><div class="metric">Live</div></div>
+              <div class="row"><div><strong>Secondary panel</strong><span>Moody and deliberately synthetic</span></div><div class="metric">31</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card dark dark-3">
+          <div class="meta">
+            <div class="chip">Dark 03 · Emerald Night</div>
+            <div class="tag">Biolume</div>
+          </div>
+          <h2 class="theme-title">Bioluminescent green on black water</h2>
+          <p class="theme-copy">The requested dark option, but pushed toward underwater glow and wet glass rather than a muted productivity palette.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Insights</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Health score</strong><span>Living green, deep black, wet shine</span></div><div class="metric">97</div></div>
+              <div class="row"><div><strong>Review lane</strong><span>Emerald glow with precise framing</span></div><div class="metric">GO</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card dark dark-4">
+          <div class="meta">
+            <div class="chip">Dark 04 · Amber Resin</div>
+            <div class="tag">Warm dark</div>
+          </div>
+          <h2 class="theme-title">Burnt amber, resin, and smoked glass</h2>
+          <p class="theme-copy">A cinematic dark mode that feels like lit resin and polished wood, with a richer mood than the usual orange-on-charcoal pairing.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Narrative</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Story block</strong><span>Amber-lit, reflective, and tactile</span></div><div class="metric">04</div></div>
+              <div class="row"><div><strong>Annotations</strong><span>Smoke, glow, and deep shadow</span></div><div class="metric">16</div></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="theme-card dark dark-5">
+          <div class="meta">
+            <div class="chip">Dark 05 · Polar Signal</div>
+            <div class="tag">Control room</div>
+          </div>
+          <h2 class="theme-title">Glacial slate with neon signal accents</h2>
+          <p class="theme-copy">A sharper, more futuristic dark dashboard where the accent behaves like instrument lighting rather than primary branding.</p>
+          <div class="mock-window">
+            <div class="window-top"><div class="dots"><span></span><span></span><span></span></div><div class="window-title">Control Room</div></div>
+            <div class="content">
+              <div class="row"><div><strong>Active alerts</strong><span>Instrument-panel clarity</span></div><div class="metric">09</div></div>
+              <div class="row"><div><strong>Queued actions</strong><span>Signal-first, cool-toned, exact</span></div><div class="metric">22</div></div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <p class="footer-note">
+        Design cues referenced from Apple HIG: hierarchy, rounded interactive shapes, materials, layout, typography, color, accessibility, and motion; and from Fluent 2: layout, color, materials, elevation, shapes, typography, and motion.
+      </p>
+    </main>
+  </body>
+</html>

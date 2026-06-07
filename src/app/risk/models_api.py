@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.feature_importance.models import FeatureImportanceTarget
+
 
 RiskModelStatus = Literal["pending", "running", "succeeded", "failed", "canceled"]
 RiskModelTaskType = Literal["classification", "regression"]
@@ -16,7 +18,8 @@ class RiskModelTargetSpec(BaseModel):
 
 
 class RiskModelCreateRequest(BaseModel):
-    backtest_ids: list[str]
+    backtest_ids: list[str] = Field(default_factory=list)
+    dataset_ids: list[str] = Field(default_factory=list)
     name: str | None = Field(default=None, max_length=128)
     targets: list[RiskModelTargetSpec] = Field(default_factory=list)
     dataset_config: dict[str, Any] = Field(default_factory=dict)
@@ -63,6 +66,7 @@ class RiskModelTargetRowResponse(BaseModel):
     metrics: dict[str, Any] | None = None
     dataset_manifest_path: str | None = None
     feature_columns: list[str] | None = None
+    feature_importance: FeatureImportanceTarget | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -81,6 +85,7 @@ class RiskModelDetailResponse(BaseModel):
     dataset_manifest: RiskDatasetManifestSummary | None = None
     sources: list[dict[str, Any]] = Field(default_factory=list)
     targets: list[RiskModelTargetRowResponse] = Field(default_factory=list)
+    feature_importance: FeatureImportanceTarget | None = None
     training_start_date: date | None = None
     training_end_date: date | None = None
 

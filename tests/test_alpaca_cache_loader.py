@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from urllib.parse import urlparse, parse_qs
 
 import pytest
 
-from app.config.models import AlpacaDataSource, DataCacheConfig
+from app.config.models import AlpacaDataSource, AlpacaOptionsDataSource, DataCacheConfig
 from app.data.loaders import build_alpaca_data_feed_with_cache
+from app.data.loaders import build_alpaca_options_data_feed_with_cache
 
 
 def _mock_alpaca_payload() -> bytes:
@@ -137,3 +139,54 @@ def test_alpaca_request_includes_full_stop_day(tmp_path, monkeypatch):
     assert captured_urls
     assert "start=2024-01-15T00%3A00%3A00Z" in captured_urls[0]
     assert "end=2024-01-16T00%3A00%3A00Z" in captured_urls[0]
+
+
+def test_alpaca_options_requests_include_requested_feed(tmp_path, monkeypatch):
+    captured_urls: list[str] = []
+
+    def fake_urlopen(request, *args, **kwargs):
+        captured_urls.append(request.full_url)
+        if "snapshots" in request.full_url:
+            payload = {
+                "snapshots": {
+                    "AAPL240621C00100000": {
+                        "symbol": "AAPL240621C00100000",
+                    }
+                }
+            }
+        else:
+            payload = {
+                "bars": [
+                    {
+                        "t": "2024-01-01T00:00:00Z",
+                        "o": 1.0,
+                        "h": 1.0,
+                        "l": 1.0,
+                        "c": 1.0,
+                        "v": 1,
+                    }
+                ],
+                "next_page_token": None,
+            }
+        return _FakeResponse(json.dumps(payload).encode("utf-8"))
+
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
+
+    config = AlpacaOptionsDataSource(type="alpaca-options", symbol="AAPL", interval="1d", feed="indicative")
+    cache_cfg = DataCacheConfig(directory=str(tmp_path), enabled=False)
+
+    build_alpaca_options_data_feed_with_cache(
+        config,
+        date(2024, 1, 1),
+        date(2024, 1, 3),
+        cache_cfg,
+        force_refresh=False,
+    )
+
+    assert len(captured_urls) == 2
+    snapshot_query = parse_qs(urlparse(captured_urls[0]).query)
+    bars_query = parse_qs(urlparse(captured_urls[1]).query)
+    assert snapshot_query["feed"] == ["indicative"]
+    assert bars_query["feed"] == ["indicative"]

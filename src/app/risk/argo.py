@@ -53,6 +53,7 @@ class RiskModelArgoSubmitter:
         response = self.submitter._http_request(  # reuse authenticated request machinery
             "POST",
             f"/api/v1/workflows/{self.submitter.config.namespace}",
+            endpoint_name="risk.argo.submit",
             json=body,
         )
         if response.status_code >= 400:

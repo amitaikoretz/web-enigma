@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { defaultPlatformSettings } from '../settings/defaults'
 
 const fetchRiskModelDetailMock = vi.hoisted(() => vi.fn())
 const fetchRiskModelStatusMock = vi.hoisted(() => vi.fn())
@@ -28,7 +29,9 @@ vi.mock('../api/argo', () => ({
 vi.mock('../settings/useSettings', () => ({
   useSettings: () => ({
     platformSettings: {
+      ...defaultPlatformSettings,
       platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
         auto_refresh_interval_seconds: 60,
         timezone: 'UTC',
       },
@@ -119,10 +122,26 @@ describe('RiskModelDetailPage', () => {
           },
           dataset_manifest_path: '/tmp/risk-models/g-1/dataset/manifest.json',
           feature_columns: ['alpha.mean', 'alpha.std', 'beta.value', 'plain_feature', 'plain_other', 'gamma.level'],
+          feature_importance: {
+            target_key: 'stop_prob',
+            rows: [
+              { feature: 'alpha.mean', importance: 0.55, signed_importance: 0.31 },
+              { feature: 'plain_feature', importance: 0.25, signed_importance: -0.14 },
+              { feature: 'beta.value', importance: 0.2, signed_importance: 0.09 },
+            ],
+          },
           created_at: '2026-06-01T12:00:10.000Z',
           updated_at: '2026-06-01T12:01:10.000Z',
         },
       ],
+      feature_importance: {
+        target_key: 'stop_prob',
+        rows: [
+          { feature: 'alpha.mean', importance: 0.55, signed_importance: 0.31 },
+          { feature: 'plain_feature', importance: 0.25, signed_importance: -0.14 },
+          { feature: 'beta.value', importance: 0.2, signed_importance: 0.09 },
+        ],
+      },
     })
     fetchRiskModelStatusMock.mockResolvedValue({
       group_id: 'g-1',
@@ -145,6 +164,7 @@ describe('RiskModelDetailPage', () => {
     expect(screen.getByRole('tab', { name: 'Training' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Targets' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Performance' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Feature Importance' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Debug' })).toBeInTheDocument()
     expect(screen.getByText('Training snapshot')).toBeInTheDocument()
     expect(screen.getByText('Headline metrics')).toBeInTheDocument()
@@ -165,6 +185,11 @@ describe('RiskModelDetailPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Training' }))
     expect(screen.getByText('Source backtests')).toBeInTheDocument()
     expect(screen.getByText('Dataset manifest summary')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Feature Importance' }))
+    expect(await screen.findByText('Feature importance')).toBeInTheDocument()
+    expect(screen.getByText('stop_prob')).toBeInTheDocument()
+    expect(screen.getByText('55.0%')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: 'Targets' }))
     fireEvent.click(screen.getByRole('tab', { name: 'Fold metrics (1)' }))

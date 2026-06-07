@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from threading import Event
 
@@ -9,6 +9,7 @@ import yaml
 
 from fastapi.testclient import TestClient
 
+from app.datasets.models import DatasetListItem
 from app.backtests.models import BacktestCreateRequest, BacktestDetailResponse, BacktestTradeReplayCapsule
 from app.backtests.replay import build_trade_replay_capsule, build_trade_replay_launch_config
 from app.backtests.service import BacktestArtifactStore, build_backtest_config, build_backtest_config_raw
@@ -189,6 +190,105 @@ def test_build_backtest_config_includes_model_policy_per_run() -> None:
     assert config.runs[0].model_policy is not None
     assert config.runs[0].model_policy.forecast_model is not None
     assert config.runs[0].model_policy.risk_model is not None
+
+
+def test_build_backtest_config_uses_dataset_manifest_dates(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "dataset.parquet"
+    manifest_path = tmp_path / "dataset.manifest.json"
+    manifest_path.write_text(
+        '{"symbol":"AAPL","provider":"alpaca","resolution":"1d","start_date":"2024-01-01","end_date":"2024-01-31","dataset_path":"'
+        + str(dataset_path)
+        + '"}',
+        encoding="utf-8",
+    )
+
+    payload = BacktestCreateRequest.model_validate(
+        {
+            "dataset_path": str(dataset_path),
+            "dataset_manifest_path": str(manifest_path),
+            "resolution": "1d",
+            "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "exit_rules": [
+                {
+                    "rules": [
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                    ]
+                }
+            ],
+        }
+    )
+
+    raw = build_backtest_config_raw(payload, "job123")
+    run = raw["runs"][0]
+    assert run["start_date"] == "2024-01-01"
+    assert run["end_date"] == "2024-01-31"
+    assert run["data"] == {"type": "parquet", "path": str(dataset_path)}
+
+
+def test_create_backtest_can_resolve_dataset_paths_from_dataset_id(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("app.backtests.service.run_backtests_with_hooks", _fake_runner)
+    client = _build_client(tmp_path)
+
+    output_dir = tmp_path / "datasets"
+    output_dir.mkdir()
+    dataset_path = output_dir / "AAPL-alpaca-1d.parquet"
+    manifest_path = output_dir / "AAPL-alpaca-1d.manifest.json"
+    dataset_path.write_text("data", encoding="utf-8")
+    manifest_path.write_text(
+        '{"symbol":"AAPL","provider":"alpaca","resolution":"1d","start_date":"2024-01-01","end_date":"2024-01-31","dataset_path":"'
+        + str(dataset_path)
+        + '"}',
+        encoding="utf-8",
+    )
+
+    client.app.state.deps.datasets.repository.create(
+        DatasetListItem(
+            id="ds-1",
+            name="My dataset",
+            symbol="AAPL",
+            provider="alpaca",
+            resolution="1d",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+            created_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+            status="completed",
+            argo_namespace=None,
+            argo_workflow_name=None,
+            params_json={},
+            output_dir=str(output_dir),
+            dataset_parquet_path=None,
+            manifest_path=None,
+            options_parquet_path=None,
+            options_manifest_path=None,
+            error_message=None,
+            progress_pct=100.0,
+        )
+    )
+
+    response = client.post(
+        "/backtests",
+        json={
+            "dataset_id": "ds-1",
+            "resolution": "1d",
+            "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "exit_rules": [
+                {
+                    "rules": [
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                    ]
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    backtest_id = response.json()["backtest_id"]
+    status_body = _wait_for_terminal_status(client, backtest_id)
+    assert status_body["status"] == "completed"
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+    assert detail["report"]["input_config"]["runs"][0]["data"] == {"type": "parquet", "path": str(dataset_path)}
 
 
 def test_trade_replay_launch_config_exposes_alpaca_env_vars() -> None:

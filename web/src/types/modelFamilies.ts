@@ -7,8 +7,20 @@ export interface ModelTargetSpec {
   task_type: ModelTaskType
 }
 
+export interface FeatureImportanceRow {
+  feature: string
+  importance: number
+  signed_importance?: number | null
+}
+
+export interface FeatureImportanceTarget {
+  target_key: string
+  rows: FeatureImportanceRow[]
+}
+
 export interface ModelCreateRequest {
-  backtest_ids: string[]
+  backtest_ids?: string[]
+  dataset_ids?: string[]
   name?: string | null
   targets: ModelTargetSpec[]
   dataset_config: Record<string, unknown>
@@ -77,6 +89,7 @@ export interface ModelListItem {
   argo_namespace?: string | null
   argo_workflow_name?: string | null
   backtest_ids: string[]
+  dataset_ids: string[]
   targets: string[]
   targets_total: number
   targets_done: number
@@ -96,6 +109,7 @@ export interface ModelTargetRow {
   metrics?: Record<string, unknown> | null
   dataset_manifest_path?: string | null
   feature_columns?: string[] | null
+  feature_importance?: FeatureImportanceTarget | null
   created_at: string
   updated_at: string
 }
@@ -120,6 +134,8 @@ export interface ModelDetail {
   dataset_manifest?: DatasetManifestSummary | null
   sources: ModelSourceRow[]
   targets: ModelTargetRow[]
+  dataset_ids: string[]
+  feature_importance?: FeatureImportanceTarget | null
   training_start_date?: string | null
   training_end_date?: string | null
 }

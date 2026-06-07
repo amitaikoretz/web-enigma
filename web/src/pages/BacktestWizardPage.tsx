@@ -1,4 +1,3 @@
-import AddIcon from '@mui/icons-material/Add'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
@@ -29,18 +28,18 @@ import {
 } from '@mui/material'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 
 import { createBacktest, fetchBacktestInputConfig } from '../api/backtests'
+import { fetchDatasets } from '../api/datasets'
 import { BacktestModelPolicyForm } from '../components/BacktestModelPolicyForm'
 import { fetchExitRules, fetchStrategies } from '../api/strategies'
-import { createUserUniverse, fetchUniverseConstituents, fetchUniverses } from '../api/universes'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestFeed, BacktestModelPolicyInput } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 import type { StrategyMetadata, StrategyParameterMetadata } from '../types/strategies'
-import type { SymbolUniverse } from '../types/universes'
+import type { DatasetListItem } from '../types/datasets'
 import {
   buildOverrideParams,
   normalizeParamValue,
@@ -54,27 +53,23 @@ import {
 const RESOLUTIONS: Resolution[] = ['1m', '5m', '15m', '1h', '1d']
 const FEEDS: BacktestFeed[] = ['iex', 'sip', 'otc']
 
+function resolveStartDatePreset(value: '30D' | '90D' | '1Y'): Dayjs {
+  if (value === '90D') return dayjs().subtract(90, 'day')
+  if (value === '1Y') return dayjs().subtract(1, 'year')
+  return dayjs().subtract(30, 'day')
+}
+
+function formatReviewDateRange(startDate: Dayjs | null, endDate: Dayjs | null): string {
+  if (!startDate || !endDate) {
+    return 'Choose a start and end date.'
+  }
+  return `${startDate.format('MMM D, YYYY')} → ${endDate.format('MMM D, YYYY')}`
+}
+
 interface LaunchResultState {
   status: 'success' | 'failed'
   message: string
   backtestId?: string
-}
-
-function resolveStartDatePreset(value: '30D' | '90D' | '1Y'): Dayjs {
-  if (value === '90D') {
-    return dayjs().subtract(90, 'day')
-  }
-  if (value === '1Y') {
-    return dayjs().subtract(1, 'year')
-  }
-  return dayjs().subtract(30, 'day')
-}
-
-function formatDateRange(startDate: Dayjs | null, endDate: Dayjs | null): string {
-  if (!startDate || !endDate) {
-    return 'Choose a start and end date.'
-  }
-  return `${startDate.format('MMM D, YYYY')} to ${endDate.format('MMM D, YYYY')}`
 }
 
 function ParameterField({
@@ -231,6 +226,7 @@ export function BacktestWizardPage() {
   const { platformSettings } = useSettings()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const errorAlertRef = useRef<HTMLDivElement | null>(null)
   const prefillFromId = searchParams.get('from')
   const downloadPrefillSymbols = searchParams.get('symbols')
   const [triggers, setTriggers] = useState<StrategyMetadata[]>([])
@@ -243,33 +239,17 @@ export function BacktestWizardPage() {
   const [launchResult, setLaunchResult] = useState<LaunchResultState | null>(null)
   const [backtestName, setBacktestName] = useState('')
   const [prefillSourceId, setPrefillSourceId] = useState<string | null>(null)
+  const [launchMode, setLaunchMode] = useState<'dataset' | 'legacy'>('legacy')
   const [symbols, setSymbols] = useState<string[]>(platformSettings.backtest_defaults.symbols_seed_list)
-  const [availableUniverses, setAvailableUniverses] = useState<SymbolUniverse[]>([])
-  const [loadingUniverses, setLoadingUniverses] = useState(false)
-  const [selectedUniverseKeys, setSelectedUniverseKeys] = useState<string[]>([])
-  const [expandingUniverses, setExpandingUniverses] = useState(false)
-  const [createUniverseDialogOpen, setCreateUniverseDialogOpen] = useState(false)
-  const [createUniverseDraft, setCreateUniverseDraft] = useState({
-    name: '',
-    description: '',
-    isActive: true,
-  })
-  const [creatingUniverse, setCreatingUniverse] = useState(false)
-  const [addConstituentsDialogOpen, setAddConstituentsDialogOpen] = useState(false)
-  const [expandedUniverseSymbols, setExpandedUniverseSymbols] = useState<string[]>([])
-  const [addConstituentsDraft, setAddConstituentsDraft] = useState({
-    subsamplePct: 100,
-    shuffle: true,
-    seed: '',
-    includeText: '',
-    excludeText: '',
-  })
   const [startDate, setStartDate] = useState<Dayjs | null>(
     resolveStartDatePreset(platformSettings.backtest_defaults.date_range_preset),
   )
   const [endDate, setEndDate] = useState<Dayjs | null>(dayjs())
   const [resolution, setResolution] = useState<Resolution>(platformSettings.backtest_defaults.resolution)
   const [feed, setFeed] = useState<BacktestFeed>(platformSettings.backtest_defaults.feed)
+  const [availableDatasets, setAvailableDatasets] = useState<DatasetListItem[]>([])
+  const [loadingDatasets, setLoadingDatasets] = useState(false)
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null)
   const [selectedTriggerNames, setSelectedTriggerNames] = useState<string[]>([])
   const [triggerOverrides, setTriggerOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const [selectedExitRuleNames, setSelectedExitRuleNames] = useState<string[]>([])
@@ -280,6 +260,11 @@ export function BacktestWizardPage() {
   const [submitBroker, setSubmitBroker] = useState(platformSettings.backtest_defaults.broker)
   const [submitAnalyzers, setSubmitAnalyzers] = useState(platformSettings.backtest_defaults.analyzers)
   const [submitExecution, setSubmitExecution] = useState(platformSettings.backtest_defaults.execution)
+  const selectedDataset = useMemo(
+    () => availableDatasets.find((item) => item.id === selectedDatasetId) ?? null,
+    [availableDatasets, selectedDatasetId],
+  )
+  const totalRuns = launchMode === 'dataset' ? selectedTriggerNames.length : symbols.length * selectedTriggerNames.length
 
   useEffect(() => {
     if (prefillFromId || !downloadPrefillSymbols) {
@@ -295,18 +280,9 @@ export function BacktestWizardPage() {
       return undefined
     }
 
-    const nextStartDate = searchParams.get('start_date')
-    const nextEndDate = searchParams.get('end_date')
     const nextResolution = searchParams.get('resolution')
     const nextFeed = searchParams.get('feed')
 
-    setSymbols(parsedSymbols)
-    if (nextStartDate) {
-      setStartDate(dayjs(nextStartDate))
-    }
-    if (nextEndDate) {
-      setEndDate(dayjs(nextEndDate))
-    }
     if (nextResolution && RESOLUTIONS.includes(nextResolution as Resolution)) {
       setResolution(nextResolution as Resolution)
     }
@@ -379,206 +355,30 @@ export function BacktestWizardPage() {
     }
   }, [prefillFromId, platformSettings.backtest_defaults.resolution])
 
-  const reloadUniverses = async () => {
-    setLoadingUniverses(true)
-    try {
-      const items = await fetchUniverses(true)
-      setAvailableUniverses(items)
-    } catch {
-      setAvailableUniverses([])
-    } finally {
-      setLoadingUniverses(false)
-    }
-  }
-
   useEffect(() => {
     let cancelled = false
-    setLoadingUniverses(true)
-    void fetchUniverses(true)
+    setLoadingDatasets(true)
+    void fetchDatasets()
       .then((items) => {
         if (cancelled) {
           return
         }
-        setAvailableUniverses(items)
+        setAvailableDatasets(items.items.filter((item) => item.status === 'completed'))
       })
       .catch(() => {
         if (!cancelled) {
-          setAvailableUniverses([])
+          setAvailableDatasets([])
         }
       })
       .finally(() => {
         if (!cancelled) {
-          setLoadingUniverses(false)
+          setLoadingDatasets(false)
         }
       })
     return () => {
       cancelled = true
     }
   }, [])
-
-  const asOfDateForUniverses = useMemo(() => {
-    const resolved = startDate ?? dayjs()
-    return resolved.format('YYYY-MM-DD')
-  }, [startDate])
-
-  const parseSymbolFilterText = (value: string) =>
-    value
-      .split(/[\n,]+/g)
-      .map((item) => item.trim().toUpperCase())
-      .filter(Boolean)
-
-  const shuffleWithSeed = (items: string[], seedText: string) => {
-    const seedBase = seedText.trim() || 'seed'
-    const mix = (input: string) => {
-      let h = 2166136261
-      for (let i = 0; i < input.length; i += 1) {
-        h ^= input.charCodeAt(i)
-        h = Math.imul(h, 16777619)
-      }
-      return h >>> 0
-    }
-    let state = mix(seedBase)
-    const next = () => {
-      state = (Math.imul(1664525, state) + 1013904223) >>> 0
-      return state / 2 ** 32
-    }
-    const copy = [...items]
-    for (let i = copy.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(next() * (i + 1))
-      ;[copy[i], copy[j]] = [copy[j], copy[i]]
-    }
-    return copy
-  }
-
-  const subsampleCount = (count: number, pct: number) => {
-    const normalizedPct = Math.max(1, Math.min(100, Math.round(pct)))
-    if (count <= 0) {
-      return 0
-    }
-    if (normalizedPct === 100) {
-      return count
-    }
-    return Math.max(1, Math.floor((count * normalizedPct) / 100))
-  }
-
-  const filteredExpandedSymbolsBeforeSampling = useMemo(() => {
-    const include = parseSymbolFilterText(addConstituentsDraft.includeText)
-    const exclude = new Set(parseSymbolFilterText(addConstituentsDraft.excludeText))
-    const includeSet = include.length > 0 ? new Set(include) : null
-    const base = expandedUniverseSymbols.filter((item) => (includeSet ? includeSet.has(item) : true))
-    const filtered = base.filter((item) => !exclude.has(item))
-    return addConstituentsDraft.shuffle ? shuffleWithSeed(filtered, addConstituentsDraft.seed) : filtered
-  }, [addConstituentsDraft.excludeText, addConstituentsDraft.includeText, addConstituentsDraft.seed, addConstituentsDraft.shuffle, expandedUniverseSymbols])
-
-  const filteredExpandedSymbols = useMemo(() => {
-    const pct = Math.max(1, Math.min(100, Math.round(addConstituentsDraft.subsamplePct)))
-    const target = subsampleCount(filteredExpandedSymbolsBeforeSampling.length, pct)
-    return filteredExpandedSymbolsBeforeSampling.slice(0, target)
-  }, [addConstituentsDraft.subsamplePct, filteredExpandedSymbolsBeforeSampling])
-
-  const applyUniverseSelection = async (mode: 'add' | 'replace') => {
-    if (selectedUniverseKeys.length === 0) {
-      return
-    }
-    setError(null)
-    setExpandingUniverses(true)
-    try {
-      const selectedUniverses = selectedUniverseKeys
-        .map((key) => availableUniverses.find((item) => item.key === key))
-        .filter((item): item is NonNullable<typeof item> => Boolean(item))
-
-      const expansions = await Promise.all(
-        selectedUniverses.map((universe) => {
-          const asOf = universe.kind === 'user' ? dayjs().format('YYYY-MM-DD') : asOfDateForUniverses
-          return fetchUniverseConstituents(universe.key, asOf)
-        }),
-      )
-      const expanded = expansions.flatMap((item) => item.symbols)
-      if (expanded.length === 0) {
-        const keys = selectedUniverseKeys.join(', ')
-        setError(
-          `No constituents found for ${keys}. ` +
-            'Sync the universe registry and run a universe refresh first (user universes use today, others use the start date).',
-        )
-        return
-      }
-      const normalized = expanded
-        .map((item) => item.trim().toUpperCase())
-        .filter(Boolean)
-      const dedupedExpanded = normalized.filter((item, idx, arr) => arr.indexOf(item) === idx)
-      if (mode === 'add') {
-        setExpandedUniverseSymbols(dedupedExpanded)
-        setAddConstituentsDraft({
-          subsamplePct: 100,
-          shuffle: true,
-          seed: '',
-          includeText: '',
-          excludeText: '',
-        })
-        setAddConstituentsDialogOpen(true)
-        return
-      }
-      const merged = [...dedupedExpanded]
-      setSymbols(merged)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to expand universe')
-    } finally {
-      setExpandingUniverses(false)
-    }
-  }
-
-  const handleConfirmAddConstituents = () => {
-    if (filteredExpandedSymbols.length === 0) {
-      setError('No symbols matched the filters.')
-      return
-    }
-    const merged = [...symbols, ...filteredExpandedSymbols]
-    const deduped = merged.filter((item, idx, arr) => arr.indexOf(item) === idx)
-    setSymbols(deduped)
-    setAddConstituentsDialogOpen(false)
-  }
-
-  const openCreateUniverseDialog = () => {
-    if (symbols.length === 0) {
-      setError('Add at least one symbol before creating a universe.')
-      return
-    }
-    setError(null)
-    setCreateUniverseDraft({ name: '', description: '', isActive: true })
-    setCreateUniverseDialogOpen(true)
-  }
-
-  const handleCreateUniverse = async () => {
-    const name = createUniverseDraft.name.trim()
-    if (!name) {
-      setError('Universe name is required.')
-      return
-    }
-    if (symbols.length === 0) {
-      setError('No symbols selected.')
-      return
-    }
-
-    setCreatingUniverse(true)
-    setError(null)
-    try {
-      const created = await createUserUniverse({
-        name,
-        description: createUniverseDraft.description.trim() || null,
-        symbols,
-        is_active: createUniverseDraft.isActive,
-      })
-      setCreateUniverseDialogOpen(false)
-      await reloadUniverses()
-      setSelectedUniverseKeys((prev) =>
-        prev.includes(created.key) ? prev : [...prev, created.key],
-      )
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create universe')
-    } finally {
-      setCreatingUniverse(false)
-    }
-  }
 
   useEffect(() => {
     if (!prefillFromId || loadingTriggers || loadingExitRules || triggers.length === 0 || exitRules.length === 0) {
@@ -636,6 +436,7 @@ export function BacktestWizardPage() {
           throw new Error('None of the original exit rules are available on this server.')
         }
 
+        setLaunchMode('legacy')
         setSymbols(prefill.symbols)
         setStartDate(dayjs(prefill.startDate))
         setEndDate(dayjs(prefill.endDate))
@@ -685,9 +486,31 @@ export function BacktestWizardPage() {
     [selectedExitRuleNames, exitRules],
   )
 
-  const totalRuns = symbols.length * selectedTriggers.length
-  const hasValidDateRange =
-    startDate !== null && endDate !== null && !endDate.isBefore(startDate, 'day')
+  const hasValidDateRange = startDate !== null && endDate !== null && !endDate.isBefore(startDate, 'day')
+
+  useLayoutEffect(() => {
+    if (!error || !errorAlertRef.current) {
+      return
+    }
+    const element = errorAlertRef.current
+    const timer = window.setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      element.focus({ preventScroll: true })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [error])
+
+  const showCommissionDragWarning = useMemo(
+    () =>
+      shouldShowCommissionDragWarning(
+        resolution,
+        submitBroker.commission,
+        selectedTriggers,
+        triggerOverrides,
+      ),
+    [resolution, submitBroker.commission, selectedTriggers, triggerOverrides],
+  )
 
   const handleTriggerSelectionChange = (nextTriggers: StrategyMetadata[]) => {
     const nextNames = nextTriggers.map((trigger) => trigger.name)
@@ -721,16 +544,6 @@ export function BacktestWizardPage() {
     })
   }
 
-  const showCommissionDragWarning = useMemo(
-    () =>
-      shouldShowCommissionDragWarning(
-        resolution,
-        submitBroker.commission,
-        selectedTriggers,
-        triggerOverrides,
-      ),
-    [resolution, submitBroker.commission, selectedTriggers, triggerOverrides],
-  )
 
   const handleTriggerParamChange = (triggerName: string, name: string, value: unknown) => {
     setTriggerOverrides((current) => ({
@@ -798,19 +611,29 @@ export function BacktestWizardPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setLaunchResult(null)
-    if (!startDate || !endDate || !hasValidDateRange) {
+    if (launchMode === 'dataset') {
+      if (!selectedDataset || !selectedDataset.dataset_parquet_path || !selectedDataset.manifest_path) {
+        setError('Choose a completed dataset before submitting.')
+        return
+      }
+    } else if (!hasValidDateRange) {
       setError('Choose a valid date range before submitting.')
       return
     }
-    if (symbols.length === 0 || selectedTriggers.length === 0 || selectedExitRuleNames.length === 0) {
-      setError('Add at least one symbol, trigger, and exit rule before submitting.')
+    if (selectedTriggers.length === 0 || selectedExitRuleNames.length === 0) {
+      setError('Add at least one trigger and exit rule before submitting.')
       return
     }
 
     if (platformSettings.platform_behavior.confirm_before_launch) {
-      const confirmed = window.confirm(
-        `Launch ${totalRuns} backtest run${totalRuns === 1 ? '' : 's'} using ${symbols.length} symbol${symbols.length === 1 ? '' : 's'} and ${selectedTriggers.length} trigger${selectedTriggers.length === 1 ? '' : 's'}?`,
-      )
+      const confirmed =
+        launchMode === 'dataset'
+          ? window.confirm(
+              `Launch ${totalRuns} backtest run${totalRuns === 1 ? '' : 's'} from dataset ${selectedDataset?.id}?`,
+            )
+          : window.confirm(
+              `Launch ${totalRuns} backtest run${totalRuns === 1 ? '' : 's'} using ${symbols.length} symbol${symbols.length === 1 ? '' : 's'}?`,
+            )
       if (!confirmed) {
         return
       }
@@ -821,11 +644,19 @@ export function BacktestWizardPage() {
     try {
       const response = await createBacktest({
         name: backtestName.trim() ? backtestName.trim() : null,
-        start_date: startDate.format('YYYY-MM-DD'),
-        end_date: endDate.format('YYYY-MM-DD'),
         resolution,
         feed,
-        symbols,
+        ...(launchMode === 'dataset'
+          ? {
+              dataset_id: selectedDataset?.id ?? null,
+              dataset_path: selectedDataset?.dataset_parquet_path ?? null,
+              dataset_manifest_path: selectedDataset?.manifest_path ?? null,
+            }
+          : {
+              start_date: startDate?.format('YYYY-MM-DD'),
+              end_date: endDate?.format('YYYY-MM-DD'),
+              symbols,
+            }),
         triggers: selectedTriggers.map((trigger) => ({
           name: trigger.name,
           params: buildOverrideParams(trigger, triggerOverrides[trigger.name] ?? {}),
@@ -850,6 +681,7 @@ export function BacktestWizardPage() {
       } as const
       setLaunchResult(nextLaunchResult)
       navigate('/backtests', {
+        replace: true,
         state: { launchResult: nextLaunchResult },
       })
     } catch (err) {
@@ -868,7 +700,7 @@ export function BacktestWizardPage() {
       <Stack spacing={0.5}>
         <Typography variant="h4">Backtest Wizard</Typography>
         <Typography color="text.secondary">
-          Build a matrix of symbols and triggers, then let the API run it in the background.
+          Select an existing dataset, then choose triggers and exit rules for the backtest matrix.
         </Typography>
       </Stack>
 
@@ -880,7 +712,7 @@ export function BacktestWizardPage() {
 
       {!prefillSourceId && downloadPrefillSymbols && (
         <Alert severity="info">
-          Prefilled from a market data download job. Choose triggers and exit rules below before launching.
+          Prefilled from a market data download job. Choose a completed dataset, then choose triggers and exit rules below before launching.
         </Alert>
       )}
 
@@ -924,189 +756,18 @@ export function BacktestWizardPage() {
             )}
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
           <Button onClick={() => setLaunchResult(null)} variant="contained">
             Close
           </Button>
         </DialogActions>
       </Dialog>
 
-      {error && <Alert severity="error">{error}</Alert>}
-
-      <Dialog
-        open={addConstituentsDialogOpen}
-        onClose={expandingUniverses ? undefined : () => setAddConstituentsDialogOpen(false)}
-        aria-labelledby="add-constituents-title"
-        slotProps={{
-          backdrop: {
-            sx: {
-              backdropFilter: 'blur(6px)',
-              backgroundColor: 'rgba(0, 0, 0, 0.55)',
-            },
-          },
-          paper: {
-            sx: {
-              width: '100%',
-              maxWidth: 680,
-              p: 0.5,
-            },
-          },
-        }}
-      >
-        <DialogTitle id="add-constituents-title" sx={{ pb: 1 }}>
-          Add constituents ({filteredExpandedSymbols.length} of {expandedUniverseSymbols.length})
-        </DialogTitle>
-        <DialogContent sx={{ pt: 0 }}>
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="subtitle2">Subsample</Typography>
-              <Slider
-                value={addConstituentsDraft.subsamplePct}
-                onChange={(_e, value) =>
-                  setAddConstituentsDraft((prev) => ({ ...prev, subsamplePct: value as number }))
-                }
-                valueLabelDisplay="auto"
-                valueLabelFormat={(value) => {
-                  const baseCount = filteredExpandedSymbolsBeforeSampling.length
-                  const keep = subsampleCount(baseCount, Number(value))
-                  return `${keep} / ${baseCount}`
-                }}
-                min={1}
-                max={100}
-                disabled={expandingUniverses}
-                sx={{ mt: 1.5, mb: 0.5 }}
-              />
-              <Typography variant="caption" color="text.secondary">
-                Keep {filteredExpandedSymbols.length} of {filteredExpandedSymbolsBeforeSampling.length} matched symbols.
-              </Typography>
-            </Box>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
-                label="Include (optional)"
-                value={addConstituentsDraft.includeText}
-                onChange={(e) => setAddConstituentsDraft((prev) => ({ ...prev, includeText: e.target.value }))}
-                helperText="Comma/newline separated symbols. Leave empty to include all."
-                disabled={expandingUniverses}
-                fullWidth
-              />
-              <TextField
-                label="Exclude (optional)"
-                value={addConstituentsDraft.excludeText}
-                onChange={(e) => setAddConstituentsDraft((prev) => ({ ...prev, excludeText: e.target.value }))}
-                helperText="Comma/newline separated symbols to remove."
-                disabled={expandingUniverses}
-                fullWidth
-              />
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' } }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={addConstituentsDraft.shuffle}
-                    onChange={(_e, checked) => setAddConstituentsDraft((prev) => ({ ...prev, shuffle: checked }))}
-                    disabled={expandingUniverses}
-                  />
-                }
-                label="Shuffle before sampling"
-              />
-              <TextField
-                label="Seed (optional)"
-                value={addConstituentsDraft.seed}
-                onChange={(e) => setAddConstituentsDraft((prev) => ({ ...prev, seed: e.target.value }))}
-                disabled={expandingUniverses || !addConstituentsDraft.shuffle}
-                placeholder="42"
-                sx={{ flex: 1 }}
-              />
-            </Stack>
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
-          <Button
-            onClick={() => setAddConstituentsDialogOpen(false)}
-            disabled={expandingUniverses}
-            variant="outlined"
-            color="inherit"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleConfirmAddConstituents}
-            disabled={expandingUniverses || filteredExpandedSymbols.length === 0}
-            variant="contained"
-          >
-            Add {filteredExpandedSymbols.length}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog
-        open={createUniverseDialogOpen}
-        onClose={creatingUniverse ? undefined : () => setCreateUniverseDialogOpen(false)}
-        aria-labelledby="create-universe-title"
-        slotProps={{
-          backdrop: {
-            sx: {
-              backdropFilter: 'blur(6px)',
-              backgroundColor: 'rgba(0, 0, 0, 0.55)',
-            },
-          },
-          paper: {
-            sx: {
-              width: '100%',
-              maxWidth: 620,
-              p: 0.5,
-            },
-          },
-        }}
-      >
-        <DialogTitle id="create-universe-title" sx={{ pb: 1 }}>
-          Create universe from symbols ({symbols.length})
-        </DialogTitle>
-        <DialogContent sx={{ pt: 0 }}>
-          <Stack spacing={1.5}>
-            <TextField
-              label="Name"
-              value={createUniverseDraft.name}
-              onChange={(e) => setCreateUniverseDraft((prev) => ({ ...prev, name: e.target.value }))}
-              disabled={creatingUniverse}
-              autoFocus
-              placeholder="My Basket"
-            />
-            <TextField
-              label="Description"
-              value={createUniverseDraft.description}
-              onChange={(e) => setCreateUniverseDraft((prev) => ({ ...prev, description: e.target.value }))}
-              disabled={creatingUniverse}
-            />
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-              <Switch
-                checked={createUniverseDraft.isActive}
-                onChange={(_e, checked) => setCreateUniverseDraft((prev) => ({ ...prev, isActive: checked }))}
-                disabled={creatingUniverse}
-              />
-              <Typography>Active</Typography>
-            </Stack>
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, gap: 1 }}>
-          <Button
-            onClick={() => setCreateUniverseDialogOpen(false)}
-            disabled={creatingUniverse}
-            variant="outlined"
-            color="inherit"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => void handleCreateUniverse()}
-            disabled={creatingUniverse || symbols.length === 0 || !createUniverseDraft.name.trim()}
-            variant="contained"
-            startIcon={creatingUniverse ? <CircularProgress size={16} color="inherit" /> : <AddIcon />}
-          >
-            Create
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {error && (
+        <Box ref={errorAlertRef} tabIndex={-1}>
+          <Alert severity="error">{error}</Alert>
+        </Box>
+      )}
 
       {loadingPrefill && (
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -1131,132 +792,151 @@ export function BacktestWizardPage() {
         </Paper>
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-              <Typography variant="h6">Universe</Typography>
-            </Stack>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ alignItems: { md: 'flex-start' } }}>
-              <Autocomplete
-                multiple
-                options={availableUniverses}
-                getOptionLabel={(option) => {
-                  const refresh = option.latest_refresh_as_of
-                    ? ` (refreshed ${option.latest_refresh_as_of})`
-                    : ''
-                  return `${option.key} — ${option.name}${refresh}`
-                }}
-                value={availableUniverses.filter((u) => selectedUniverseKeys.includes(u.key))}
-                onChange={(_event, value) => setSelectedUniverseKeys(value.map((item) => item.key))}
-                loading={loadingUniverses}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Universes"
-                    placeholder="Select one or more universes"
-                    helperText={`Expanded as-of ${asOfDateForUniverses} (user universes expand using today).`}
-                  />
-                )}
-                sx={{ flex: 1 }}
-              />
-              <Stack direction="row" spacing={1} sx={{ pt: { md: 0.5 } }}>
-                <Button
-                  variant="outlined"
-                  onClick={() => void applyUniverseSelection('add')}
-                  disabled={selectedUniverseKeys.length === 0 || expandingUniverses}
-                >
-                  Add constituents
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={() => void applyUniverseSelection('replace')}
-                  disabled={selectedUniverseKeys.length === 0 || expandingUniverses}
-                >
-                  Replace symbols
-                </Button>
-                <Button variant="contained" onClick={openCreateUniverseDialog} disabled={symbols.length === 0}>
-                  Create Universe
-                </Button>
-              </Stack>
-            </Stack>
-            <Autocomplete
-              multiple
-              freeSolo
-              options={[]}
-              value={symbols}
-              onChange={(_event, value) => {
-                const nextSymbols = value
-                  .map((item) => item.trim().toUpperCase())
-                  .filter(Boolean)
-                  .filter((item, index, values) => values.indexOf(item) === index)
-                setSymbols(nextSymbols)
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Symbols"
-                  placeholder="Type a symbol and press Enter"
-                  helperText="Use chips to build a backtest basket."
+            <Typography variant="h6">Launch mode</Typography>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={launchMode === 'dataset'}
+                  onChange={(_event, checked) => setLaunchMode(checked ? 'dataset' : 'legacy')}
                 />
-              )}
+              }
+              label={launchMode === 'dataset' ? 'Use existing dataset' : 'Use legacy selection'}
             />
+            <Typography variant="body2" color="text.secondary">
+              Dataset mode launches from a completed dataset manifest. Legacy mode uses manual symbols and date range widgets.
+            </Typography>
           </Stack>
         </Paper>
 
-        <Paper sx={{ p: 3 }}>
-          <Stack spacing={2}>
-            <Typography variant="h6">Range and market data</Typography>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-              <DatePicker
-                label="Start date"
-                value={startDate}
-                onChange={setStartDate}
-                slotProps={{ textField: { fullWidth: true } }}
+        {launchMode === 'dataset' ? (
+          <Paper sx={{ p: 3 }}>
+            <Stack spacing={2}>
+              <Typography variant="h6">Dataset</Typography>
+              <Autocomplete
+                options={availableDatasets}
+                getOptionLabel={(option) =>
+                  `${option.id} — ${option.name ?? option.symbol} (${option.start_date} → ${option.end_date})`
+                }
+                value={selectedDataset}
+                isOptionEqualToValue={(option, value) => option.id === value.id}
+                onChange={(_event, value) => setSelectedDatasetId(value?.id ?? null)}
+                loading={loadingDatasets}
+                noOptionsText={
+                  loadingDatasets
+                    ? 'Loading datasets…'
+                    : 'No completed datasets are available yet.'
+                }
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Existing dataset"
+                    placeholder="Select a completed dataset"
+                    helperText="Completed datasets appear here. If cached artifact paths are missing, launch will resolve them from storage before submitting."
+                  />
+                )}
               />
-              <DatePicker
-                label="End date"
-                value={endDate}
-                onChange={setEndDate}
-                slotProps={{ textField: { fullWidth: true } }}
-              />
-              <FormControl fullWidth>
-                <InputLabel id="resolution-label">Resolution</InputLabel>
-                <Select
-                  labelId="resolution-label"
-                  label="Resolution"
-                  value={resolution}
-                  onChange={(event) => handleResolutionChange(event.target.value as Resolution)}
-                >
-                  {RESOLUTIONS.map((value) => (
-                    <MenuItem key={value} value={value}>
-                      {value}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <FormControl fullWidth>
-                <InputLabel id="feed-label">Feed</InputLabel>
-                <Select
-                  labelId="feed-label"
-                  label="Feed"
-                  value={feed}
-                  onChange={(event) => setFeed(event.target.value as BacktestFeed)}
-                >
-                  {FEEDS.map((value) => (
-                    <MenuItem key={value} value={value}>
-                      {value}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              {selectedDataset && (
+                <Alert severity="info">
+                  Dataset {selectedDataset.id} covers {selectedDataset.start_date} to {selectedDataset.end_date}.
+                  {(!selectedDataset.dataset_parquet_path || !selectedDataset.manifest_path) && (
+                    <>
+                      {' '}
+                      Artifact paths are not cached on this record yet, so launch will resolve them from the
+                      dataset storage directory before submitting.
+                    </>
+                  )}
+                </Alert>
+              )}
+              {showCommissionDragWarning && (
+                <Alert severity="warning">
+                  Intraday backtests with stake of 1 share and commission of 0.1% per side often
+                  produce net losses even on small gross winners (~0.2% round-trip cost). Use stake
+                  of at least 10 or lower commission for more meaningful intraday results.
+                </Alert>
+              )}
             </Stack>
-            {showCommissionDragWarning && (
-              <Alert severity="warning">
-                Intraday backtests with stake of 1 share and commission of 0.1% per side often
-                produce net losses even on small gross winners (~0.2% round-trip cost). Use stake
-                of at least 10 or lower commission for more meaningful intraday results.
-              </Alert>
-            )}
-          </Stack>
-        </Paper>
+          </Paper>
+        ) : (
+          <Paper sx={{ p: 3 }}>
+            <Stack spacing={2}>
+              <Typography variant="h6">Legacy selection</Typography>
+              <Autocomplete
+                multiple
+                freeSolo
+                options={[]}
+                value={symbols}
+                onChange={(_event, value) => {
+                  const nextSymbols = value
+                    .map((item) => item.trim().toUpperCase())
+                    .filter(Boolean)
+                    .filter((item, index, values) => values.indexOf(item) === index)
+                  setSymbols(nextSymbols)
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Symbols"
+                    placeholder="Type a symbol and press Enter"
+                    helperText="Use chips to build a backtest basket."
+                  />
+                )}
+              />
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                <DatePicker
+                  label="Start date"
+                  value={startDate}
+                  onChange={setStartDate}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+                <DatePicker
+                  label="End date"
+                  value={endDate}
+                  onChange={setEndDate}
+                  slotProps={{ textField: { fullWidth: true } }}
+                />
+              </Stack>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+                <FormControl fullWidth>
+                  <InputLabel id="resolution-label">Resolution</InputLabel>
+                  <Select
+                    labelId="resolution-label"
+                    label="Resolution"
+                    value={resolution}
+                    onChange={(event) => handleResolutionChange(event.target.value as Resolution)}
+                  >
+                    {RESOLUTIONS.map((value) => (
+                      <MenuItem key={value} value={value}>
+                        {value}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+                <FormControl fullWidth>
+                  <InputLabel id="feed-label">Feed</InputLabel>
+                  <Select
+                    labelId="feed-label"
+                    label="Feed"
+                    value={feed}
+                    onChange={(event) => setFeed(event.target.value as BacktestFeed)}
+                  >
+                    {FEEDS.map((value) => (
+                      <MenuItem key={value} value={value}>
+                        {value}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+              {showCommissionDragWarning && (
+                <Alert severity="warning">
+                  Intraday backtests with stake of 1 share and commission of 0.1% per side often
+                  produce net losses even on small gross winners (~0.2% round-trip cost). Use stake
+                  of at least 10 or lower commission for more meaningful intraday results.
+                </Alert>
+              )}
+            </Stack>
+          </Paper>
+        )}
 
         <Paper sx={{ p: 3 }}>
           <Stack spacing={2}>
@@ -1583,11 +1263,17 @@ export function BacktestWizardPage() {
         >
           <Stack spacing={2}>
             <Typography variant="h6">Review</Typography>
-            <Typography color="text.secondary">{formatDateRange(startDate, endDate)}</Typography>
+            <Typography color="text.secondary">
+              {launchMode === 'dataset'
+                ? selectedDataset
+                  ? `${selectedDataset.name ?? selectedDataset.id} · ${selectedDataset.start_date} → ${selectedDataset.end_date}`
+                  : 'Choose a dataset to review its date range.'
+                : formatReviewDateRange(startDate, endDate)}
+            </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3}>
               <Box>
-                <Typography variant="overline">Symbols</Typography>
-                <Typography variant="h5">{symbols.length}</Typography>
+                <Typography variant="overline">Mode</Typography>
+                <Typography variant="h5">{launchMode === 'dataset' ? 'Dataset' : 'Legacy'}</Typography>
               </Box>
               <Box>
                 <Typography variant="overline">Triggers</Typography>
@@ -1622,9 +1308,9 @@ export function BacktestWizardPage() {
                 />
               </Box>
             </Stack>
-            {!hasValidDateRange && (
-              <Alert severity="warning">End date must be on or after start date.</Alert>
-            )}
+            {launchMode === 'dataset'
+              ? !selectedDataset && <Alert severity="warning">Choose a completed dataset before launching.</Alert>
+              : !hasValidDateRange && <Alert severity="warning">End date must be on or after start date.</Alert>}
             <Box>
               <Button
                 type="submit"
@@ -1635,8 +1321,7 @@ export function BacktestWizardPage() {
                   loadingTriggers ||
                   loadingExitRules ||
                   loadingPrefill ||
-                  !hasValidDateRange ||
-                  symbols.length === 0 ||
+                  (launchMode === 'dataset' ? !selectedDataset : !hasValidDateRange || symbols.length === 0) ||
                   selectedTriggers.length === 0 ||
                   selectedExitRuleNames.length === 0
                 }

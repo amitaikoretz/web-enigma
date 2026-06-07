@@ -11,6 +11,7 @@ from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.daily_index_forecast.metrics import aggregate_nested_metrics
 from app.daily_index_forecast.models import DailyIndexCostConfig, DailyIndexTrainConfig, DailyIndexWalkForwardConfig
 from app.daily_index_forecast.pipeline import train_daily_index_model, write_json
+from app.feature_importance.io import build_linear_feature_importance, write_feature_importance_artifact
 from app.standalone.daily_index_common import json_default, terminal_command, write_text
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -53,12 +54,22 @@ def main(
 
     model_path = Path(artifact_dir) / "model.json"
     metrics_path = Path(artifact_dir) / "metrics.json"
+    feature_importance_path = Path(artifact_dir) / "feature_importance.json"
     write_json(model_path, artifact.model_dump(mode="json"))
     write_json(metrics_path, metrics.model_dump(mode="json"))
+    write_feature_importance_artifact(
+        feature_importance_path,
+        build_linear_feature_importance(
+            target_key="daily_index_forecast",
+            feature_names=artifact.selected_features,
+            coefficients=artifact.coefficients,
+            source="daily_index_forecast:model.json",
+            metadata={"group_id": group_id, "feature_run_id": feature_run_id, "selected_alpha": artifact.selected_alpha},
+        ),
+    )
     write_text(model_path_out, str(model_path))
     write_text(metrics_path_out, str(metrics_path))
 
 
 if __name__ == "__main__":
     run_typer_app_with_argo_error_outputs(app)
-

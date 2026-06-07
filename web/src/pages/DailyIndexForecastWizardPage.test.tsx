@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { defaultPlatformSettings } from '../settings/defaults'
 
 const createDailyIndexForecastModelMock = vi.hoisted(() => vi.fn())
 const fetchDailyIndexForecastModelsMock = vi.hoisted(() => vi.fn())
@@ -23,7 +24,9 @@ vi.mock('../api/dailyIndexForecastModels', () => ({
 vi.mock('../settings/useSettings', () => ({
   useSettings: () => ({
     platformSettings: {
+      ...defaultPlatformSettings,
       platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
         auto_refresh_interval_seconds: 60,
       },
     },

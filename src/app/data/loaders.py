@@ -18,7 +18,7 @@ from urllib.request import urlopen
 
 import pandas as pd
 
-from app.config.models import AlpacaDataSource, CsvDataSource, DataCacheConfig, YahooDataSource
+from app.config.models import AlpacaDataSource, AlpacaOptionsDataSource, CsvDataSource, DataCacheConfig, ParquetDataSource, YahooDataSource
 from app.data.cache import CacheKey, ParquetDataCache
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,32 @@ def build_csv_data_feed(config: CsvDataSource, start_date: date, end_date: date)
     return _normalize_ohlcv_frame(out)
 
 
+def build_parquet_data_feed(config: ParquetDataSource) -> pd.DataFrame:
+    df = pd.read_parquet(config.path)
+    if df.empty:
+      raise RuntimeError("Parquet dataset is empty")
+
+    lower = {str(c).lower(): c for c in df.columns}
+    required = {"open", "high", "low", "close", "volume"}
+    missing = [col for col in required if col not in lower]
+    if missing:
+        raise RuntimeError(f"Parquet dataset is missing required columns: {sorted(missing)}")
+
+    if "datetime" in lower:
+        index = pd.to_datetime(df[lower["datetime"]], errors="coerce")
+    elif "timestamp" in lower:
+        index = pd.to_datetime(df[lower["timestamp"]], errors="coerce")
+    else:
+        index = pd.to_datetime(df.index, errors="coerce")
+    if index.isna().any():
+        raise RuntimeError("Parquet dataset has invalid datetime values")
+
+    out = df[[lower["open"], lower["high"], lower["low"], lower["close"], lower["volume"]]].copy()
+    out.columns = ["Open", "High", "Low", "Close", "Volume"]
+    out.index = index
+    return _normalize_ohlcv_frame(out)
+
+
 def build_yahoo_data_feed(config: YahooDataSource, start_date: date, end_date: date) -> pd.DataFrame:
     feed, _ = build_yahoo_data_feed_with_cache(
         config,
@@ -195,6 +221,39 @@ def build_alpaca_data_feed_with_cache(
 
     df = _download_alpaca(config, start_date, end_date)
 
+    if cache_config and cache_config.enabled:
+        cache = ParquetDataCache(Path(cache_config.directory))
+        cache.put(key, df)
+    if force_refresh:
+        cache_status = "force_refresh"
+    return df, cache_status
+
+
+def build_alpaca_options_data_feed_with_cache(
+    config: AlpacaOptionsDataSource,
+    start_date: date,
+    end_date: date,
+    cache_config: DataCacheConfig | None,
+    force_refresh: bool = False,
+) -> tuple[pd.DataFrame, str]:
+    key = CacheKey(
+        source="alpaca-options",
+        symbol=config.symbol,
+        interval=config.interval,
+        start_date=start_date.isoformat(),
+        end_date=end_date.isoformat(),
+        feed=config.feed,
+    )
+    cache_status = "miss"
+    if cache_config and cache_config.enabled and not force_refresh:
+        ttl_seconds = cache_config.ttl_by_interval.get(config.interval, 24 * 60 * 60)
+        cache = ParquetDataCache(Path(cache_config.directory))
+        cached = cache.get(key, timedelta(seconds=ttl_seconds))
+        cache_status = cached.status
+        if cached.frame is not None:
+            return _normalize_ohlcv_frame(cached.frame), cached.status
+
+    df = _download_alpaca_options(config, start_date, end_date)
     if cache_config and cache_config.enabled:
         cache = ParquetDataCache(Path(cache_config.directory))
         cache.put(key, df)
@@ -300,6 +359,126 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
     df = df.set_index("datetime").sort_index()
     return _normalize_ohlcv_frame(df)
+
+
+def _download_alpaca_options(config: AlpacaOptionsDataSource, start_date: date, end_date: date) -> pd.DataFrame:
+    key = os.environ.get("ALPACA_API_KEY")
+    secret = os.environ.get("ALPACA_SECRET_KEY")
+    if not key or not secret:
+        raise RuntimeError("Alpaca credentials missing: set ALPACA_API_KEY and ALPACA_SECRET_KEY")
+
+    contract_symbols = _fetch_alpaca_option_contract_symbols(config, key, secret)
+    if not contract_symbols:
+        raise RuntimeError(f"No Alpaca option contracts found for underlying {config.symbol}")
+
+    timeframe = _alpaca_timeframe(config.interval)
+    start_ts = pd.Timestamp(start_date).tz_localize(UTC).isoformat().replace("+00:00", "Z")
+    end_ts = ((pd.Timestamp(end_date) + pd.Timedelta(days=1)).tz_localize(UTC).isoformat().replace("+00:00", "Z"))
+    base_url = "https://data.alpaca.markets/v1beta1/options/bars"
+    page_token: str | None = None
+    rows: list[dict] = []
+    symbols_query = ",".join(contract_symbols[:100])
+
+    while True:
+        params = {
+            "symbols": symbols_query,
+            "timeframe": timeframe,
+            "start": start_ts,
+            "end": end_ts,
+            "limit": "10000",
+            "sort": "asc",
+        }
+        if page_token:
+            params["page_token"] = page_token
+        req = Request(
+            f"{base_url}?{urlencode(params)}",
+            headers={
+                "APCA-API-KEY-ID": key,
+                "APCA-API-SECRET-KEY": secret,
+                "accept": "application/json",
+            },
+        )
+        try:
+            with urlopen(req, timeout=30) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="ignore")
+            raise RuntimeError(f"Alpaca options request failed ({exc.code}): {body or exc.reason}") from exc
+        rows.extend(_extract_alpaca_option_bars(payload))
+        page_token = payload.get("next_page_token")
+        if not page_token:
+            break
+
+    if not rows:
+        raise RuntimeError(f"No Alpaca options data found for symbol {config.symbol}")
+
+    df = pd.DataFrame(rows)
+    if "t" in df.columns:
+        df = df.rename(columns={"o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume", "t": "datetime"})
+    elif "timestamp" in df.columns:
+        df = df.rename(columns={"timestamp": "datetime", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"})
+    else:
+        raise RuntimeError("Alpaca options data is missing time field")
+    if "symbol" in df.columns:
+        df = df.rename(columns={"symbol": "option_symbol"})
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    df = df.set_index("datetime").sort_index()
+    return _normalize_ohlcv_frame(df)
+
+
+def _fetch_alpaca_option_contract_symbols(config: AlpacaOptionsDataSource, key: str, secret: str) -> list[str]:
+    req = Request(
+        f"https://data.alpaca.markets/v1beta1/options/snapshots/{config.symbol}?feed={config.feed}",
+        headers={
+            "APCA-API-KEY-ID": key,
+            "APCA-API-SECRET-KEY": secret,
+            "accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(req, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        raise RuntimeError(f"Alpaca options snapshot request failed ({exc.code}): {body or exc.reason}") from exc
+    contract_symbols: list[str] = []
+    for item in _extract_alpaca_option_snapshot_items(payload):
+        symbol = item.get("symbol") or item.get("contract_symbol")
+        if isinstance(symbol, str) and symbol.strip():
+            contract_symbols.append(symbol.strip())
+    return contract_symbols
+
+
+def _extract_alpaca_option_snapshot_items(payload: dict[str, object]) -> list[dict[str, object]]:
+    for key in ("snapshots", "data", "options"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            items: list[dict[str, object]] = []
+            for symbol, item in value.items():
+                if isinstance(item, dict):
+                    item = {**item, "symbol": symbol}
+                    items.append(item)
+            if items:
+                return items
+    if isinstance(payload.get("symbol"), str):
+        return [payload]
+    return []
+
+
+def _extract_alpaca_option_bars(payload: dict[str, object]) -> list[dict[str, object]]:
+    bars = payload.get("bars")
+    if isinstance(bars, list):
+        return [item for item in bars if isinstance(item, dict)]
+    data = payload.get("data")
+    if isinstance(data, dict):
+        collected: list[dict[str, object]] = []
+        for symbol, items in data.items():
+            if isinstance(items, list):
+                for item in items:
+                    if isinstance(item, dict):
+                        collected.append({**item, "symbol": symbol})
+        return collected
+    return []
 
 
 def _alpaca_timeframe(interval: str) -> str:

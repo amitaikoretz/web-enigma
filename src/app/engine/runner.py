@@ -14,6 +14,7 @@ from app.config.models import BacktestConfig, BacktestRunConfig, DataCacheConfig
 from app.data.loaders import (
     build_alpaca_data_feed_with_cache,
     build_csv_data_feed,
+    build_parquet_data_feed,
     build_yahoo_data_feed_with_cache,
 )
 from app.engine.aggregates import compute_report_aggregates
@@ -107,6 +108,8 @@ def _load_benchmark_feed(
 def _build_data_feed(run: BacktestRunConfig, cache_config: DataCacheConfig, cache_refresh: bool) -> DataFeedBuildResult:
     if run.data.type == "csv":
         return DataFeedBuildResult(feed=build_csv_data_feed(run.data, run.start_date, run.end_date))
+    if run.data.type == "parquet":
+        return DataFeedBuildResult(feed=build_parquet_data_feed(run.data))
     if run.data.type == "yahoo":
         feed, cache_status = build_yahoo_data_feed_with_cache(
             run.data,

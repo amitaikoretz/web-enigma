@@ -20,6 +20,7 @@ from app.backtests.argo import ArgoWorkflowSubmitter
 from app.backtests.persistence import SqlAlchemyBacktestJobRepository
 from app.config.models import DataCacheConfig
 from app.data.downloads import DataDownloadJobRepository, DataDownloadJobService
+from app.datasets import DatasetService, SqlAlchemyDatasetRepository
 from app.db.session import get_session_factory
 from app.scans.argo import ScanArgoSubmitter
 from app.scans.repository import ScanJobRepository
@@ -29,6 +30,8 @@ from app.risk.persistence import SqlAlchemyRiskModelRepository
 from app.risk.service import RiskModelService
 from app.daily_index_forecast.persistence import SqlAlchemyDailyIndexForecastRepository
 from app.daily_index_forecast.service import DailyIndexForecastService
+from app.market_overview.persistence import SqlAlchemyMarketOverviewRepository
+from app.market_overview.service import MarketOverviewService
 
 
 def create_app(
@@ -86,15 +89,18 @@ def create_app(
     scan_repository = ScanJobRepository(resolved_output_dir)
     resolved_session_factory = session_factory or get_session_factory()
     backtest_repo = SqlAlchemyBacktestJobRepository(resolved_session_factory)
+    dataset_repo = SqlAlchemyDatasetRepository(resolved_session_factory)
     risk_repo = SqlAlchemyRiskModelRepository(resolved_session_factory, family="risk")
     return_forecast_repo = SqlAlchemyRiskModelRepository(resolved_session_factory, family="return_forecast")
     daily_index_repo = SqlAlchemyDailyIndexForecastRepository(resolved_session_factory, family="daily_index_forecast")
+    market_overview_repo = SqlAlchemyMarketOverviewRepository(resolved_session_factory)
     app.state.deps = ApiDependencies(
         cache_config=resolved_cache_config,
         output_dir=resolved_output_dir,
         backtest_jobs=BacktestJobService(
             BacktestArtifactStore(resolved_output_dir),
             backtest_repo,
+            dataset_repo,
             resolved_cache_config,
             settings_service=settings_service,
             argo_submitter=ArgoWorkflowSubmitter(),
@@ -109,6 +115,7 @@ def create_app(
         risk_models=RiskModelService(
             session_factory=resolved_session_factory,
             backtest_repo=backtest_repo,
+            dataset_repo=dataset_repo,
             risk_repo=risk_repo,
             argo_submitter=ArgoWorkflowSubmitter(),
             family="risk",
@@ -119,6 +126,7 @@ def create_app(
         return_forecast_models=RiskModelService(
             session_factory=resolved_session_factory,
             backtest_repo=backtest_repo,
+            dataset_repo=dataset_repo,
             risk_repo=return_forecast_repo,
             argo_submitter=ArgoWorkflowSubmitter(),
             family="return_forecast",
@@ -135,6 +143,13 @@ def create_app(
             family_label="Daily Index Forecast",
         ),
         daily_index_forecast_models_repo=daily_index_repo,
+        market_overview=MarketOverviewService(
+            session_factory=resolved_session_factory,
+            repo=market_overview_repo,
+            settings_service=settings_service,
+        ),
+        market_overview_repo=market_overview_repo,
+        datasets=DatasetService(dataset_repo, settings_service),
     )
 
     register_exception_handlers(app, logger)

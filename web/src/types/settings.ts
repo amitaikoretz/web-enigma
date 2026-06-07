@@ -15,10 +15,15 @@ export type ThemePreset =
   | 'polar'
   | 'frost'
   | 'silica'
-  | 'alto'
   | 'glacial'
   | 'glacier_lilac'
   | 'graphite_teal'
+  | 'strata'
+  | 'ink_mica'
+  | 'citrus_porcelain'
+  | 'glass_blue'
+  | 'azure_slate'
+  | 'emerald_night'
   | 'solaris'
   | 'aurora'
   | 'halo'
@@ -85,6 +90,7 @@ export interface BacktestDefaults {
   date_range_preset: DateRangePreset
   resolution: Resolution
   feed: BacktestFeed
+  dataset_storage_root: string
   broker: BrokerSettings
   analyzers: AnalyzerSettings
   execution: ExecutionSettings
@@ -97,6 +103,7 @@ export type ArgoSplitBy = 'run' | 'symbol' | 'strategy' | 'symbol_strategy'
 export interface PlatformBehaviorSettings {
   timezone: string
   auto_refresh_interval_seconds: number
+  market_overview_refresh_interval_seconds: number
   confirm_before_launch: boolean
   preferred_landing_page: PreferredLandingPage
   backtest_execution_backend: BacktestExecutionBackend

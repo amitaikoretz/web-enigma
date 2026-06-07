@@ -8,6 +8,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.backtests.models import BacktestSelectionSummary
+from app.feature_importance.models import FeatureImportanceTarget
 from app.db.models import RiskModelGroup, RiskModelSource, RiskModelTarget
 from app.db.models import BacktestJob
 
@@ -26,6 +27,7 @@ class RiskModelListItem:
     argo_namespace: str | None
     argo_workflow_name: str | None
     backtest_ids: list[str]
+    dataset_ids: list[str]
     targets: list[str]
     targets_total: int
     targets_done: int
@@ -48,6 +50,7 @@ class RiskModelTargetRow:
     feature_columns: list[str] | None
     created_at: datetime
     updated_at: datetime
+    feature_importance: FeatureImportanceTarget | None = None
 
 
 @dataclass(frozen=True)
@@ -64,8 +67,10 @@ class RiskModelDetail:
     summary_metrics: dict[str, Any] | None
     sources: list[dict[str, Any]]
     targets: list[RiskModelTargetRow]
+    dataset_ids: list[str]
     training_start_date: date | None
     training_end_date: date | None
+    feature_importance: FeatureImportanceTarget | None = None
 
 
 class SqlAlchemyRiskModelRepository:
@@ -107,6 +112,7 @@ class SqlAlchemyRiskModelRepository:
         params: dict[str, Any],
         artifact_dir: str,
         backtest_ids: list[str],
+        dataset_ids: list[str] | None = None,
         source_report_paths: dict[str, str | None] | None = None,
         argo_namespace: str | None = None,
         argo_workflow_name: str | None = None,
@@ -133,6 +139,13 @@ class SqlAlchemyRiskModelRepository:
                         group_id=group_id,
                         backtest_id=backtest_id,
                         source_report_path=(source_report_paths or {}).get(backtest_id),
+                    )
+                )
+            for dataset_id in dataset_ids or []:
+                session.add(
+                    RiskModelSource(
+                        group_id=group_id,
+                        dataset_id=dataset_id,
                     )
                 )
             session.commit()
@@ -251,8 +264,13 @@ class SqlAlchemyRiskModelRepository:
                     target_counts[str(group_id)] = (int(total or 0), int(done or 0))
 
             backtest_map: dict[str, list[str]] = {}
+            dataset_map: dict[str, list[str]] = {}
             for src in sources:
-                backtest_map.setdefault(src.group_id, []).append(src.backtest_id)
+                if src.backtest_id:
+                    backtest_map.setdefault(src.group_id, []).append(src.backtest_id)
+                dataset_id = getattr(src, "dataset_id", None)
+                if dataset_id:
+                    dataset_map.setdefault(src.group_id, []).append(dataset_id)
             target_map: dict[str, list[str]] = {}
             for t in targets:
                 target_map.setdefault(t.group_id, []).append(t.target_key)
@@ -276,6 +294,7 @@ class SqlAlchemyRiskModelRepository:
                         argo_namespace=g.argo_namespace,
                         argo_workflow_name=g.argo_workflow_name,
                         backtest_ids=sorted(backtest_map.get(g.id, [])),
+                        dataset_ids=sorted(dataset_map.get(g.id, [])),
                         targets=sorted(set(target_map.get(g.id, []))),
                         targets_total=targets_total,
                         targets_done=targets_done,
@@ -297,6 +316,13 @@ class SqlAlchemyRiskModelRepository:
             training_start_date, training_end_date = self._training_date_range(
                 session,
                 [source.backtest_id for source in sources],
+            )
+            dataset_ids = sorted(
+                [
+                    str(source.dataset_id)
+                    for source in sources
+                    if getattr(source, "dataset_id", None)
+                ]
             )
             return RiskModelDetail(
                 group_id=g.id,
@@ -333,6 +359,7 @@ class SqlAlchemyRiskModelRepository:
                     )
                     for t in targets
                 ],
+                dataset_ids=dataset_ids,
                 training_start_date=training_start_date,
                 training_end_date=training_end_date,
             )
@@ -359,6 +386,7 @@ class SqlAlchemyRiskModelRepository:
                 argo_namespace=g.argo_namespace,
                 argo_workflow_name=g.argo_workflow_name,
                 backtest_ids=[],
+                dataset_ids=[],
                 targets=[],
                 targets_total=0,
                 targets_done=0,

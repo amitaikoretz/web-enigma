@@ -46,6 +46,7 @@ import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-r
 import { fetchDailyIndexForecastModelChartData } from '../api/dailyIndexForecastModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { CandlestickChart } from '../components/CandlestickChart'
+import { FeatureImportanceTab } from '../components/FeatureImportanceTab'
 import { ModelWorkflowErrorDialog } from '../components/ModelWorkflowErrorDialog'
 import { WorkflowStepsDialog } from '../components/WorkflowStepsDialog'
 import { formatMetricNumber } from '../components/BacktestMetricGrid'
@@ -64,7 +65,7 @@ import type {
   DailyIndexForecastTargetRow,
 } from '../types/dailyIndexForecastModels'
 
-type MainTab = 'overview' | 'provenance' | 'performance' | 'debug'
+type MainTab = 'overview' | 'provenance' | 'performance' | 'feature-importance' | 'debug'
 type MainTabWithCharts = MainTab | 'charts'
 type DailyIndexForecastLaunchResultState =
   | {
@@ -95,6 +96,7 @@ const MAIN_TABS: Array<{ id: MainTabWithCharts; label: string }> = [
   { id: 'charts', label: 'Charts' },
   { id: 'provenance', label: 'Provenance' },
   { id: 'performance', label: 'Performance' },
+  { id: 'feature-importance', label: 'Feature Importance' },
   { id: 'debug', label: 'Debug' },
 ]
 
@@ -507,7 +509,7 @@ export function DailyIndexForecastModelsListPage({
             )}
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
           <Button onClick={() => setLaunchResult(null)} variant="contained">
             Close
           </Button>
@@ -552,7 +554,7 @@ export function DailyIndexForecastModelsListPage({
             )}
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1 }}>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
           <Button onClick={() => setRetryResult(null)} variant="contained">
             Close
           </Button>
@@ -569,7 +571,7 @@ export function DailyIndexForecastModelsListPage({
         </Typography>
       </Stack>
 
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
         <Button component={RouterLink} to="/models/daily-index/new" variant="contained">
           New forecast
         </Button>
@@ -1071,6 +1073,29 @@ export function DailyIndexForecastModelDetailPage({
           </Stack>
         )}
 
+        {mainTab === 'feature-importance' && (
+          <Stack spacing={2}>
+            <Card variant="outlined">
+              <CardContent>
+                <Stack spacing={1.5}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                    Feature importance
+                  </Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    Importance is loaded from the persisted model artifact written at training time.
+                  </Typography>
+                  <FeatureImportanceTab
+                    target={detail.feature_importance ?? null}
+                    targets={detail.targets.map((target) => target.feature_importance).filter(Boolean) as NonNullable<
+                      typeof detail.targets[number]['feature_importance']
+                    >[]}
+                  />
+                </Stack>
+              </CardContent>
+            </Card>
+          </Stack>
+        )}
+
         {mainTab === 'charts' && (
           <Stack spacing={2}>
             <Card variant="outlined">
@@ -1480,7 +1505,7 @@ export function DailyIndexForecastModelWizardPage({
               </Stack>
             </Stack>
           </CardContent>
-          <CardActions sx={{ px: 2, pb: 2 }}>
+          <CardActions sx={{ px: 2, pb: 2, justifyContent: 'flex-start' }}>
             <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
               Launch forecast
             </Button>
