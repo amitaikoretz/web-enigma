@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import shutil
 from pathlib import Path
 
 from sqlalchemy import func, select
@@ -158,6 +159,9 @@ class SqlAlchemyDatasetRepository:
             return item
 
     def delete_artifacts(self, item: DatasetListItem) -> None:
+        dataset_dir = Path(item.output_dir) / item.id
+        if dataset_dir.is_dir():
+            shutil.rmtree(dataset_dir)
         for path_str in [item.dataset_parquet_path, item.manifest_path]:
             if not path_str:
                 continue

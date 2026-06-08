@@ -22,26 +22,97 @@ spec:
         claimName: backtest-results
   templates:
     - name: main
+      steps:
+        - - name: print-payload
+            template: print-payload
+        - - name: run
+            template: run
+            arguments:
+              parameters:
+                - name: symbol
+                  value: "{{workflow.parameters.symbol}}"
+                - name: provider
+                  value: "{{workflow.parameters.provider}}"
+                - name: resolution
+                  value: "{{workflow.parameters.resolution}}"
+                - name: start-date
+                  value: "{{workflow.parameters.start-date}}"
+                - name: end-date
+                  value: "{{workflow.parameters.end-date}}"
+                - name: options-enabled
+                  value: "{{workflow.parameters.options-enabled}}"
+                - name: options-feed
+                  value: "{{workflow.parameters.options-feed}}"
+                - name: output-dir
+                  value: "{{workflow.parameters.output-dir}}"
+                - name: options-enabled-flag
+                  value: "{{workflow.parameters.options-enabled-flag}}"
+    - name: print-payload
+      retryStrategy: {limit: 3, retryPolicy: Always}
+      container:
+        image: __WORKFLOW_IMAGE__
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "app.standalone.print_argo_command"]
+        args:
+          - "--terminal-command-out"
+          - "/tmp/terminal-command.txt"
+          - "--command-line"
+          - "__COMMAND_LINE__"
+        envFrom:
+          - secretRef:
+              name: app-secrets
+        volumeMounts:
+          - name: datasets-results
+            mountPath: __WORKFLOW_RESULTS_MOUNT__
+      outputs:
+        parameters:
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt
+    - name: run
+      inputs:
+        parameters:
+          - name: symbol
+          - name: provider
+          - name: resolution
+          - name: start-date
+          - name: end-date
+          - name: options-enabled
+          - name: options-feed
+          - name: output-dir
+          - name: options-enabled-flag
       container:
         image: __WORKFLOW_IMAGE__
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "app.standalone.datasets_download_argo"]
         args:
           - "--symbol"
-          - "{{workflow.parameters.symbol}}"
+          - "{{inputs.parameters.symbol}}"
           - "--provider"
-          - "{{workflow.parameters.provider}}"
+          - "{{inputs.parameters.provider}}"
           - "--resolution"
-          - "{{workflow.parameters.resolution}}"
+          - "{{inputs.parameters.resolution}}"
           - "--start-date"
-          - "{{workflow.parameters.start-date}}"
+          - "{{inputs.parameters.start-date}}"
           - "--end-date"
-          - "{{workflow.parameters.end-date}}"
-          - "{{workflow.parameters.options-enabled-flag}}"
+          - "{{inputs.parameters.end-date}}"
+          - "{{inputs.parameters.options-enabled-flag}}"
           - "--options-feed"
-          - "{{workflow.parameters.options-feed}}"
+          - "{{inputs.parameters.options-feed}}"
           - "--output-dir"
-          - "{{workflow.parameters.output-dir}}"
+          - "{{inputs.parameters.output-dir}}"
           - "--terminal-command-out"
           - "/tmp/terminal-command.txt"
           - "--dataset-path-out"

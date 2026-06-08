@@ -9,6 +9,35 @@ from pydantic import BaseModel, Field
 MarketOverviewStatus = Literal["pending", "running", "completed", "failed"]
 
 
+class MarketOverviewIndicatorExplanation(BaseModel):
+    summary: str
+    inputs: list[str] = Field(default_factory=list)
+    calculation_steps: list[str] = Field(default_factory=list)
+    interpretation: str
+    freshness: str | None = None
+    caveats: list[str] = Field(default_factory=list)
+
+
+class MarketOverviewIndicator(BaseModel):
+
+    key: str
+    label: str
+    value: str
+    change: str | None = None
+    tone: Literal["positive", "negative", "neutral", "warning", "info"] = "neutral"
+    category: str | None = None
+    note: str | None = None
+    explanation: MarketOverviewIndicatorExplanation | None = None
+
+
+class MarketOverviewMethodology(BaseModel):
+    summary: str
+    inputs: list[str] = Field(default_factory=list)
+    scoring: list[str] = Field(default_factory=list)
+    freshness: str | None = None
+    caveats: list[str] = Field(default_factory=list)
+
+
 class MarketOverviewCreateRequest(BaseModel):
     name: str | None = None
     as_of: datetime | None = None
@@ -31,10 +60,13 @@ class MarketOverviewSnapshot(BaseModel):
     confidence: float = 0.0
     fragility: float = 0.0
     contradiction_score: float = 0.0
+    market_indicators: list[MarketOverviewIndicator] = Field(default_factory=list)
     pillar_scores: dict[str, Any] = Field(default_factory=dict)
     developments: list[dict[str, Any]] = Field(default_factory=list)
     freshness: dict[str, Any] = Field(default_factory=dict)
     summary_text: str | None = None
+    watch_next: list[str] = Field(default_factory=list)
+    methodology: MarketOverviewMethodology | None = None
     evidence: dict[str, Any] = Field(default_factory=dict)
     params: dict[str, Any] = Field(default_factory=dict)
     error_message: str | None = None

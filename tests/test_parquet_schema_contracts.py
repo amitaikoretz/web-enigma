@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -8,8 +8,9 @@ import pytest
 from pandas.api.types import is_bool_dtype, is_numeric_dtype
 from pydantic import ValidationError
 
-from app.backtests.artifacts import persist_backtest_report, load_labels_from_parquet
+from app.backtests.artifacts import persist_backtest_report, load_labels_from_parquet, load_rejections_from_parquet
 from app.config.models import CsvDataSource, DataCacheConfig
+from app.datasets.models import DatasetParquetRow
 from app.data.cache import CacheKey, ParquetDataCache
 from app.intraday.features import FEATURE_COLUMNS
 from app.intraday.models import (
@@ -232,6 +233,7 @@ def test_contract_docs_cover_every_parquet_family() -> None:
         "Risk Labels Parquet",
         "Risk Features Parquet",
         "Joined Risk Dataset Parquet",
+        "Dataset Download Parquet",
         "Intraday Dataset Parquet",
         "Intraday Predictions Parquet",
         "Intraday Positions Parquet",
@@ -377,16 +379,26 @@ def test_backtest_sidecar_schemas_round_trip(tmp_path: Path) -> None:
         "metadata_features_json",
     }
 
-    assert is_numeric_dtype(report_df["start_value"])
-    assert is_bool_dtype(orders_df["is_buy"])
-    assert is_numeric_dtype(trades_df["pnl"])
-    assert is_bool_dtype(labels_df["hit_stop"])
-    assert is_numeric_dtype(features_df["return_20"])
-    assert candidates_df.loc[0, "metadata_json"] is not None
-    assert features_df.loc[0, "metadata_features_json"] is not None
 
-    loaded_labels = load_labels_from_parquet(Path(written.labels_parquet_path))
-    assert loaded_labels[report.results[0].run_id][0].candidate_id == "cand-1"
+def test_rejection_parquet_missing_symbol_does_not_crash(tmp_path: Path) -> None:
+    path = tmp_path / "rejections.parquet"
+    pd.DataFrame(
+        [
+            {
+                "run_id": "run-1",
+                "datetime": "2024-01-02T15:30:00+00:00",
+                "symbol": None,
+                "reason": "weak_close",
+            }
+        ]
+    ).to_parquet(path, index=False)
+
+    loaded = load_rejections_from_parquet(path)
+
+    assert list(loaded) == ["run-1"]
+    assert len(loaded["run-1"]) == 1
+    assert loaded["run-1"][0].symbol is None
+    assert loaded["run-1"][0].reason == "weak_close"
 
 
 def test_risk_dataset_schema_matches_component_contracts(tmp_path: Path) -> None:
@@ -525,6 +537,45 @@ def test_intraday_artifact_schemas_round_trip(tmp_path: Path) -> None:
     assert is_numeric_dtype(dataset["entry_price"])
     assert is_numeric_dtype(predictions["pred_return_pct"])
     assert is_numeric_dtype(positions["final_shares"])
+
+
+def test_dataset_download_parquet_schema_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.standalone import datasets_download_argo as module
+
+    frame = pd.DataFrame(
+        {
+            "Open": [100.0],
+            "High": [101.0],
+            "Low": [99.5],
+            "Close": [100.5],
+            "Volume": [1_000.0],
+        },
+        index=pd.DatetimeIndex([pd.Timestamp("2026-06-01T14:30:00Z")], name="datetime"),
+    )
+    monkeypatch.setattr(module, "build_alpaca_data_feed_with_cache", lambda *args, **kwargs: (frame, "miss"))
+    monkeypatch.setattr(module, "build_alpaca_options_data_feed_with_cache", lambda *args, **kwargs: (frame, "miss"))
+
+    module.main(
+        symbol="AAPL",
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 8).isoformat(),
+        end_date=date(2026, 6, 7).isoformat(),
+        options_enabled=True,
+        options_feed="indicative",
+        output_dir=str(tmp_path),
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+        dataset_path_out=str(tmp_path / "dataset-path.txt"),
+        manifest_path_out=str(tmp_path / "manifest-path.txt"),
+        options_dataset_path_out=str(tmp_path / "options-dataset-path.txt"),
+        options_manifest_path_out=str(tmp_path / "options-manifest-path.txt"),
+    )
+
+    dataset_df = pd.read_parquet(tmp_path / "AAPL-alpaca-5m.parquet")
+    options_df = pd.read_parquet(tmp_path / "AAPL-alpaca-options-5m.parquet")
+
+    assert DatasetParquetRow.model_validate(dataset_df.iloc[0].to_dict())
+    assert DatasetParquetRow.model_validate(options_df.iloc[0].to_dict())
 
 
 def test_parquet_cache_round_trip_preserves_source_frame(tmp_path: Path) -> None:

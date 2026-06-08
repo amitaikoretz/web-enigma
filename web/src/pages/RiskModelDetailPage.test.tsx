@@ -11,12 +11,16 @@ const fetchWorkflowMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowDebugConfigMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowPodLogsMock = vi.hoisted(() => vi.fn())
 const fetchRiskModelWorkflowErrorsMock = vi.hoisted(() => vi.fn())
+const deleteRiskModelMock = vi.hoisted(() => vi.fn())
+const retryRiskModelMock = vi.hoisted(() => vi.fn())
 const updateRiskModelMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/riskModels', () => ({
   fetchRiskModelDetail: fetchRiskModelDetailMock,
   fetchRiskModelStatus: fetchRiskModelStatusMock,
   fetchRiskModelWorkflowErrors: fetchRiskModelWorkflowErrorsMock,
+  deleteRiskModel: deleteRiskModelMock,
+  retryRiskModel: retryRiskModelMock,
   updateRiskModel: updateRiskModelMock,
 }))
 
@@ -150,6 +154,13 @@ describe('RiskModelDetailPage', () => {
       argo_workflow_name: 'wf',
       argo_phase: 'Succeeded',
     })
+    deleteRiskModelMock.mockResolvedValue(undefined)
+    retryRiskModelMock.mockResolvedValue({
+      group_id: 'g-1',
+      status: 'pending',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+    })
 
     render(
       <MemoryRouter initialEntries={['/models/risk/g-1']}>
@@ -173,6 +184,13 @@ describe('RiskModelDetailPage', () => {
     expect(screen.getAllByText('Error metrics').length).toBeGreaterThan(0)
     expect(screen.getByText('Status panel')).toBeInTheDocument()
     expect(screen.getByText('Quick facts')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /retry model/i }))
+    expect(await screen.findByRole('heading', { name: /retry risk model\?/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^retry$/i }))
+    await waitFor(() => expect(retryRiskModelMock).toHaveBeenCalledWith('g-1'))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /retry risk model\?/i })).not.toBeInTheDocument(),
+    )
 
     fireEvent.click(screen.getByRole('tab', { name: 'Targets' }))
     expect(await screen.findByText('Feature browser')).toBeInTheDocument()
@@ -258,6 +276,49 @@ describe('RiskModelDetailPage', () => {
 
     await waitFor(() => expect(updateRiskModelMock).toHaveBeenCalledWith('g-rename', { name: 'Renamed Risk Model' }))
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Renamed Risk Model' })).toBeInTheDocument())
+  })
+
+  it('deletes a model from the detail page', async () => {
+    fetchRiskModelDetailMock.mockResolvedValue({
+      group_id: 'g-delete',
+      name: 'Disposable Model',
+      created_at: '2026-06-01T12:00:00.000Z',
+      updated_at: '2026-06-01T12:01:00.000Z',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      params: {},
+      artifact_dir: '/tmp/risk-models/g-delete',
+      summary_metrics: null,
+      dataset_manifest: null,
+      sources: [],
+      targets: [],
+    })
+    fetchRiskModelStatusMock.mockResolvedValue({
+      group_id: 'g-delete',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      argo_phase: 'Succeeded',
+    })
+    deleteRiskModelMock.mockResolvedValue(undefined)
+
+    render(
+      <MemoryRouter initialEntries={['/models/risk/g-delete']}>
+        <Routes>
+          <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Disposable Model' })).toBeInTheDocument())
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!)
+    expect(await screen.findByRole('heading', { name: /delete risk model disposable model\?/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^delete risk model$/i }))
+    await waitFor(() => expect(deleteRiskModelMock).toHaveBeenCalledWith('g-delete'))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /delete risk model disposable model\?/i })).not.toBeInTheDocument(),
+    )
   })
 
   it('polls active models until they reach a terminal state', async () => {

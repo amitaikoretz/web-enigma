@@ -79,6 +79,28 @@ def _seed_daily_index_model(tmp_path, session_factory, *, params: dict | None = 
                 "feature_one": 3.0,
                 "feature_two": 4.0,
             },
+            {
+                "symbol": "SPY",
+                "session_date": date(2024, 1, 4),
+                "decision_time": "09:45",
+                "decision_timestamp": datetime(2024, 1, 4, 14, 45, tzinfo=UTC),
+                "return_to_close_bps": 8.0,
+                "net_return_after_cost_bps": 5.0,
+                "positive_after_cost": True,
+                "feature_one": 5.0,
+                "feature_two": 6.0,
+            },
+            {
+                "symbol": "SPY",
+                "session_date": date(2024, 1, 5),
+                "decision_time": "09:45",
+                "decision_timestamp": datetime(2024, 1, 5, 14, 45, tzinfo=UTC),
+                "return_to_close_bps": 5.0,
+                "net_return_after_cost_bps": 2.0,
+                "positive_after_cost": True,
+                "feature_one": 7.0,
+                "feature_two": 8.0,
+            },
         ]
     )
     frame.to_parquet(dataset_path, index=False)
@@ -93,12 +115,12 @@ def _seed_daily_index_model(tmp_path, session_factory, *, params: dict | None = 
         symbol_count=1,
         benchmark_symbol="QQQ",
         start_date=date(2024, 1, 3),
-        end_date=date(2024, 1, 3),
+        end_date=date(2024, 1, 5),
         decision_times=["09:45", "10:30"],
-        total_source_rows=2,
-        feature_rows=2,
-        label_rows=2,
-        joined_rows=2,
+        total_source_rows=4,
+        feature_rows=4,
+        label_rows=4,
+        joined_rows=4,
         dropped_feature_rows=0,
         dropped_label_rows=0,
         output_path=str(dataset_path),
@@ -118,13 +140,13 @@ def _seed_daily_index_model(tmp_path, session_factory, *, params: dict | None = 
         selected_fold_id=1,
         selected_alpha=1.0,
         selected_features=model_features,
-        scaler_mean=[0.0, 0.0],
-        scaler_scale=[1.0, 1.0],
+        scaler_mean=[1.0, 2.0],
+        scaler_scale=[2.0, 4.0],
         coefficients=[2.0, 3.0],
         intercept=1.5,
         residual_std=1.0,
         costs={"spread_bps": 1.0},
-        walk_forward={"holdout_start": "2024-01-10T00:00:00Z"},
+        walk_forward={"holdout_start": "2024-01-03T00:00:00Z"},
         holdout_metrics={},
         aggregate_metrics={},
     )
@@ -174,7 +196,7 @@ def _seed_daily_index_model(tmp_path, session_factory, *, params: dict | None = 
             benchmark_symbol="QQQ",
             decision_times=["09:45", "10:30"],
             start_date=date(2024, 1, 3),
-            end_date=date(2024, 1, 3),
+            end_date=date(2024, 1, 5),
             status="succeeded",
             params=params,
             artifact_dir=str(manifest_dir),
@@ -224,7 +246,11 @@ def test_daily_index_forecast_chart_data_returns_bars_and_predictions(tmp_path, 
     client, session_factory = _build_client(tmp_path)
     _seed_daily_index_model(tmp_path, session_factory)
 
+    captured_universe = {}
+
     def fake_loader(universe, cache_config, force_refresh=False):
+        captured_universe["start_date"] = universe.start_date
+        captured_universe["end_date"] = universe.end_date
         frame = pd.DataFrame(
             [
                 {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.5, "Volume": 1000},
@@ -233,18 +259,71 @@ def test_daily_index_forecast_chart_data_returns_bars_and_predictions(tmp_path, 
         )
         return {"SPY": frame}, None
 
+    monkeypatch.setattr(charts_module, "build_feature_and_label_records", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should use stored dataset artifact")))
     monkeypatch.setattr(charts_module, "load_universe_frames", fake_loader)
-    monkeypatch.setattr(features_module, "load_universe_frames", fake_loader)
 
     response = client.get("/daily-index-forecast-models/di-1/chart-data?selected_date=2024-01-03&resolution=5m")
     assert response.status_code == 200
     body = response.json()
     assert body["group_id"] == "di-1"
     assert body["source"] == "stored"
-    assert body["split_label"] == "validation"
+    assert body["split_label"] == "holdout"
     assert body["bars"]["rows"][0]["timestamp"] == "2024-01-03T14:30:00+00:00"
-    assert body["predictions"][0]["predicted_bps"] == 1.5 + (1.0 * 2.0) + (2.0 * 3.0)
-    assert body["predictions"][0]["split_label"] == "validation"
+    assert body["predictions"][0]["predicted_bps"] == 1.5
+    assert body["predictions"][0]["split_label"] == "holdout"
+    assert captured_universe["start_date"] == date(2024, 1, 3)
+    assert captured_universe["end_date"] == date(2024, 1, 3)
+
+
+def test_daily_index_forecast_detail_includes_holdout_dates(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    _seed_daily_index_model(tmp_path, session_factory)
+
+    response = client.get("/daily-index-forecast-models/di-1")
+    assert response.status_code == 200
+    assert response.json()["holdout_dates"] == ["2024-01-03", "2024-01-04", "2024-01-05"]
+
+
+def test_resolve_holdout_session_dates_resolves_repo_relative_data_paths():
+    model_path = "/data/backtest-results/daily-index-forecast-models/ca43963c517547fa9a72423483fda48a/model.json"
+    manifest_path = "/data/backtest-results/daily-index-forecast-models/feature-runs/d5169561262d4e40a55845945c24249d/manifest.json"
+
+    holdout_dates = charts_module.resolve_holdout_session_dates(
+        model_path=model_path,
+        manifest_path=manifest_path,
+    )
+
+    assert holdout_dates == [
+        date(2025, 5, 9),
+        date(2025, 5, 12),
+        date(2025, 5, 13),
+        date(2025, 5, 14),
+        date(2025, 5, 15),
+        date(2025, 5, 16),
+        date(2025, 5, 19),
+        date(2025, 5, 20),
+        date(2025, 5, 21),
+        date(2025, 5, 22),
+        date(2025, 5, 23),
+        date(2025, 5, 27),
+        date(2025, 5, 28),
+        date(2025, 5, 29),
+        date(2025, 5, 30),
+        date(2025, 6, 2),
+        date(2025, 6, 3),
+        date(2025, 6, 4),
+        date(2025, 6, 5),
+        date(2025, 6, 6),
+    ]
+
+
+def test_daily_index_forecast_chart_data_rejects_non_holdout_dates(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    _seed_daily_index_model(tmp_path, session_factory)
+
+    response = client.get("/daily-index-forecast-models/di-1/chart-data?selected_date=2024-01-02&resolution=5m")
+    assert response.status_code == 422
+    assert "holdout" in response.json()["detail"].lower()
 
 
 def test_daily_index_forecast_chart_data_computes_missing_rows(tmp_path, monkeypatch):
@@ -291,6 +370,10 @@ def test_daily_index_forecast_chart_data_computes_missing_rows(tmp_path, monkeyp
         params=params,
         model_features=["bars_seen", "opening_window_minutes"],
     )
+    model_path = tmp_path / "artifacts" / "model.json"
+    manifest_path = tmp_path / "artifacts" / "manifest.json"
+    model_path.unlink()
+    manifest_path.unlink()
     computed_frame = pd.DataFrame(
         [
             {
@@ -319,7 +402,7 @@ def test_daily_index_forecast_chart_data_computes_missing_rows(tmp_path, monkeyp
         intercept=0.5,
         residual_std=1.0,
         costs={"spread_bps": 1.0},
-        walk_forward={"holdout_start": "2024-01-10T00:00:00Z"},
+        walk_forward={"holdout_start": "2024-01-05T00:00:00Z"},
         holdout_metrics={},
         aggregate_metrics={},
     )
@@ -447,7 +530,7 @@ def test_daily_index_forecast_chart_data_computes_missing_rows(tmp_path, monkeyp
     response = client.get("/daily-index-forecast-models/di-1/chart-data?selected_date=2024-01-05&resolution=5m")
     assert response.status_code == 200
     body = response.json()
-    assert body["source"] == "computed"
+    assert body["source"] == "stored"
     assert body["predictions"]
 
 
@@ -575,7 +658,7 @@ def test_daily_index_forecast_chart_data_falls_back_to_group_artifact_dir(tmp_pa
         intercept=0.0,
         residual_std=1.0,
         costs={"spread_bps": 1.0},
-        walk_forward={"holdout_start": "2024-01-10T00:00:00Z"},
+        walk_forward={"holdout_start": "2024-01-04T00:00:00Z"},
         holdout_metrics={},
         aggregate_metrics={},
     )

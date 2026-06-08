@@ -23,6 +23,7 @@ Rules:
 | Risk labels | `*.labels.parquet` | `app.backtests.artifacts.persist_backtest_report` and risk auxiliary writers | One row per candidate label | [Risk Labels Parquet](#risk-labels-parquet) |
 | Risk features | `*.features.parquet` | `app.backtests.artifacts.persist_backtest_report` and risk auxiliary writers | One row per candidate snapshot | [Risk Features Parquet](#risk-features-parquet) |
 | Joined risk dataset | `risk_dataset.parquet` or configured output path | `app.risk.dataset.builder.build_risk_dataset` | One row per joined candidate | [Joined Risk Dataset Parquet](#joined-risk-dataset-parquet) |
+| Dataset download | `*.parquet` from `app.standalone.datasets_download_argo` | `app.standalone.datasets_download_argo.main` | One row per symbol-timestamp bar | [Dataset Download Parquet](#dataset-download-parquet) |
 | Intraday dataset | `dataset.parquet` | `app.intraday.pipeline.write_intraday_artifacts` | One row per symbol-timestamp sample | [Intraday Dataset Parquet](#intraday-dataset-parquet) |
 | Intraday predictions | `predictions.parquet` | `app.intraday.pipeline.write_intraday_artifacts` | One row per scored sample | [Intraday Predictions Parquet](#intraday-predictions-parquet) |
 | Intraday positions | `positions.parquet` | `app.intraday.pipeline.write_intraday_artifacts` | One row per sizing decision | [Intraday Positions Parquet](#intraday-positions-parquet) |
@@ -279,6 +280,27 @@ Minimum columns that every joined dataset must have:
 
 **Ordering:** rows are concatenated in input-report order; within a report, the candidate order is preserved as much as possible.  
 **Failure behavior:** inner joins drop candidates that do not have both labels and features. That is intentional and should be reflected in `RiskDatasetManifest`.
+
+## Dataset Download Parquet
+
+**Producer:** `app.standalone.datasets_download_argo.main`  
+**Consumer:** dataset browsing, backtest input selection, parquet downloads  
+**Row grain:** one row per symbol-timestamp bar  
+**Versioning:** no embedded schema version; the column set is the contract
+
+This contract applies to both the primary market-data parquet and the optional Alpaca options parquet emitted by the downloader.
+
+| Column | Type | Nullability | Notes |
+|---|---|---|---|
+| `timestamp` | string | required | UTC timestamp |
+| `Open` | float | required | Bar open |
+| `High` | float | required | Bar high |
+| `Low` | float | required | Bar low |
+| `Close` | float | required | Bar close |
+| `Volume` | float | required | Bar volume |
+
+**Ordering:** rows are sorted by timestamp ascending.  
+**Failure behavior:** rows without a timestamp or without OHLCV columns fail validation before parquet write.
 
 ## Intraday Dataset Parquet
 

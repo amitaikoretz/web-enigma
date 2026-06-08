@@ -56,7 +56,7 @@ export const defaultPlatformSettings: PlatformSettings = {
     auto_refresh_interval_seconds: 1.5,
     market_overview_refresh_interval_seconds: 300,
     confirm_before_launch: false,
-    preferred_landing_page: 'backtests',
+    preferred_landing_page: 'overview',
     backtest_execution_backend: 'argo',
     argo_split_by: 'symbol_strategy',
   },

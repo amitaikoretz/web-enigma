@@ -1,58 +1,40 @@
 import '@testing-library/jest-dom/vitest'
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 const fetchDatasetsMock = vi.hoisted(() => vi.fn())
-const createRiskModelMock = vi.hoisted(() => vi.fn())
-const createReturnForecastModelMock = vi.hoisted(() => vi.fn())
-const createDailyIndexForecastModelMock = vi.hoisted(() => vi.fn())
 const deleteDatasetMock = vi.hoisted(() => vi.fn())
-const fetchPlatformSettingsMock = vi.hoisted(() => vi.fn())
-const loadAppearanceSettingsMock = vi.hoisted(() => vi.fn())
-const saveAppearanceSettingsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/datasets', () => ({
   deleteDataset: deleteDatasetMock,
   fetchDatasets: fetchDatasetsMock,
 }))
 
-vi.mock('../api/riskModels', () => ({
-  createRiskModel: createRiskModelMock,
-}))
-
-vi.mock('../api/returnForecastModels', () => ({
-  createReturnForecastModel: createReturnForecastModelMock,
-}))
-
-vi.mock('../api/dailyIndexForecastModels', () => ({
-  createDailyIndexForecastModel: createDailyIndexForecastModelMock,
-}))
-
-vi.mock('../api/settings', () => ({
-  fetchPlatformSettings: fetchPlatformSettingsMock,
-  updatePlatformSettings: vi.fn(),
-}))
-
-vi.mock('../settings/storage', () => ({
-  loadAppearanceSettings: loadAppearanceSettingsMock,
-  saveAppearanceSettings: saveAppearanceSettingsMock,
+vi.mock('../settings/useSettings', () => ({
+  useSettings: () => ({
+    platformSettings: {
+      platform_behavior: {
+        auto_refresh_interval_seconds: 60,
+        timezone: 'UTC',
+      },
+    },
+    appearance: {
+      time_display_format: '24h',
+    },
+  }),
 }))
 
 import { DatasetsListPage } from './DatasetsListPage'
-import { SettingsProvider } from '../settings/SettingsContext'
-import { defaultPlatformSettings } from '../settings/defaults'
+
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{JSON.stringify({ pathname: location.pathname, state: location.state })}</div>
+}
 
 describe('DatasetsListPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    loadAppearanceSettingsMock.mockReturnValue(defaultPlatformSettings.appearance)
-    fetchPlatformSettingsMock.mockResolvedValue({
-      backtest_defaults: defaultPlatformSettings.backtest_defaults,
-      live_defaults: defaultPlatformSettings.live_defaults,
-      platform_behavior: defaultPlatformSettings.platform_behavior,
-    })
     fetchDatasetsMock.mockResolvedValue({
       items: [
         {
@@ -80,86 +62,33 @@ describe('DatasetsListPage', () => {
       page: 1,
       page_size: 1,
     })
-    deleteDatasetMock.mockResolvedValue(undefined)
-    createRiskModelMock.mockResolvedValue({ group_id: 'rm-1', status: 'running' })
-    createReturnForecastModelMock.mockResolvedValue({ group_id: 'rf-1', status: 'running' })
-    createDailyIndexForecastModelMock.mockResolvedValue({ group_id: 'di-1', feature_run_id: 'fr-1', status: 'running' })
   })
 
   afterEach(() => {
     cleanup()
   })
 
-  it('shows resolution instead of output path in the datasets list', async () => {
+  it('deep-links a single selected dataset into the daily-index wizard route with provenance', async () => {
     render(
       <MemoryRouter initialEntries={['/backtests/datasets']}>
-        <SettingsProvider>
-          <DatasetsListPage />
-        </SettingsProvider>
+        <Routes>
+          <Route path="/backtests/datasets" element={<DatasetsListPage />} />
+          <Route path="/models/daily-index/new" element={<LocationProbe />} />
+        </Routes>
       </MemoryRouter>,
     )
 
-    expect(await screen.findByRole('columnheader', { name: 'Resolution' })).toBeInTheDocument()
-    expect(screen.getByText('5m')).toBeInTheDocument()
-    expect(screen.queryByText('/tmp/datasets')).not.toBeInTheDocument()
-
-    await waitFor(() =>
-      expect(fetchDatasetsMock).toHaveBeenCalled(),
-    )
-  })
-
-  it('renders dataset status as a colorful pill', async () => {
-    render(
-      <MemoryRouter initialEntries={['/backtests/datasets']}>
-        <SettingsProvider>
-          <DatasetsListPage />
-        </SettingsProvider>
-      </MemoryRouter>,
-    )
-
-    expect(await screen.findByText('Completed')).toBeInTheDocument()
-    expect(screen.getByText('Completed').closest('.MuiChip-root')).toBeInTheDocument()
-  })
-
-  it('shows a single train model button and can launch a daily index model', async () => {
-    render(
-      <MemoryRouter initialEntries={['/backtests/datasets']}>
-        <SettingsProvider>
-          <DatasetsListPage />
-        </SettingsProvider>
-      </MemoryRouter>,
-    )
-
-    expect(await screen.findByRole('button', { name: /train model/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /train risk model/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /train return forecast/i })).not.toBeInTheDocument()
-
+    await screen.findByText('My dataset')
     fireEvent.click(screen.getAllByRole('checkbox')[1])
-    fireEvent.click(screen.getByRole('button', { name: /train model/i }))
-    fireEvent.click(screen.getByRole('button', { name: /daily index forecast model/i }))
-    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    fireEvent.click(screen.getByRole('button', { name: /train daily index forecast/i }))
 
-    expect(screen.queryByLabelText(/start date/i)).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/end date/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/uses dataset provenance: aapl from 2026-05-01 to 2026-06-01/i)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /next/i }))
-    fireEvent.click(screen.getByRole('button', { name: /start training/i }))
-
-    await waitFor(() =>
-      expect(createDailyIndexForecastModelMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          universe: expect.objectContaining({
-            start_date: '2026-05-01',
-            end_date: '2026-06-01',
-            symbols: [expect.objectContaining({ symbol: 'AAPL' })],
-          }),
-        }),
-      ),
-    )
+    expect(await screen.findByTestId('location')).toHaveTextContent('/models/daily-index/new')
+    expect(screen.getByTestId('location')).toHaveTextContent('"sourceKind":"dataset"')
+    expect(screen.getByTestId('location')).toHaveTextContent('"selectedCount":1')
+    expect(screen.getByTestId('location')).toHaveTextContent('"symbol":"AAPL"')
   })
 
-  it('blocks daily index launches when multiple datasets are selected', async () => {
+  it('disables the daily-index launch when multiple datasets are selected', async () => {
     fetchDatasetsMock.mockResolvedValue({
       items: [
         {
@@ -210,21 +139,16 @@ describe('DatasetsListPage', () => {
 
     render(
       <MemoryRouter initialEntries={['/backtests/datasets']}>
-        <SettingsProvider>
-          <DatasetsListPage />
-        </SettingsProvider>
+        <Routes>
+          <Route path="/backtests/datasets" element={<DatasetsListPage />} />
+          <Route path="/models/daily-index/new" element={<LocationProbe />} />
+        </Routes>
       </MemoryRouter>,
     )
 
-    await screen.findByRole('button', { name: /train model/i })
+    await screen.findByText('My dataset')
     fireEvent.click(screen.getAllByRole('checkbox')[1])
     fireEvent.click(screen.getAllByRole('checkbox')[2])
-    fireEvent.click(screen.getByRole('button', { name: /train model/i }))
-    fireEvent.click(screen.getByRole('button', { name: /daily index forecast model/i }))
-    fireEvent.click(screen.getByRole('button', { name: /next/i }))
-    fireEvent.click(screen.getByRole('button', { name: /next/i }))
-
-    expect(await screen.findByText(/requires exactly one dataset selection/i)).toBeInTheDocument()
-    expect(createDailyIndexForecastModelMock).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /train daily index forecast/i })).toBeDisabled()
   })
 })

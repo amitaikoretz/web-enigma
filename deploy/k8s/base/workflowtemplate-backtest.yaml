@@ -110,6 +110,7 @@ spec:
           - name: backtest-id
           - name: output-path
       container:
+        name: main
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "app.standalone.print_argo_payload"]
@@ -131,11 +132,6 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
-        resources:
-          requests:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-          limits:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -173,6 +169,7 @@ spec:
           - name: split-by
           - name: backtest-id
       container:
+        name: main
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "app.standalone.plan_shards_argo"]
@@ -196,11 +193,6 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
-        resources:
-          requests:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-          limits:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -243,6 +235,7 @@ spec:
         limit: 3
         retryPolicy: Always
       container:
+        name: main
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "app.standalone.run_shard_argo"]
@@ -262,11 +255,6 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
-        resources:
-          requests:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-          limits:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace
@@ -309,6 +297,7 @@ spec:
           - name: output-path
           - name: backtest-id
       container:
+        name: main
         image: backtest-app:latest
         imagePullPolicy: IfNotPresent
         command: ["python", "-m", "app.standalone.merge_reports_argo"]
@@ -326,11 +315,6 @@ spec:
         envFrom:
           - secretRef:
               name: app-secrets
-        resources:
-          requests:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-          limits:
-            memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
         volumeMounts:
           - name: workspace
             mountPath: /workspace

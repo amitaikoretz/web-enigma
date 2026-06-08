@@ -121,6 +121,7 @@ export interface DailyIndexForecastFeatureRun {
   argo_workflow_name?: string | null
   symbol: string
   benchmark_symbol?: string | null
+  resolution?: string | null
   decision_times: string[]
   start_date: string
   end_date: string
@@ -145,6 +146,7 @@ export interface DailyIndexForecastListItem {
   argo_workflow_name?: string | null
   symbol: string
   benchmark_symbol?: string | null
+  resolution?: string | null
   decision_times: string[]
   start_date: string
   end_date: string
@@ -165,11 +167,13 @@ export interface DailyIndexForecastDetail {
   status: DailyIndexForecastStatus
   argo_namespace?: string | null
   argo_workflow_name?: string | null
+  resolution?: string | null
   params: Record<string, unknown>
   artifact_dir: string
   summary_metrics?: Record<string, unknown> | null
   feature_run?: DailyIndexForecastFeatureRun | null
   dataset_manifest?: DailyIndexForecastDatasetManifestSummary | null
+  holdout_dates: string[]
   targets: DailyIndexForecastTargetRow[]
   feature_importance?: FeatureImportanceTarget | null
 }

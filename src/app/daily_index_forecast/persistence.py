@@ -20,11 +20,42 @@ def _start_of_day(value: date) -> datetime:
     return datetime.combine(value, time.min).replace(tzinfo=None)
 
 
+def _extract_resolution(params: dict[str, Any] | None) -> str | None:
+    if not params:
+        return None
+
+    direct = params.get("resolution")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+
+    universe = params.get("universe")
+    if isinstance(universe, dict):
+        for spec in universe.get("symbols", []):
+            if not isinstance(spec, dict):
+                continue
+            data = spec.get("data")
+            if isinstance(data, dict):
+                interval = data.get("interval")
+                if isinstance(interval, str) and interval.strip():
+                    return interval.strip()
+
+        benchmark = universe.get("benchmark")
+        if isinstance(benchmark, dict):
+            data = benchmark.get("data")
+            if isinstance(data, dict):
+                interval = data.get("interval")
+                if isinstance(interval, str) and interval.strip():
+                    return interval.strip()
+
+    return None
+
+
 @dataclass(frozen=True)
 class DailyIndexFeatureRunRow:
     feature_run_id: str
     symbol: str
     benchmark_symbol: str | None
+    resolution: str | None
     decision_times: list[str]
     start_date: date
     end_date: date
@@ -69,6 +100,7 @@ class DailyIndexModelListItem:
     argo_workflow_name: str | None
     symbol: str
     benchmark_symbol: str | None
+    resolution: str | None
     decision_times: list[str]
     start_date: date
     end_date: date
@@ -90,6 +122,7 @@ class DailyIndexModelDetail:
     status: str
     argo_namespace: str | None
     argo_workflow_name: str | None
+    resolution: str | None
     params: dict[str, Any]
     artifact_dir: str
     summary_metrics: dict[str, Any] | None
@@ -190,6 +223,7 @@ class SqlAlchemyDailyIndexForecastRepository:
                 feature_run_id=row.id,
                 symbol=row.symbol,
                 benchmark_symbol=row.benchmark_symbol,
+                resolution=_extract_resolution(row.params_json),
                 decision_times=list(row.decision_times_json or []),
                 start_date=row.start_date,
                 end_date=row.end_date,
@@ -365,6 +399,7 @@ class SqlAlchemyDailyIndexForecastRepository:
                         argo_workflow_name=g.argo_workflow_name,
                         symbol=feature_run.symbol,
                         benchmark_symbol=feature_run.benchmark_symbol,
+                        resolution=_extract_resolution(feature_run.params_json) or _extract_resolution(g.params_json),
                         decision_times=list(feature_run.decision_times_json or []),
                         start_date=feature_run.start_date,
                         end_date=feature_run.end_date,
@@ -391,6 +426,7 @@ class SqlAlchemyDailyIndexForecastRepository:
                     feature_run_id=feature_run.id,
                     symbol=feature_run.symbol,
                     benchmark_symbol=feature_run.benchmark_symbol,
+                    resolution=_extract_resolution(feature_run.params_json),
                     decision_times=list(feature_run.decision_times_json or []),
                     start_date=feature_run.start_date,
                     end_date=feature_run.end_date,
@@ -415,6 +451,7 @@ class SqlAlchemyDailyIndexForecastRepository:
                 status=g.status,
                 argo_namespace=g.argo_namespace,
                 argo_workflow_name=g.argo_workflow_name,
+                resolution=_extract_resolution(feature_run.params_json) if feature_run is not None else _extract_resolution(g.params_json),
                 params=g.params_json,
                 artifact_dir=g.artifact_dir,
                 summary_metrics=g.summary_metrics_json,
@@ -454,6 +491,7 @@ class SqlAlchemyDailyIndexForecastRepository:
                 argo_workflow_name=g.argo_workflow_name,
                 symbol=feature_run.symbol if feature_run is not None else "",
                 benchmark_symbol=feature_run.benchmark_symbol if feature_run is not None else None,
+                resolution=_extract_resolution(feature_run.params_json) if feature_run is not None else _extract_resolution(g.params_json),
                 decision_times=list(feature_run.decision_times_json or []) if feature_run is not None else [],
                 start_date=feature_run.start_date if feature_run is not None else date.today(),
                 end_date=feature_run.end_date if feature_run is not None else date.today(),

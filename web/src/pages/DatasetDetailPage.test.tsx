@@ -175,6 +175,8 @@ describe('DatasetDetailPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'My dataset' })).toBeInTheDocument()
     expect(screen.getByText('ID: ds-1')).toBeInTheDocument()
+    expect(screen.getByText('Resolution')).toBeInTheDocument()
+    expect(screen.getByText('1d')).toBeInTheDocument()
 
     fireEvent.click(screen.getAllByRole('button', { name: /download parquet/i })[0])
 

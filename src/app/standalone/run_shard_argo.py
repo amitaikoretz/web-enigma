@@ -48,18 +48,21 @@ def main(
     typer.echo(f"Shard output: {output_path}")
     typer.echo(f"Cache dir: {cache_dir}")
 
-    rc = _cmd_run(
-        config_path=config_path,
-        output_path=output_path,
-        cache_dir=cache_dir,
-        cache_refresh=False,
-        no_cache=False,
-        progress_file=None,
-    )
-    if rc != 0:
-        raise typer.Exit(code=rc)
-
-    _write_text(shard_output_path_out, output_path)
+    try:
+        rc = _cmd_run(
+            config_path=config_path,
+            output_path=output_path,
+            cache_dir=cache_dir,
+            cache_refresh=False,
+            no_cache=False,
+            progress_file=None,
+        )
+        if rc != 0:
+            raise typer.Exit(code=rc)
+    finally:
+        # Argo still needs this output parameter path even when the shard fails,
+        # otherwise the executor logs a secondary "cannot save parameter" error.
+        _write_text(shard_output_path_out, output_path)
 
 
 if __name__ == "__main__":

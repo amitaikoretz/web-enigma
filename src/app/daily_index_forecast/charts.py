@@ -18,27 +18,95 @@ from app.daily_index_forecast.models import (
     DailyIndexForecastChartResponse,
     DailyIndexForecastDatasetManifestSummary,
     DailyIndexForecastSplitLabel,
+    DailyIndexUniverseConfig,
 )
 from app.daily_index_forecast.records import DailyIndexModelArtifact
 from app.daily_index_forecast.records import records_to_frame
 
 
-def _load_model_artifact(model_path: str | None) -> DailyIndexModelArtifact | None:
-    if not model_path:
+def _as_utc_timestamp(value: Any) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    if ts.tzinfo is None:
+        return ts.tz_localize("UTC")
+    return ts.tz_convert("UTC")
+
+
+def resolve_artifact_path(path_str: str | None) -> Path | None:
+    if not path_str:
         return None
-    path = Path(model_path)
-    if not path.is_file():
+
+    candidate = Path(path_str)
+    search_paths = [candidate]
+    repo_root = Path(__file__).resolve().parents[3]
+
+    if candidate.is_absolute():
+        if len(candidate.parts) > 2 and candidate.parts[1] == "data":
+            relative_path = Path(*candidate.parts[2:])
+            search_paths.extend(
+                [
+                    repo_root / "data" / relative_path,
+                    Path.cwd() / "data" / relative_path,
+                ]
+            )
+    else:
+        search_paths.extend([Path.cwd() / candidate, repo_root / candidate])
+
+    for path in search_paths:
+        try:
+            if path.is_file() or path.is_dir():
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def _load_model_artifact(model_path: str | None) -> DailyIndexModelArtifact | None:
+    path = resolve_artifact_path(model_path)
+    if path is None:
         return None
     return DailyIndexModelArtifact.model_validate_json(path.read_text(encoding="utf-8"))
 
 
 def _load_manifest(manifest_path: str | None) -> DailyIndexForecastDatasetManifestSummary | None:
-    if not manifest_path:
-        return None
-    path = Path(manifest_path)
-    if not path.is_file():
+    path = resolve_artifact_path(manifest_path)
+    if path is None:
         return None
     return DailyIndexForecastDatasetManifestSummary.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def resolve_holdout_session_dates_from_dataset(
+    dataset: pd.DataFrame,
+    artifact: DailyIndexModelArtifact,
+) -> list[date]:
+    walk_forward = artifact.walk_forward or {}
+    holdout_start_text = walk_forward.get("holdout_start")
+    if not holdout_start_text or dataset.empty:
+        return []
+
+    if "session_date" not in dataset.columns or "decision_timestamp" not in dataset.columns:
+        return []
+
+    holdout_start = _as_utc_timestamp(holdout_start_text)
+    decision_ts = pd.to_datetime(dataset["decision_timestamp"], utc=True, errors="coerce")
+    session_dates = pd.to_datetime(dataset["session_date"], errors="coerce").dt.date
+    if decision_ts.isna().any() or session_dates.isna().any():
+        raise ValueError("Dataset contains invalid session or decision timestamps")
+
+    holdout_mask = decision_ts >= holdout_start
+    return sorted({session_date for session_date in session_dates.loc[holdout_mask].tolist() if session_date is not None})
+
+
+def resolve_holdout_session_dates(
+    *,
+    model_path: str | None,
+    manifest_path: str | None,
+) -> list[date]:
+    artifact = _load_model_artifact(model_path)
+    manifest = _load_manifest(manifest_path)
+    if artifact is None or manifest is None:
+        return []
+    dataset = _load_dataset_frames(manifest)
+    return resolve_holdout_session_dates_from_dataset(dataset, artifact)
 
 
 def _build_model_artifact_from_params(
@@ -70,10 +138,41 @@ def _build_model_artifact_from_params(
 
 
 def _load_dataset_frames(manifest: DailyIndexForecastDatasetManifestSummary) -> pd.DataFrame:
-    dataset_path = Path(manifest.output_path)
-    if not dataset_path.exists():
-        raise FileNotFoundError(f"Dataset parquet not found: {dataset_path}")
+    dataset_path = resolve_artifact_path(manifest.output_path)
+    if dataset_path is None:
+        raise FileNotFoundError(f"Dataset parquet not found: {manifest.output_path}")
     return pd.read_parquet(dataset_path)
+
+
+def _build_chart_universe(universe: DailyIndexUniverseConfig, selected_date: date) -> DailyIndexUniverseConfig:
+    payload = universe.model_dump(mode="json")
+    payload["start_date"] = selected_date.isoformat()
+    payload["end_date"] = selected_date.isoformat()
+    return DailyIndexUniverseConfig.model_validate(payload)
+
+
+def _predict_with_artifact(
+    *,
+    artifact: DailyIndexModelArtifact,
+    rows: pd.DataFrame,
+    feature_columns: list[str],
+) -> np.ndarray:
+    x = rows[feature_columns].replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(float)
+    values = x.to_numpy(dtype=float)
+
+    if artifact.scaler_mean and artifact.scaler_scale:
+        if len(artifact.scaler_mean) != len(feature_columns) or len(artifact.scaler_scale) != len(feature_columns):
+            raise ValueError("Model scaler values do not match the available feature columns")
+        mean = np.asarray(artifact.scaler_mean, dtype=float)
+        scale = np.asarray(artifact.scaler_scale, dtype=float)
+        scale = np.where(scale == 0.0, 1.0, scale)
+        values = (values - mean) / scale
+
+    if len(artifact.coefficients) != len(feature_columns):
+        raise ValueError("Model coefficients do not match the available feature columns")
+
+    coefficients = np.asarray(artifact.coefficients, dtype=float)
+    return values @ coefficients + float(artifact.intercept)
 
 
 def _build_request_from_params(params: dict[str, Any], *, selected_date: date) -> DailyIndexForecastCreateRequest:
@@ -194,11 +293,21 @@ def build_daily_index_forecast_chart_data(
             selected_date=selected_date,
         )
 
+    holdout_dates = resolve_holdout_session_dates_from_dataset(dataset, artifact)
+    if selected_date not in holdout_dates:
+        if holdout_dates:
+            allowed = ", ".join(allowed_date.isoformat() for allowed_date in holdout_dates)
+            raise ValueError(
+                f"Selected date {selected_date.isoformat()} is not one of the holdout days: {allowed}"
+            )
+        raise ValueError("No holdout dates are available for chart selection")
+
     symbol = dataset["symbol"].iloc[0] if "symbol" in dataset.columns and not dataset.empty else ""
     if not symbol:
         raise ValueError("Dataset does not include a symbol column")
 
-    frames, _benchmark_frame = load_universe_frames(request.universe, cache_config, force_refresh=False)
+    chart_universe = _build_chart_universe(request.universe, selected_date)
+    frames, _benchmark_frame = load_universe_frames(chart_universe, cache_config, force_refresh=False)
     source_frame = frames.get(symbol)
     if source_frame is None or source_frame.empty:
         raise ValueError(f"No market bars available for {symbol} on {selected_date.isoformat()}")
@@ -239,11 +348,7 @@ def build_daily_index_forecast_chart_data(
     missing_features = [column for column in artifact.selected_features if column not in rows_by_time.columns]
     if missing_features:
         raise ValueError(f"Missing required feature columns: {', '.join(missing_features)}")
-    if len(artifact.coefficients) != len(feature_columns):
-        raise ValueError("Model coefficients do not match the available feature columns")
-
-    x = rows_by_time[feature_columns].replace([np.inf, -np.inf], np.nan).fillna(0.0).astype(float)
-    predictions = x.to_numpy() @ np.asarray(artifact.coefficients, dtype=float) + float(artifact.intercept)
+    predictions = _predict_with_artifact(artifact=artifact, rows=rows_by_time, feature_columns=feature_columns)
 
     label_columns = {column for column in ["return_to_close_bps", "net_return_after_cost_bps", "positive_after_cost"] if column in rows_by_time.columns}
     bars = _bars_from_frame(

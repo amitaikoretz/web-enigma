@@ -22,6 +22,8 @@ volumes:
 templates:
   - name: daily-index-forecast
     steps:
+      - - name: print-payload
+          template: print-payload
       - - name: extract-features
           template: extract-features
           arguments:
@@ -69,6 +71,32 @@ templates:
               - {name: features-path, value: "{{steps.extract-features.outputs.parameters.features-path}}"}
               - {name: labels-path, value: "{{steps.generate-labels.outputs.parameters.labels-path}}"}
               - {name: artifact-dir, value: "{{workflow.parameters.artifact-dir}}"}
+  - name: print-payload
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.print_argo_command"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --command-line
+        - "__COMMAND_LINE__"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      env:
+        - name: ARGO_PROGRESS_FILE
+          value: /tmp/argo-progress.txt
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
   - name: extract-features
     inputs:
       parameters:

@@ -731,9 +731,31 @@ class BacktestJobService:
             }
         )
 
+    def _translate_dataset_path_for_argo(self, payload: BacktestCreateRequest) -> BacktestCreateRequest:
+        if payload.dataset_id is None or payload.dataset_path is None or self.dataset_repository is None:
+            return payload
+
+        dataset = self.dataset_repository.get(payload.dataset_id)
+        if dataset is None:
+            raise FileNotFoundError(f"Dataset '{payload.dataset_id}' not found")
+
+        host_root = Path(getattr(dataset, "output_dir")).resolve()
+        workflow_root = Path(workflow_results_mount()).resolve()
+        dataset_path = Path(payload.dataset_path)
+        try:
+            relative_path = dataset_path.resolve().relative_to(host_root)
+        except ValueError:
+            return payload
+
+        return payload.model_copy(update={"dataset_path": str(workflow_root / relative_path)})
+
     def submit(self, payload: BacktestCreateRequest) -> BacktestCreateResponse:
+        platform_settings = self._platform_settings()
+        execution_backend = platform_settings.platform_behavior.backtest_execution_backend
         backtest_id = uuid.uuid4().hex
         payload = self._resolve_dataset_backed_payload(payload)
+        if execution_backend == "argo":
+            payload = self._translate_dataset_path_for_argo(payload)
         config_raw = build_backtest_config_raw(payload, backtest_id)
         return self._submit_from_config_raw(
             config_raw,

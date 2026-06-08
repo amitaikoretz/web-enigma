@@ -18,16 +18,13 @@ import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 
 import { deleteDataset, downloadDatasetParquet, fetchDatasetDetail, fetchDatasetStatus, fetchDatasetWorkflowErrors, retryDataset } from '../api/datasets'
-import { createRiskModel } from '../api/riskModels'
-import { createReturnForecastModel } from '../api/returnForecastModels'
-import { createDailyIndexForecastModel } from '../api/dailyIndexForecastModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BacktestProgressPanel } from '../components/BacktestProgressPanel'
 import { DataDownloadStatusChip } from '../components/DataDownloadStatusChip'
 import { DatasetWorkflowErrorDialog } from '../components/DatasetWorkflowErrorDialog'
-import { ModelTrainingLaunchDialog, type DailyIndexDatasetSource, type ModelTrainingFamily, type ModelTrainingLaunchPayload } from '../components/ModelTrainingLaunchDialog'
 import { WorkflowStepsDialog } from '../components/WorkflowStepsDialog'
 import type { DatasetDetailResponse, DatasetStatusResponse } from '../types/datasets'
+import { familyWizardPath } from './modelLaunchRoutes'
 
 export function DatasetDetailPage() {
   const { datasetId = '' } = useParams()
@@ -40,9 +37,6 @@ export function DatasetDetailPage() {
   const [downloading, setDownloading] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const [retryDialogOpen, setRetryDialogOpen] = useState(false)
-  const [launchFamily, setLaunchFamily] = useState<ModelTrainingFamily | null>(null)
-  const [launchSubmitting, setLaunchSubmitting] = useState(false)
-  const [launchError, setLaunchError] = useState<string | null>(null)
   const [retryResult, setRetryResult] = useState<
     | { status: 'success'; message: string; datasetId: string; detailUrl: string }
     | { status: 'failed'; message: string }
@@ -133,55 +127,26 @@ export function DatasetDetailPage() {
     }
   }
 
-  async function submitModelLaunch(payload: ModelTrainingLaunchPayload) {
+  function launchModel(family: 'risk' | 'return_forecast' | 'daily_index_forecast') {
     if (!metadata) return
-    setLaunchSubmitting(true)
-    setLaunchError(null)
-    setError(null)
-    try {
-      const response =
-        payload.family === 'risk'
-          ? await createRiskModel({
-              ...(payload.request as any),
-              dataset_ids: [metadata.id],
-            })
-          : payload.family === 'return_forecast'
-          ? await createReturnForecastModel({
-              ...(payload.request as any),
-              dataset_ids: [metadata.id],
-            })
-          : await createDailyIndexForecastModel({
-              name: (payload.request as any).name ?? null,
-              universe: (payload.request as any).universe,
-              feature_config: (payload.request as any).feature_config,
-              walk_forward: (payload.request as any).walk_forward,
-              train_config: (payload.request as any).train_config,
-              costs: (payload.request as any).costs,
-              data_cache: (payload.request as any).data_cache,
-            })
-      setLaunchFamily(null)
-      setRetryResult({
-        status: 'success',
-        message: 'Model launch submitted successfully.',
-        datasetId: (response as any).group_id,
-        detailUrl: `/models/risk/${(response as any).group_id}`,
-      } as any)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to launch model'
-      setLaunchError(message)
-      setError(message)
-    } finally {
-      setLaunchSubmitting(false)
-    }
-  }
 
-  const dailyIndexDatasetSource: DailyIndexDatasetSource | null = metadata
-    ? {
-        symbol: metadata.symbol,
-        start_date: metadata.start_date,
-        end_date: metadata.end_date,
-      }
-    : null
+    navigate(familyWizardPath(family), {
+      state: {
+        sourceKind: 'dataset',
+        sourceIds: [metadata.id],
+        selectedCount: 1,
+        selectionLabel: 'datasets',
+        dailyIndexDatasetSource:
+          family === 'daily_index_forecast'
+            ? {
+                symbol: metadata.symbol,
+                start_date: metadata.start_date,
+                end_date: metadata.end_date,
+              }
+            : null,
+      },
+    })
+  }
 
   return (
     <Stack spacing={3}>
@@ -220,19 +185,19 @@ export function DatasetDetailPage() {
               {metadata
                 ? `${metadata.provider} · ${metadata.resolution} · ${metadata.start_date} to ${metadata.end_date}`
                 : 'Loading…'}
-            </Typography>
-            <Typography color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+          </Typography>
+          <Typography color="text.secondary" sx={{ fontFamily: 'monospace' }}>
               ID: {metadata?.id ?? datasetId}
             </Typography>
           </Stack>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            <Button variant="outlined" onClick={() => setLaunchFamily('risk')} disabled={!metadata}>
+            <Button variant="outlined" onClick={() => launchModel('risk')} disabled={!metadata}>
               Train risk model
             </Button>
-            <Button variant="outlined" onClick={() => setLaunchFamily('return_forecast')} disabled={!metadata}>
+            <Button variant="outlined" onClick={() => launchModel('return_forecast')} disabled={!metadata}>
               Train return forecast
             </Button>
-            <Button variant="outlined" onClick={() => setLaunchFamily('daily_index_forecast')} disabled={!metadata}>
+            <Button variant="outlined" onClick={() => launchModel('daily_index_forecast')} disabled={!metadata}>
               Train daily index forecast
             </Button>
             {canRetry && (
@@ -267,6 +232,10 @@ export function DatasetDetailPage() {
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography color="text.secondary">Status</Typography>
             {metadata ? <DataDownloadStatusChip status={metadata.status} /> : <Typography>Loading…</Typography>}
+          </Stack>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <Typography color="text.secondary">Resolution</Typography>
+            <Typography sx={{ fontFamily: 'monospace' }}>{metadata?.resolution ?? 'Loading…'}</Typography>
           </Stack>
           {metadata?.argo_workflow_name && (
             <Alert
@@ -316,17 +285,6 @@ export function DatasetDetailPage() {
         onConfirm={() => {
           void handleRetry()
         }}
-      />
-      <ModelTrainingLaunchDialog
-        open={launchFamily !== null}
-        allowedFamilies={['risk', 'return_forecast', 'daily_index_forecast']}
-        selectedCount={metadata ? 1 : 0}
-        selectionLabel="datasets"
-        submitting={launchSubmitting}
-        error={launchError}
-        dailyIndexDatasetSource={dailyIndexDatasetSource}
-        onClose={() => setLaunchFamily(null)}
-        onSubmit={submitModelLaunch}
       />
       <Dialog
         open={retryResult !== null}

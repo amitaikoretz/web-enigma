@@ -38,7 +38,7 @@ export type LayoutWidthPreference = 'standard' | 'wide'
 export type TimeDisplayFormat = '12h' | '24h'
 export type IndicatorContrast = 'balanced' | 'high'
 export type DateRangePreset = '30D' | '90D' | '1Y'
-export type PreferredLandingPage = 'backtests' | 'new_backtest' | 'chart'
+export type PreferredLandingPage = 'overview' | 'backtests' | 'new_backtest' | 'chart'
 
 export interface AppearanceSettings {
   theme_preset: ThemePreset

@@ -30,6 +30,8 @@ templates:
         - {name: artifact-dir}
         - {name: family}
     steps:
+      - - name: print-payload
+          template: print-payload
       - - name: build-dataset
           template: build-dataset
           arguments:
@@ -70,6 +72,30 @@ templates:
               - {name: stop-metrics-path, value: "{{steps.train-stop.outputs.parameters.metrics-path}}"}
               - {name: mae-model-path, value: "{{steps.train-mae.outputs.parameters.model-path}}"}
               - {name: mae-metrics-path, value: "{{steps.train-mae.outputs.parameters.metrics-path}}"}
+  - name: print-payload
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.print_argo_command"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --command-line
+        - "__COMMAND_LINE__"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      volumeMounts:
+        - {name: workspace, mountPath: /workspace}
+        - {name: backtest-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+        - {name: backtest-cache, mountPath: /data/cache}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
   - name: build-dataset
     inputs:
       parameters:

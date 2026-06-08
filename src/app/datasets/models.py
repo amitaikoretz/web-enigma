@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+import pandas as pd
+from pydantic import BaseModel, Field, TypeAdapter, ConfigDict, field_validator, model_validator
 
 SUPPORTED_DATASET_RESOLUTIONS = ("1m", "5m", "15m", "1h", "1d")
 SUPPORTED_DATASET_PROVIDERS = ("alpaca", "yahoo")
@@ -80,6 +81,24 @@ class DatasetListItem(BaseModel):
     progress_pct: float = 0.0
 
 
+class DatasetParquetRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timestamp: datetime
+    open: float = Field(alias="Open")
+    high: float = Field(alias="High")
+    low: float = Field(alias="Low")
+    close: float = Field(alias="Close")
+    volume: float = Field(alias="Volume")
+
+
+_DATASET_PARQUET_ROWS = TypeAdapter(list[DatasetParquetRow])
+
+
+def validate_dataset_parquet_frame(frame: pd.DataFrame) -> None:
+    _DATASET_PARQUET_ROWS.validate_python(frame.to_dict(orient="records"))
+
+
 class DatasetStatusResponse(DatasetListItem):
     is_terminal: bool
     argo_phase: str | None = None
@@ -101,6 +120,7 @@ class DatasetCreateResponse(BaseModel):
 
 class DatasetDetailResponse(BaseModel):
     metadata: DatasetListItem
+    symbol_options: list[str] = Field(default_factory=list)
 
 
 class DatasetWorkflowErrorResponse(BaseModel):

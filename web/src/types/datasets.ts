@@ -61,6 +61,7 @@ export interface DatasetListPageResponse {
 
 export interface DatasetDetailResponse {
   metadata: DatasetListItem
+  symbol_options: string[]
 }
 
 export interface DatasetWorkflowErrorResponse {

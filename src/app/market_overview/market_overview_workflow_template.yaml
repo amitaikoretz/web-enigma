@@ -15,6 +15,8 @@ volumes:
 templates:
   - name: market-overview
     steps:
+      - - name: print-payload
+          template: print-payload
       - - name: generate-snapshot
           template: generate-snapshot
           arguments:
@@ -31,6 +33,33 @@ templates:
                 value: "{{workflow.parameters.snapshot-id}}"
               - name: output-path
                 value: "{{workflow.parameters.output-path}}"
+  - name: print-payload
+    retryStrategy: {limit: 3, retryPolicy: Always}
+    container:
+      image: __WORKFLOW_IMAGE__
+      imagePullPolicy: IfNotPresent
+      command: ["python", "-m", "app.standalone.print_argo_command"]
+      args:
+        - --terminal-command-out
+        - /tmp/terminal-command.txt
+        - --command-line
+        - "__COMMAND_LINE__"
+      envFrom:
+        - secretRef: {name: __SECRET_NAME__}
+      resources:
+        requests:
+          memory: 1Gi
+        limits:
+          memory: 1Gi
+      volumeMounts:
+        - {name: market-overview-results, mountPath: __WORKFLOW_RESULTS_MOUNT__}
+    outputs:
+      parameters:
+        - {name: terminal-command, valueFrom: {path: /tmp/terminal-command.txt}}
+        - {name: error-exception, valueFrom: {path: /tmp/error-exception.txt}}
+        - {name: error-code-location, valueFrom: {path: /tmp/error-code-location.txt}}
+        - {name: error-call-stack, valueFrom: {path: /tmp/error-call-stack.txt}}
+        - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
   - name: generate-snapshot
     retryStrategy: {limit: 3, retryPolicy: Always}
     inputs:

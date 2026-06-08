@@ -23,6 +23,22 @@ def test_build_market_overview_workflow_spec_uses_valid_container_resources() ->
         output_path="/data/market-overview-results/snap-123/snap-123.json",
     )
 
+    assert spec["volumes"] == [
+        {
+            "name": "market-overview-results",
+            "persistentVolumeClaim": {"claimName": "backtest-results"},
+        }
+    ]
+
+    workflow = next(item for item in spec["templates"] if item["name"] == "market-overview")
+    step_names = [step["name"] for group in workflow["steps"] for step in group]
+    assert step_names == ["print-payload", "generate-snapshot", "reconcile-snapshot"]
+
+    print_payload = next(item for item in spec["templates"] if item["name"] == "print-payload")
+    args = print_payload["container"]["args"]
+    assert "__COMMAND_LINE__" not in args
+    assert "--command-line" in args
+
     generate_snapshot = next(item for item in spec["templates"] if item["name"] == "generate-snapshot")
     reconcile_snapshot = next(item for item in spec["templates"] if item["name"] == "reconcile-snapshot")
 
@@ -33,6 +49,22 @@ def test_build_market_overview_workflow_spec_uses_valid_container_resources() ->
             "requests": {"memory": "1Gi"},
             "limits": {"memory": "1Gi"},
         }
+
+
+def test_build_market_overview_workflow_spec_falls_back_from_bad_results_claim(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKET_OVERVIEW_RESULTS_CLAIM", "market-overview-results")
+
+    spec = build_market_overview_workflow_spec(
+        snapshot_id="snap-123",
+        output_path="/data/market-overview-results/snap-123/snap-123.json",
+    )
+
+    assert spec["volumes"] == [
+        {
+            "name": "market-overview-results",
+            "persistentVolumeClaim": {"claimName": "backtest-results"},
+        }
+    ]
 
 
 def test_submit_via_http_posts_workflow_to_argo_server(caplog: pytest.LogCaptureFixture) -> None:

@@ -12,6 +12,7 @@ const fetchWorkflowDebugConfigMock = vi.hoisted(() => vi.fn())
 const fetchWorkflowPodLogsMock = vi.hoisted(() => vi.fn())
 const fetchReturnForecastModelWorkflowErrorsMock = vi.hoisted(() => vi.fn())
 const deleteReturnForecastModelMock = vi.hoisted(() => vi.fn())
+const retryReturnForecastModelMock = vi.hoisted(() => vi.fn())
 const updateReturnForecastModelMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/returnForecastModels', () => ({
@@ -19,6 +20,7 @@ vi.mock('../api/returnForecastModels', () => ({
   fetchReturnForecastModelStatus: fetchReturnForecastModelStatusMock,
   fetchReturnForecastModelWorkflowErrors: fetchReturnForecastModelWorkflowErrorsMock,
   deleteReturnForecastModel: deleteReturnForecastModelMock,
+  retryReturnForecastModel: retryReturnForecastModelMock,
   updateReturnForecastModel: updateReturnForecastModelMock,
 }))
 
@@ -151,6 +153,12 @@ describe('ReturnForecastModelDetailPage', () => {
       argo_workflow_name: 'wf',
       argo_phase: 'Succeeded',
     })
+    retryReturnForecastModelMock.mockResolvedValue({
+      group_id: 'rf-1',
+      status: 'pending',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+    })
 
     render(
       <MemoryRouter initialEntries={['/models/returns/rf-1']}>
@@ -171,6 +179,14 @@ describe('ReturnForecastModelDetailPage', () => {
     expect(screen.getByRole('tab', { name: 'Debug' })).toBeInTheDocument()
     expect(screen.getAllByText('Error metrics').length).toBeGreaterThan(0)
     expect(screen.getByText('How far predictions miss the realized target values on average.')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Delete' }).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: /retry model/i }))
+    expect(await screen.findByRole('heading', { name: /retry return forecast model\?/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^retry$/i }))
+    await waitFor(() => expect(retryReturnForecastModelMock).toHaveBeenCalledWith('rf-1'))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: /retry return forecast model\?/i })).not.toBeInTheDocument(),
+    )
 
     fireEvent.click(screen.getByRole('tab', { name: 'Targets' }))
     expect(await screen.findByText('Feature browser')).toBeInTheDocument()
@@ -181,6 +197,55 @@ describe('ReturnForecastModelDetailPage', () => {
     expect(await screen.findByText('Feature importance')).toBeInTheDocument()
     expect(screen.getByText('alpha.mean')).toBeInTheDocument()
     expect(screen.getByText('50.0%')).toBeInTheDocument()
+  })
+
+  it('deletes a model from the detail page', async () => {
+    fetchReturnForecastModelDetailMock.mockResolvedValue({
+      group_id: 'rf-delete',
+      name: 'Disposable Return Model',
+      created_at: '2026-06-01T12:00:00.000Z',
+      updated_at: '2026-06-01T12:01:00.000Z',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      params: {},
+      artifact_dir: '/tmp/return-forecast-models/rf-delete',
+      summary_metrics: null,
+      dataset_manifest: null,
+      sources: [],
+      targets: [],
+    })
+    fetchReturnForecastModelStatusMock.mockResolvedValue({
+      group_id: 'rf-delete',
+      status: 'succeeded',
+      argo_namespace: 'ns',
+      argo_workflow_name: 'wf',
+      argo_phase: 'Succeeded',
+    })
+    deleteReturnForecastModelMock.mockResolvedValue(undefined)
+
+    render(
+      <MemoryRouter initialEntries={['/models/returns/rf-delete']}>
+        <Routes>
+          <Route path="/models/returns/:groupId" element={<ReturnForecastModelDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Disposable Return Model' })).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getAllByRole('button', { name: 'Delete' }).at(-1)!)
+    expect(
+      await screen.findByRole('heading', { name: /delete return forecast model disposable return model\?/i }),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^delete return forecast model$/i }))
+    await waitFor(() => expect(deleteReturnForecastModelMock).toHaveBeenCalledWith('rf-delete'))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: /delete return forecast model disposable return model\?/i }),
+      ).not.toBeInTheDocument(),
+    )
   })
 
   it('renames an existing model from the detail page', async () => {

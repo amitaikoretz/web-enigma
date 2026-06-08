@@ -4,6 +4,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
 import LaunchIcon from '@mui/icons-material/Launch'
 import ReplayIcon from '@mui/icons-material/Replay'
 import {
+  Autocomplete,
   Alert,
   Box,
   Button,
@@ -40,10 +41,11 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 
-import { fetchDailyIndexForecastModelChartData } from '../api/dailyIndexForecastModels'
+import { fetchDatasetDetail, fetchDatasets } from '../api/datasets'
+import { deleteDailyIndexForecastModel, fetchDailyIndexForecastModelChartData } from '../api/dailyIndexForecastModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { CandlestickChart } from '../components/CandlestickChart'
 import { FeatureImportanceTab } from '../components/FeatureImportanceTab'
@@ -54,6 +56,7 @@ import { useSettings } from '../settings/useSettings'
 import { statusChipColor, isModelActive } from '../utils/modelStatus'
 import { formatInTimezone } from '../utils/datetime'
 import { toChartTime } from '../utils/chartTime'
+import type { DatasetDetailResponse, DatasetListItem } from '../types/datasets'
 import type { ModelWorkflowErrorResponse } from '../types/modelFamilies'
 import type {
   DailyIndexForecastChartResponse,
@@ -62,6 +65,7 @@ import type {
   DailyIndexForecastListItem,
   DailyIndexForecastStatusResponse,
   DailyIndexForecastWorkflowErrorResponse,
+  DailyIndexForecastSplitLabel,
   DailyIndexForecastTargetRow,
 } from '../types/dailyIndexForecastModels'
 
@@ -100,12 +104,6 @@ const MAIN_TABS: Array<{ id: MainTabWithCharts; label: string }> = [
   { id: 'debug', label: 'Debug' },
 ]
 
-function chartDateFromDetail(detail: DailyIndexForecastDetail | null): string {
-  const value = detail?.feature_run?.start_date ?? detail?.dataset_manifest?.start_date ?? detail?.created_at
-  if (!value) return new Date().toISOString().slice(0, 10)
-  return value.slice(0, 10)
-}
-
 function strip(value?: string | null): string {
   return value?.trim() ?? ''
 }
@@ -114,12 +112,61 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleDateString()
 }
 
+function formatHoldoutDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(new Date(`${value}T00:00:00Z`))
+}
+
 function formatTimestamp(
   value: string,
   timezone: string,
   timeDisplayFormat: '12h' | '24h',
 ): string {
   return formatInTimezone(value, timezone, timeDisplayFormat, true)
+}
+
+function formatResolution(value?: string | null): string {
+  return value?.trim() || '—'
+}
+
+function formatSignedBps(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return '—'
+  }
+  const sign = value >= 0 ? '+' : ''
+  return `${sign}${value.toFixed(1)} bps`
+}
+
+function splitLabelColor(splitLabel: DailyIndexForecastSplitLabel): 'success' | 'warning' | 'info' | 'default' {
+  if (splitLabel === 'train') return 'success'
+  if (splitLabel === 'test') return 'warning'
+  if (splitLabel === 'validation') return 'info'
+  return 'default'
+}
+
+function splitLabelText(splitLabel: DailyIndexForecastSplitLabel): string {
+  if (splitLabel === 'other') return 'other'
+  return splitLabel
+}
+
+export function chartLoadErrorDetails(message: string): { severity: 'info' | 'warning'; message: string } {
+  const normalized = message.toLowerCase()
+  if (
+    normalized.includes('not enough sessions for walk-forward folds') ||
+    normalized.includes('no walk-forward folds could be created')
+  ) {
+    return {
+      severity: 'info',
+      message:
+        'This model does not have enough session history yet to build walk-forward chart data. Try an earlier date or train with a wider date range.',
+    }
+  }
+
+  return { severity: 'warning', message }
 }
 
 function InfoTable({
@@ -298,6 +345,11 @@ function parseCommaList(value: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean)
+}
+
+function datasetLabel(item: DatasetListItem): string {
+  const displayName = item.name?.trim() || item.symbol
+  return `${displayName} - ${item.symbol} - ${item.start_date} to ${item.end_date}`
 }
 
 function buildSourceSpec(
@@ -743,15 +795,20 @@ export function DailyIndexForecastModelDetailPage({
   fetchModelDetail,
   fetchModelStatus,
   fetchModelWorkflowErrors,
+  retryModel,
+  deleteModel = deleteDailyIndexForecastModel,
   updateModelName,
 }: {
   fetchModelDetail: (groupId: string) => Promise<DailyIndexForecastDetail>
   fetchModelStatus: (groupId: string) => Promise<DailyIndexForecastStatusResponse>
   fetchModelWorkflowErrors: (groupId: string) => Promise<DailyIndexForecastWorkflowErrorResponse>
+  retryModel: (groupId: string) => Promise<{ group_id: string; feature_run_id: string }>
+  deleteModel?: (groupId: string) => Promise<void>
   updateModelName?: (groupId: string, name: string | null) => Promise<DailyIndexForecastDetail>
 }) {
   const { platformSettings, appearance } = useSettings()
   const { groupId = '' } = useParams()
+  const navigate = useNavigate()
   const [detail, setDetail] = useState<DailyIndexForecastDetail | null>(null)
   const [status, setStatus] = useState<DailyIndexForecastStatusResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -763,12 +820,30 @@ export function DailyIndexForecastModelDetailPage({
   const [chartData, setChartData] = useState<DailyIndexForecastChartResponse | null>(null)
   const [chartLoading, setChartLoading] = useState(false)
   const [chartError, setChartError] = useState<string | null>(null)
+  const chartDataCacheRef = useRef(new Map<string, DailyIndexForecastChartResponse>())
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [savingName, setSavingName] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const refreshIntervalMs = platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const timezone = platformSettings.platform_behavior.timezone
   const timeDisplayFormat = appearance.time_display_format
+  const holdoutDates = detail?.holdout_dates ?? []
+
+  function syncChartDate(nextHoldoutDates: string[]) {
+    setChartDate((current) => {
+      if (nextHoldoutDates.length === 0) {
+        return ''
+      }
+      if (current && nextHoldoutDates.includes(current)) {
+        return current
+      }
+      return nextHoldoutDates[0]
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -779,6 +854,7 @@ export function DailyIndexForecastModelDetailPage({
         const response = await fetchModelDetail(groupId)
         if (cancelled) return
         setDetail(response)
+        syncChartDate(response.holdout_dates ?? [])
         setStatus({
           group_id: response.group_id,
           feature_run_id: response.feature_run_id,
@@ -814,21 +890,98 @@ export function DailyIndexForecastModelDetailPage({
   }, [detail?.name])
 
   useEffect(() => {
-    if (detail && !chartDate) {
-      setChartDate(chartDateFromDetail(detail))
+    if (!detail) {
+      return
     }
-  }, [chartDate, detail])
+    if (holdoutDates.length === 0) {
+      if (chartDate !== '') {
+        setChartDate('')
+      }
+      setChartData(null)
+      return
+    }
+    if (!chartDate || !holdoutDates.includes(chartDate)) {
+      setChartDate(holdoutDates[0])
+    }
+  }, [chartDate, detail, holdoutDates])
 
   useEffect(() => {
-    if (!detail || mainTab !== 'charts' || !chartDate) {
+    if (!groupId || !detail || !isModelActive(detail.status)) return undefined
+
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const nextStatus = await fetchModelStatus(groupId)
+        if (cancelled) {
+          return true
+        }
+
+        setStatus(nextStatus)
+
+        if (!isModelActive(nextStatus.status)) {
+          const nextDetail = await fetchModelDetail(groupId)
+          if (!cancelled) {
+            setDetail(nextDetail)
+            syncChartDate(nextDetail.holdout_dates ?? [])
+          }
+          return true
+        }
+
+        return false
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to refresh Daily Index Forecast status')
+        }
+        return true
+      }
+    }
+
+    let timer: ReturnType<typeof window.setInterval> | undefined
+    void (async () => {
+      const terminal = await poll()
+      if (terminal || cancelled) {
+        return
+      }
+
+      timer = window.setInterval(() => {
+        void poll().then((done) => {
+          if (done && timer !== undefined) {
+            window.clearInterval(timer)
+            timer = undefined
+          }
+        })
+      }, refreshIntervalMs)
+    })()
+
+    return () => {
+      cancelled = true
+      if (timer !== undefined) {
+        window.clearInterval(timer)
+      }
+    }
+  }, [detail, fetchModelDetail, fetchModelStatus, groupId, refreshIntervalMs])
+
+  useEffect(() => {
+    const detailGroupId = detail?.group_id ?? ''
+    if (!detailGroupId || mainTab !== 'charts' || !chartDate) {
+      return
+    }
+    const cacheKey = `${detailGroupId}:${chartDate}`
+    const cached = chartDataCacheRef.current.get(cacheKey)
+    if (cached) {
+      setChartData(cached)
+      setChartError(null)
+      setChartLoading(false)
       return
     }
     let cancelled = false
     setChartLoading(true)
     setChartError(null)
-    fetchDailyIndexForecastModelChartData(detail.group_id, chartDate)
+    fetchDailyIndexForecastModelChartData(detailGroupId, chartDate)
       .then((response) => {
         if (!cancelled) {
+          chartDataCacheRef.current.set(cacheKey, response)
           setChartData(response)
         }
       })
@@ -846,7 +999,7 @@ export function DailyIndexForecastModelDetailPage({
     return () => {
       cancelled = true
     }
-  }, [chartDate, detail, mainTab])
+  }, [chartDate, detail?.group_id, mainTab])
 
   const activeStatus = status?.status ?? detail?.status ?? null
   const progressPct = activeStatus && isModelActive(activeStatus) ? status?.progress_pct ?? 0 : 100
@@ -868,6 +1021,31 @@ export function DailyIndexForecastModelDetailPage({
 
   const summaryMetrics = detail?.summary_metrics ?? null
   const featureRun = detail?.feature_run ?? null
+  const resolution = detail?.resolution ?? featureRun?.resolution ?? chartData?.resolution ?? null
+  const chartDataResolution = chartData?.resolution ?? resolution ?? '5m'
+  const chartErrorAlert = chartError ? chartLoadErrorDetails(chartError) : null
+  const chartPredictions = useMemo(
+    () =>
+      chartData?.predictions.map((prediction) => ({
+        ...prediction,
+        delta_bps:
+          prediction.actual_bps !== null && prediction.actual_bps !== undefined
+            ? prediction.predicted_bps - prediction.actual_bps
+            : null,
+      })) ?? [],
+    [chartData],
+  )
+  const chartAnnotationMarkers = useMemo(
+    () =>
+      chartData?.predictions.map((prediction) => ({
+        time: toChartTime(prediction.decision_timestamp, chartDataResolution),
+        position: 'inBar' as const,
+        color: prediction.split_label === 'train' ? '#3fb950' : prediction.split_label === 'test' ? '#f0883e' : '#58a6ff',
+        shape: 'circle' as const,
+        text: `${prediction.decision_time} ${prediction.predicted_bps.toFixed(1)}bps`,
+      })) ?? [],
+    [chartData, chartDataResolution],
+  )
 
   async function saveName() {
     if (!detail || !updateModelName) return
@@ -880,6 +1058,34 @@ export function DailyIndexForecastModelDetailPage({
       setError(err instanceof Error ? err.message : 'Failed to update name')
     } finally {
       setSavingName(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!detail) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteModel(detail.group_id)
+      setDeleteDialogOpen(false)
+      navigate('/models/daily-index')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete Daily Index Forecast')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  async function handleRetry() {
+    if (!detail) return
+    setRetrying(true)
+    try {
+      await retryModel(detail.group_id)
+      setRetryDialogOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry Daily Index Forecast')
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -936,11 +1142,20 @@ export function DailyIndexForecastModelDetailPage({
                 </Stack>
                 <Chip size="small" label={detail.status} color={statusChipColor(detail.status)} />
                 {status?.argo_phase && <Chip size="small" label={status.argo_phase} variant="outlined" />}
+                <Chip size="small" label={`Resolution ${formatResolution(resolution)}`} variant="outlined" />
                 {updateModelName && (
                   <Button size="small" variant="outlined" onClick={() => setRenameDialogOpen(true)}>
                     Rename
                   </Button>
                 )}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="error"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  Delete
+                </Button>
               </Stack>
               <Typography color="text.secondary">
                 Research dashboard for a single Daily Index Forecast group, including feature provenance, holdout metrics,
@@ -969,6 +1184,7 @@ export function DailyIndexForecastModelDetailPage({
                     rows={[
                       { label: 'Symbol', value: featureRun?.symbol ?? '—' },
                       { label: 'Benchmark', value: featureRun?.benchmark_symbol ?? '—' },
+                      { label: 'Resolution', value: formatResolution(resolution), mono: true },
                       { label: 'Decision times', value: featureRun?.decision_times.join(', ') || '—', mono: true },
                       { label: 'Feature run', value: detail.feature_run_id, mono: true },
                       { label: 'Feature artifact dir', value: detail.feature_run?.artifact_dir ?? '—', mono: true },
@@ -1007,6 +1223,7 @@ export function DailyIndexForecastModelDetailPage({
                         { label: 'Status', value: featureRun.status },
                         { label: 'Artifact dir', value: featureRun.artifact_dir, mono: true },
                         { label: 'Manifest', value: featureRun.manifest?.output_path ?? '—', mono: true },
+                        { label: 'Resolution', value: formatResolution(featureRun.resolution ?? resolution), mono: true },
                         { label: 'Features parquet', value: featureRun.features_parquet_path ?? '—', mono: true },
                         { label: 'Labels parquet', value: featureRun.labels_parquet_path ?? '—', mono: true },
                         { label: 'Start date', value: featureRun.manifest?.start_date ?? '—' },
@@ -1097,82 +1314,185 @@ export function DailyIndexForecastModelDetailPage({
         )}
 
         {mainTab === 'charts' && (
-          <Stack spacing={2}>
-            <Card variant="outlined">
-              <CardContent>
-                <Stack spacing={1.5}>
-                  <Stack
-                    direction={{ xs: 'column', md: 'row' }}
-                    spacing={1.5}
-                    sx={{ alignItems: { md: 'end' }, justifyContent: 'space-between' }}
-                  >
-                    <Stack spacing={0.5}>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                        Daily chart
-                      </Typography>
-                      <Typography color="text.secondary" variant="body2">
-                        Pick a day to inspect the intraday candles, model prediction, and walk-forward split.
-                      </Typography>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 1fr) 360px' } }}>
+            <Stack spacing={2} sx={{ minWidth: 0 }}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Stack spacing={1.5}>
+                    <Stack
+                      direction={{ xs: 'column', md: 'row' }}
+                      spacing={1.5}
+                      sx={{ alignItems: { md: 'end' }, justifyContent: 'space-between' }}
+                    >
+                      <Stack spacing={0.5}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                          Daily chart
+                        </Typography>
+                        <Typography color="text.secondary" variant="body2">
+                          Pick a holdout day to inspect the intraday candles, model prediction, and walk-forward split.
+                        </Typography>
+                      </Stack>
+                      <TextField
+                        select
+                        label="Holdout date"
+                        value={chartDate}
+                        onChange={(event) => setChartDate(event.target.value)}
+                        disabled={holdoutDates.length === 0}
+                        helperText={
+                          holdoutDates.length > 0
+                            ? 'Choose from the final holdout sessions only.'
+                            : 'No holdout sessions are available for charting yet.'
+                        }
+                        sx={{ minWidth: 220, maxWidth: 280 }}
+                      >
+                        {holdoutDates.length === 0 ? (
+                          <MenuItem value="" disabled>
+                            No holdout dates available
+                          </MenuItem>
+                        ) : (
+                          holdoutDates.map((date) => (
+                            <MenuItem key={date} value={date}>
+                              {formatHoldoutDate(date)}
+                            </MenuItem>
+                          ))
+                        )}
+                      </TextField>
                     </Stack>
-                    <TextField
-                      label="Date"
-                      type="date"
-                      value={chartDate}
-                      onChange={(event) => setChartDate(event.target.value)}
-                      slotProps={{ inputLabel: { shrink: true } }}
-                      sx={{ maxWidth: 220 }}
-                    />
-                  </Stack>
-                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-                    <Chip
-                      size="small"
-                      label={chartData?.split_label ?? '—'}
-                      color={chartData?.split_label === 'train' ? 'success' : chartData?.split_label === 'test' ? 'warning' : chartData?.split_label === 'validation' ? 'info' : 'default'}
-                      variant="outlined"
-                    />
-                    <Chip
-                      size="small"
-                      label={chartData?.source === 'computed' ? 'computed on demand' : 'stored data'}
-                      variant="outlined"
-                    />
-                    {chartData?.predictions.map((prediction) => (
+                    {holdoutDates.length === 0 && (
+                      <Alert severity="info">This forecast does not have holdout chart dates available yet.</Alert>
+                    )}
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                      <Chip size="small" label={`Resolution ${formatResolution(chartData?.resolution ?? resolution)}`} variant="outlined" />
                       <Chip
-                        key={`${prediction.decision_timestamp}-${prediction.decision_time}`}
                         size="small"
-                        label={`${prediction.decision_time} ${prediction.predicted_bps.toFixed(1)} bps`}
+                        label={chartData?.split_label ?? '—'}
+                        color={splitLabelColor(chartData?.split_label ?? 'other')}
                         variant="outlined"
                       />
-                    ))}
+                      <Chip
+                        size="small"
+                        label={chartData?.source === 'computed' ? 'computed on demand' : 'stored data'}
+                        variant="outlined"
+                      />
+                    </Stack>
                   </Stack>
+                </CardContent>
+              </Card>
+              {chartErrorAlert && <Alert severity={chartErrorAlert.severity}>{chartErrorAlert.message}</Alert>}
+              <Paper variant="outlined" sx={{ minHeight: 520, p: 1 }}>
+                {chartLoading && (
+                  <Stack sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 480 }}>
+                    <CircularProgress />
+                  </Stack>
+                )}
+                {!chartLoading && chartData && (
+                  <CandlestickChart
+                    data={chartData.bars}
+                    annotationMarkers={chartAnnotationMarkers}
+                  />
+                )}
+                {!chartLoading && !chartData && !chartError && (
+                  <Stack sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 480, p: 2 }}>
+                    <Typography color="text.secondary">Choose a date to load the chart.</Typography>
+                  </Stack>
+                )}
+              </Paper>
+            </Stack>
+
+            <Card variant="outlined" sx={{ alignSelf: 'start', position: { xl: 'sticky' }, top: { xl: 24 } }}>
+              <CardContent>
+                <Stack spacing={1.5}>
+                  <Stack spacing={0.5}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+                      Predictions vs labels
+                    </Typography>
+                    <Typography color="text.secondary" variant="body2">
+                      Model output for the selected holdout day with the true target label values alongside it.
+                    </Typography>
+                  </Stack>
+                  {chartData ? (
+                    <>
+                      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+                        <Chip size="small" label={formatHoldoutDate(chartData.selected_date)} variant="outlined" />
+                        <Chip size="small" label={splitLabelText(chartData.split_label)} color={splitLabelColor(chartData.split_label)} variant="outlined" />
+                        <Chip size="small" label={`${chartPredictions.length} predictions`} variant="outlined" />
+                      </Stack>
+                      {chartPredictions.length === 0 ? (
+                        <Alert severity="info">No prediction rows were returned for this day.</Alert>
+                      ) : (
+                        <TableContainer component={Paper} variant="outlined">
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell sx={{ fontWeight: 700 }}>Time</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>Prediction</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>Label</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>Delta</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {chartPredictions.map((prediction) => (
+                                <TableRow key={`${prediction.session_date}-${prediction.decision_timestamp}-${prediction.decision_time}`} hover>
+                                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                    <Stack spacing={0.25}>
+                                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                        {prediction.decision_time}
+                                      </Typography>
+                                      <Chip
+                                        size="small"
+                                        label={splitLabelText(prediction.split_label)}
+                                        color={splitLabelColor(prediction.split_label)}
+                                        variant="outlined"
+                                      />
+                                    </Stack>
+                                  </TableCell>
+                                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                      {formatSignedBps(prediction.predicted_bps)}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                    <Stack spacing={0.25}>
+                                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                        {formatSignedBps(prediction.actual_bps)}
+                                      </Typography>
+                                      {prediction.actual_after_cost !== null && prediction.actual_after_cost !== undefined && (
+                                        <Typography variant="caption" color="text.secondary">
+                                          After cost: {prediction.actual_after_cost ? 'yes' : 'no'}
+                                        </Typography>
+                                      )}
+                                    </Stack>
+                                  </TableCell>
+                                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        fontWeight: 600,
+                                        color:
+                                          prediction.delta_bps === null
+                                            ? 'text.secondary'
+                                            : prediction.delta_bps >= 0
+                                              ? 'success.main'
+                                              : 'error.main',
+                                      }}
+                                    >
+                                      {formatSignedBps(prediction.delta_bps)}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </>
+                  ) : (
+                    <Alert severity="info">Load a holdout day to compare the model predictions with the true labels.</Alert>
+                  )}
                 </Stack>
               </CardContent>
             </Card>
-            {chartError && <Alert severity="warning">{chartError}</Alert>}
-            <Paper variant="outlined" sx={{ minHeight: 520, p: 1 }}>
-              {chartLoading && (
-                <Stack sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 480 }}>
-                  <CircularProgress />
-                </Stack>
-              )}
-              {!chartLoading && chartData && (
-                <CandlestickChart
-                  data={chartData.bars}
-                  annotationMarkers={chartData.predictions.map((prediction) => ({
-                    time: toChartTime(prediction.decision_timestamp, chartData.resolution),
-                    position: 'inBar',
-                    color: prediction.split_label === 'train' ? '#3fb950' : prediction.split_label === 'test' ? '#f0883e' : '#58a6ff',
-                    shape: 'circle',
-                    text: `${prediction.decision_time} ${prediction.predicted_bps.toFixed(1)}bps`,
-                  }))}
-                />
-              )}
-              {!chartLoading && !chartData && !chartError && (
-                <Stack sx={{ alignItems: 'center', justifyContent: 'center', minHeight: 480, p: 2 }}>
-                  <Typography color="text.secondary">Choose a date to load the chart.</Typography>
-                </Stack>
-              )}
-            </Paper>
-          </Stack>
+          </Box>
         )}
 
         {mainTab === 'debug' && (
@@ -1251,6 +1571,14 @@ export function DailyIndexForecastModelDetailPage({
                 <Button variant="outlined" startIcon={<BugReportOutlinedIcon />} onClick={() => setWorkflowErrorsOpen(true)}>
                   View workflow errors
                 </Button>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<ReplayIcon />}
+                  onClick={() => setRetryDialogOpen(true)}
+                >
+                  Retry model
+                </Button>
               </Stack>
             </Stack>
           </CardContent>
@@ -1265,6 +1593,7 @@ export function DailyIndexForecastModelDetailPage({
                 rows={[
                   { label: 'Symbol', value: featureRun?.symbol ?? '—' },
                   { label: 'Benchmark', value: featureRun?.benchmark_symbol ?? '—' },
+                  { label: 'Resolution', value: formatResolution(resolution), mono: true },
                   { label: 'Window', value: detail.feature_run?.manifest ? `${detail.feature_run.manifest.start_date} to ${detail.feature_run.manifest.end_date}` : '—' },
                   { label: 'Targets', value: String(detail.targets.length) },
                 ]}
@@ -1284,6 +1613,50 @@ export function DailyIndexForecastModelDetailPage({
           <Button variant="contained" onClick={() => void saveName()} disabled={savingName}>Save</Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title={`Delete Daily Index Forecast ${detail.name ?? detail.group_id}?`}
+        intent="error"
+        icon={<DeleteOutlineIcon />}
+        confirmLabel="Delete forecast"
+        cancelLabel="Cancel"
+        onCancel={() => {
+          if (!deleting) {
+            setDeleteDialogOpen(false)
+          }
+        }}
+        onConfirm={() => void handleDelete()}
+        loading={deleting}
+        description={
+          <Typography color="text.secondary">
+            This permanently deletes the forecast group, its feature extraction run, and their artifact directories.
+            If it is running, its Argo workflow will be terminated best-effort.
+          </Typography>
+        }
+      />
+
+      <ConfirmDialog
+        open={retryDialogOpen}
+        title="Retry Daily Index Forecast?"
+        intent="warning"
+        icon={<ReplayIcon />}
+        confirmLabel="Retry"
+        cancelLabel="Cancel"
+        onCancel={() => setRetryDialogOpen(false)}
+        onConfirm={() => void handleRetry()}
+        loading={retrying}
+        description={
+          <Stack spacing={1}>
+            <Typography color="text.secondary">
+              This will submit a new Argo workflow using the stored launch parameters for this forecast.
+            </Typography>
+            <Typography color="text.secondary">
+              If Argo rejects the request, the error will be shown here instead of silently disappearing.
+            </Typography>
+          </Stack>
+        }
+      />
 
       <ModelWorkflowErrorDialog
         groupId={workflowErrorsOpen ? detail.group_id : null}
@@ -1309,16 +1682,22 @@ export function DailyIndexForecastModelDetailPage({
 
 export function DailyIndexForecastModelWizardPage({
   createModel,
+  dailyIndexDatasetSource = null,
+  dailyIndexDatasetId = null,
 }: {
   createModel: (payload: DailyIndexForecastCreateRequest) => Promise<{ group_id: string; feature_run_id: string }>
+  dailyIndexDatasetSource?: { symbol: string; start_date: string; end_date: string } | null
+  dailyIndexDatasetId?: string | null
 }) {
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)
-  const [symbol, setSymbol] = useState('SPY')
+  const [launchMode, setLaunchMode] = useState<'manual' | 'dataset'>(dailyIndexDatasetId ? 'dataset' : 'manual')
+  const [manualSymbol, setManualSymbol] = useState(dailyIndexDatasetSource?.symbol ?? 'SPY')
+  const [datasetSymbol, setDatasetSymbol] = useState(dailyIndexDatasetSource?.symbol ?? '')
   const [benchmarkSymbol, setBenchmarkSymbol] = useState('QQQ')
   const [name, setName] = useState('')
-  const [startDate, setStartDate] = useState('2024-01-01')
-  const [endDate, setEndDate] = useState('2024-12-31')
+  const [startDate, setStartDate] = useState(dailyIndexDatasetSource?.start_date ?? '2024-01-01')
+  const [endDate, setEndDate] = useState(dailyIndexDatasetSource?.end_date ?? '2024-12-31')
   const [decisionTimes, setDecisionTimes] = useState('09:45')
   const [sourceType, setSourceType] = useState<'alpaca' | 'yahoo' | 'csv'>('alpaca')
   const [interval, setInterval] = useState('5m')
@@ -1343,26 +1722,182 @@ export function DailyIndexForecastModelWizardPage({
   const [spreadBps, setSpreadBps] = useState(1.5)
   const [slippageBps, setSlippageBps] = useState(1.0)
   const [impactBps, setImpactBps] = useState(0.5)
+  const [datasets, setDatasets] = useState<DatasetListItem[]>([])
+  const [selectedDatasetDetail, setSelectedDatasetDetail] = useState<DatasetDetailResponse | null>(null)
+  const [loadingDatasets, setLoadingDatasets] = useState(false)
+  const [datasetsError, setDatasetsError] = useState<string | null>(null)
+  const [loadingDatasetDetail, setLoadingDatasetDetail] = useState(false)
+  const [datasetDetailError, setDatasetDetailError] = useState<string | null>(null)
+  const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(dailyIndexDatasetId)
+  const [validationError, setValidationError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setLaunchMode(dailyIndexDatasetId ? 'dataset' : 'manual')
+    setSelectedDatasetId(dailyIndexDatasetId)
+  }, [dailyIndexDatasetId])
+
+  useEffect(() => {
+    setManualSymbol(dailyIndexDatasetSource?.symbol ?? 'SPY')
+    setDatasetSymbol(dailyIndexDatasetSource?.symbol ?? '')
+    setStartDate(dailyIndexDatasetSource?.start_date ?? '2024-01-01')
+    setEndDate(dailyIndexDatasetSource?.end_date ?? '2024-12-31')
+  }, [dailyIndexDatasetSource])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingDatasets(true)
+    fetchDatasets()
+      .then((response) => {
+        if (cancelled) return
+        setDatasets((response.items ?? []).filter((item) => item.status === 'completed'))
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDatasetsError(err instanceof Error ? err.message : 'Failed to load datasets')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingDatasets(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const selectedDatasetSymbol = useMemo(() => {
+    const selected = datasets.find((item) => item.id === selectedDatasetId)
+    return selected?.symbol?.trim().toUpperCase() ?? dailyIndexDatasetSource?.symbol?.trim().toUpperCase() ?? ''
+  }, [datasets, dailyIndexDatasetSource?.symbol, selectedDatasetId])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!selectedDatasetId) {
+      setSelectedDatasetDetail(null)
+      setDatasetDetailError(null)
+      setLoadingDatasetDetail(false)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setLoadingDatasetDetail(true)
+    setDatasetDetailError(null)
+    fetchDatasetDetail(selectedDatasetId)
+      .then((response) => {
+        if (cancelled) return
+        setSelectedDatasetDetail(response)
+        const options = response.symbol_options ?? []
+        if (options.length > 0) {
+          setDatasetSymbol((current) => {
+            const preferred = selectedDatasetSymbol
+            if (preferred && options.includes(preferred)) return preferred
+            if (current && options.includes(current)) return current
+            return options[0]
+          })
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDatasetDetailError(err instanceof Error ? err.message : 'Failed to load dataset details')
+        setSelectedDatasetDetail(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingDatasetDetail(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDatasetId, selectedDatasetSymbol])
+
+  const datasetSymbolOptions = useMemo(() => {
+    const options = selectedDatasetDetail?.symbol_options ?? []
+    const preferred = selectedDatasetSymbol
+    if (options.length > 0) {
+      return options
+    }
+    return preferred ? [preferred] : []
+  }, [selectedDatasetDetail?.symbol_options, selectedDatasetSymbol])
+
+  useEffect(() => {
+    if (launchMode !== 'dataset' || datasetSymbolOptions.length === 0) {
+      return
+    }
+    setDatasetSymbol((current) => {
+      if (current && datasetSymbolOptions.includes(current)) {
+        return current
+      }
+      const preferred = selectedDatasetSymbol
+      if (preferred && datasetSymbolOptions.includes(preferred)) {
+        return preferred
+      }
+      return datasetSymbolOptions[0]
+    })
+  }, [datasetSymbolOptions, launchMode, selectedDatasetSymbol])
+
+  const selectedDataset = useMemo(
+    () => datasets.find((item) => item.id === selectedDatasetId) ?? null,
+    [datasets, selectedDatasetId],
+  )
 
   async function handleSubmit() {
+    if (launchMode === 'dataset') {
+      if (loadingDatasets) {
+        setValidationError('Loading completed datasets. Please wait and try again.')
+        return
+      }
+      if (datasetsError) {
+        setValidationError(datasetsError)
+        return
+      }
+      if (!datasets.length) {
+        setValidationError('No completed datasets are available yet.')
+        return
+      }
+      if (!selectedDataset) {
+        setValidationError('Select a completed dataset to continue.')
+        return
+      }
+      if (loadingDatasetDetail) {
+        setValidationError('Loading symbol options for the selected dataset. Please wait.')
+        return
+      }
+      if (datasetSymbolOptions.length === 0) {
+        setValidationError('No symbol could be resolved from the selected dataset.')
+        return
+      }
+    }
     setSubmitting(true)
     try {
+      const sourceDataset = launchMode === 'dataset' ? selectedDataset : null
+      const selectedSymbol = launchMode === 'dataset' ? datasetSymbol : manualSymbol
+      const normalizedSymbol = selectedSymbol.trim().toUpperCase()
+      const resolvedSymbol = normalizedSymbol || sourceDataset?.symbol || 'SPY'
+      const resolvedBenchmarkSymbol =
+        launchMode === 'dataset' ? resolvedSymbol : benchmarkSymbol.trim().toUpperCase()
       const payload: DailyIndexForecastCreateRequest = {
         name: strip(name) || null,
         universe: {
-          start_date: startDate,
-          end_date: endDate,
+          start_date: sourceDataset?.start_date ?? startDate,
+          end_date: sourceDataset?.end_date ?? endDate,
           decision_times: parseCommaList(decisionTimes),
           symbols: [
             {
-              symbol,
-              data: buildSourceSpec(symbol, sourceType, interval, feed, csvPath),
+              symbol: resolvedSymbol,
+              data: buildSourceSpec(resolvedSymbol, sourceType, interval, feed, csvPath),
             },
           ],
-          benchmark: benchmarkSymbol.trim()
+          benchmark: resolvedBenchmarkSymbol
             ? {
-                symbol: benchmarkSymbol,
-                data: buildSourceSpec(benchmarkSymbol, benchmarkSourceType, benchmarkInterval, benchmarkFeed, benchmarkCsvPath),
+                symbol: resolvedBenchmarkSymbol,
+                data: buildSourceSpec(
+                  resolvedBenchmarkSymbol,
+                  launchMode === 'dataset' ? sourceType : benchmarkSourceType,
+                  launchMode === 'dataset' ? interval : benchmarkInterval,
+                  launchMode === 'dataset' ? feed : benchmarkFeed,
+                  launchMode === 'dataset' ? csvPath : benchmarkCsvPath,
+                ),
               }
             : null,
         },
@@ -1441,36 +1976,156 @@ export function DailyIndexForecastModelWizardPage({
                 Universe
               </Typography>
               <TextField label="Name" value={name} onChange={(event) => setName(event.target.value)} />
-              <TextField label="Symbol" value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} />
-              <TextField label="Benchmark symbol" value={benchmarkSymbol} onChange={(event) => setBenchmarkSymbol(event.target.value.toUpperCase())} />
-              <Stack direction="row" spacing={1}>
-                <TextField fullWidth type="date" label="Start date" value={startDate} onChange={(event) => setStartDate(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
-                <TextField fullWidth type="date" label="End date" value={endDate} onChange={(event) => setEndDate(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
-              </Stack>
-              <TextField label="Decision times" value={decisionTimes} onChange={(event) => setDecisionTimes(event.target.value)} helperText="Comma-separated, e.g. 09:45,10:15" />
-              <FormControl fullWidth>
-                <InputLabel>Data source</InputLabel>
-                <Select value={sourceType} label="Data source" onChange={(event) => setSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}>
-                  <MenuItem value="alpaca">Alpaca</MenuItem>
-                  <MenuItem value="yahoo">Yahoo</MenuItem>
-                  <MenuItem value="csv">CSV</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField label="Interval" value={interval} onChange={(event) => setInterval(event.target.value)} />
-              <TextField label="Feed" value={feed} onChange={(event) => setFeed(event.target.value)} />
-              {sourceType === 'csv' && <TextField label="CSV path" value={csvPath} onChange={(event) => setCsvPath(event.target.value)} />}
+              {validationError && <Alert severity="warning">{validationError}</Alert>}
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={launchMode === 'dataset'}
+                    onChange={(_event, checked) => {
+                      setLaunchMode(checked ? 'dataset' : 'manual')
+                      setValidationError(null)
+                    }}
+                  />
+                }
+                label="Use existing dataset"
+              />
+              <Typography variant="body2" color="text.secondary">
+                Choose a completed dataset to inherit its stored symbol and date range, or keep manual inputs.
+              </Typography>
+              {launchMode === 'dataset' ? (
+                <Stack spacing={1.5}>
+                  <Autocomplete
+                    options={datasets}
+                    value={selectedDataset}
+                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                    getOptionLabel={(option) => datasetLabel(option)}
+                    onChange={(_event, value) => {
+                      setSelectedDatasetId(value?.id ?? null)
+                      setValidationError(null)
+                    }}
+                    loading={loadingDatasets}
+                    noOptionsText={loadingDatasets ? 'Loading datasets…' : 'No completed datasets are available yet.'}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Existing dataset"
+                        placeholder="Search completed datasets"
+                        helperText="Search by name, symbol, or date range."
+                      />
+                    )}
+                  />
+                  <FormControl fullWidth size="small" disabled={loadingDatasetDetail || datasetSymbolOptions.length === 0}>
+                    <InputLabel id="daily-index-dataset-symbol-label">Symbol</InputLabel>
+                    <Select
+                      labelId="daily-index-dataset-symbol-label"
+                      label="Symbol"
+                      value={datasetSymbolOptions.includes(datasetSymbol) ? datasetSymbol : datasetSymbolOptions[0] ?? ''}
+                      onChange={(event) => setDatasetSymbol(event.target.value as string)}
+                    >
+                      {datasetSymbolOptions.map((option) => (
+                        <MenuItem key={option} value={option}>
+                          {option}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {datasetsError && <Alert severity="error">{datasetsError}</Alert>}
+                  {loadingDatasets && <Alert severity="info">Loading completed datasets…</Alert>}
+                  {!loadingDatasets && !datasetsError && datasets.length === 0 && (
+                    <Alert severity="info">
+                      No completed datasets are available yet. Launch a dataset job first, then return here.
+                    </Alert>
+                  )}
+                  {datasetDetailError && <Alert severity="warning">{datasetDetailError}</Alert>}
+                  {loadingDatasetDetail && <Alert severity="info">Loading symbol options for the selected dataset…</Alert>}
+                  {!loadingDatasetDetail && dailyIndexDatasetSource && datasetSymbolOptions.length === 0 && (
+                    <Alert severity="warning">No symbol could be resolved from the selected dataset.</Alert>
+                  )}
+                  {selectedDataset ? (
+                    <Stack spacing={1}>
+                      <Alert severity="info">
+                        Using {selectedDataset.name?.trim() || selectedDataset.symbol} from {selectedDataset.start_date} to {selectedDataset.end_date}.
+                      </Alert>
+                      <Typography variant="body2" color="text.secondary">
+                        The benchmark is locked to the selected dataset symbol.
+                      </Typography>
+                    </Stack>
+                  ) : (
+                    !loadingDatasets &&
+                    !datasetsError &&
+                    datasets.length > 0 && (
+                      <Alert severity="warning">
+                        Select a completed dataset to inherit its stored provenance.
+                      </Alert>
+                    )
+                  )}
+                </Stack>
+              ) : (
+                <Stack spacing={1.5}>
+                  <TextField label="Symbol" value={manualSymbol} onChange={(event) => setManualSymbol(event.target.value.toUpperCase())} />
+                  <Stack direction="row" spacing={1}>
+                    <TextField fullWidth type="date" label="Start date" value={startDate} onChange={(event) => setStartDate(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+                    <TextField fullWidth type="date" label="End date" value={endDate} onChange={(event) => setEndDate(event.target.value)} slotProps={{ inputLabel: { shrink: true } }} />
+                  </Stack>
+                </Stack>
+              )}
               <Divider />
-              <FormControl fullWidth>
-                <InputLabel>Benchmark source</InputLabel>
-                <Select value={benchmarkSourceType} label="Benchmark source" onChange={(event) => setBenchmarkSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}>
-                  <MenuItem value="alpaca">Alpaca</MenuItem>
-                  <MenuItem value="yahoo">Yahoo</MenuItem>
-                  <MenuItem value="csv">CSV</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField label="Benchmark interval" value={benchmarkInterval} onChange={(event) => setBenchmarkInterval(event.target.value)} />
-              <TextField label="Benchmark feed" value={benchmarkFeed} onChange={(event) => setBenchmarkFeed(event.target.value)} />
-              {benchmarkSourceType === 'csv' && <TextField label="Benchmark CSV path" value={benchmarkCsvPath} onChange={(event) => setBenchmarkCsvPath(event.target.value)} />}
+              <Stack spacing={1.5}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                  Source configuration
+                </Typography>
+                <TextField label="Decision times" value={decisionTimes} onChange={(event) => setDecisionTimes(event.target.value)} helperText="Comma-separated, e.g. 09:45,10:15" />
+                <FormControl fullWidth>
+                  <InputLabel>Data source</InputLabel>
+                  <Select value={sourceType} label="Data source" onChange={(event) => setSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}>
+                    <MenuItem value="alpaca">Alpaca</MenuItem>
+                    <MenuItem value="yahoo">Yahoo</MenuItem>
+                    <MenuItem value="csv">CSV</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField label="Interval" value={interval} onChange={(event) => setInterval(event.target.value)} />
+                <TextField label="Feed" value={feed} onChange={(event) => setFeed(event.target.value)} />
+                {sourceType === 'csv' && <TextField label="CSV path" value={csvPath} onChange={(event) => setCsvPath(event.target.value)} />}
+                {launchMode === 'manual' && (
+                  <>
+                    <Divider />
+                    <TextField
+                      label="Benchmark symbol"
+                      value={benchmarkSymbol}
+                      onChange={(event) => setBenchmarkSymbol(event.target.value.toUpperCase())}
+                    />
+                    <FormControl fullWidth>
+                      <InputLabel>Benchmark source</InputLabel>
+                      <Select
+                        value={benchmarkSourceType}
+                        label="Benchmark source"
+                        onChange={(event) => setBenchmarkSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}
+                      >
+                        <MenuItem value="alpaca">Alpaca</MenuItem>
+                        <MenuItem value="yahoo">Yahoo</MenuItem>
+                        <MenuItem value="csv">CSV</MenuItem>
+                      </Select>
+                    </FormControl>
+                    <TextField
+                      label="Benchmark interval"
+                      value={benchmarkInterval}
+                      onChange={(event) => setBenchmarkInterval(event.target.value)}
+                    />
+                    <TextField
+                      label="Benchmark feed"
+                      value={benchmarkFeed}
+                      onChange={(event) => setBenchmarkFeed(event.target.value)}
+                    />
+                    {benchmarkSourceType === 'csv' && (
+                      <TextField
+                        label="Benchmark CSV path"
+                        value={benchmarkCsvPath}
+                        onChange={(event) => setBenchmarkCsvPath(event.target.value)}
+                      />
+                    )}
+                  </>
+                )}
+              </Stack>
             </Stack>
           </CardContent>
         </Card>
@@ -1506,7 +2161,12 @@ export function DailyIndexForecastModelWizardPage({
             </Stack>
           </CardContent>
           <CardActions sx={{ px: 2, pb: 2, justifyContent: 'flex-start' }}>
-            <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting}>
+            <Button
+              data-testid="daily-index-launch-forecast"
+              variant="contained"
+              onClick={() => void handleSubmit()}
+              disabled={submitting}
+            >
               Launch forecast
             </Button>
           </CardActions>

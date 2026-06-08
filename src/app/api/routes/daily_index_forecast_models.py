@@ -20,7 +20,11 @@ from app.daily_index_forecast.models import (
     DailyIndexForecastUpdateRequest,
     DailyIndexForecastWorkflowErrorResponse,
 )
-from app.daily_index_forecast.charts import build_daily_index_forecast_chart_data
+from app.daily_index_forecast.charts import (
+    build_daily_index_forecast_chart_data,
+    resolve_artifact_path,
+    resolve_holdout_session_dates,
+)
 from app.daily_index_forecast.persistence import DailyIndexModelDetail as DailyIndexModelDetailRecord
 from app.daily_index_forecast.persistence import DailyIndexModelListItem as DailyIndexModelListItemRecord
 from app.daily_index_forecast.service import DailyIndexForecastValidationError
@@ -30,10 +34,8 @@ router = APIRouter(prefix="/daily-index-forecast-models", tags=["daily-index-for
 
 
 def _load_manifest_summary(path: str | None) -> DailyIndexForecastDatasetManifestSummary | None:
-    if not path:
-        return None
-    candidate = Path(path)
-    if not candidate.exists():
+    candidate = resolve_artifact_path(path)
+    if candidate is None:
         return None
     try:
         payload = json.loads(candidate.read_text(encoding="utf-8"))
@@ -46,17 +48,17 @@ def _resolve_existing_path(*candidates: str | None) -> str | None:
     for candidate in candidates:
         if not candidate:
             continue
-        path = Path(candidate)
-        if path.exists():
-            return str(path)
+        resolved = resolve_artifact_path(candidate)
+        if resolved is not None:
+            return str(resolved)
     return None
 
 
 def _load_feature_importance_for_path(*candidates: str | None):
     for candidate in candidates:
-        if not candidate:
+        path = resolve_artifact_path(candidate)
+        if path is None:
             continue
-        path = Path(candidate)
         if path.is_dir():
             path = path / "feature_importance.json"
         else:
@@ -71,9 +73,12 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
     feature_run = detail.feature_run
     feature_run_response = None
     manifest = None
+    manifest_path = None
     feature_importance = _load_feature_importance_for_path(detail.artifact_dir)
+    model_path = None
     if feature_run is not None:
         manifest = _load_manifest_summary(feature_run.manifest_path)
+        manifest_path = feature_run.manifest_path
         feature_run_response = {
             "feature_run_id": feature_run.feature_run_id,
             "status": feature_run.status,
@@ -81,6 +86,7 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
             "argo_workflow_name": feature_run.argo_workflow_name,
             "symbol": feature_run.symbol,
             "benchmark_symbol": feature_run.benchmark_symbol,
+            "resolution": feature_run.resolution,
             "decision_times": feature_run.decision_times,
             "start_date": feature_run.start_date,
             "end_date": feature_run.end_date,
@@ -93,11 +99,19 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
             "created_at": feature_run.created_at,
             "updated_at": feature_run.updated_at,
         }
+        model_path = _resolve_existing_path(
+            model_path,
+            str(Path(detail.artifact_dir) / "model.json") if detail.artifact_dir else None,
+            str(Path(feature_run.artifact_dir) / "model.json") if feature_run.artifact_dir else None,
+        )
     if manifest is None and detail.targets:
         for target in detail.targets:
             manifest = _load_manifest_summary(target.dataset_manifest_path)
             if manifest is not None:
+                manifest_path = target.dataset_manifest_path
                 break
+            if model_path is None and target.model_artifact_path:
+                model_path = target.model_artifact_path
     target_importances: dict[str, FeatureImportanceTarget] = {}
     for target in detail.targets:
         target_importance = _load_feature_importance_for_path(target.model_artifact_path, detail.artifact_dir)
@@ -105,6 +119,12 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
             target_importances[target.target_key] = target_importance
             if feature_importance is None:
                 feature_importance = target_importance
+        if model_path is None and target.model_artifact_path:
+            model_path = target.model_artifact_path
+    holdout_dates = resolve_holdout_session_dates(
+        model_path=model_path,
+        manifest_path=manifest_path,
+    )
     return DailyIndexForecastDetailResponse(
         group_id=detail.group_id,
         feature_run_id=detail.feature_run_id,
@@ -114,11 +134,13 @@ def _detail_response(detail: DailyIndexModelDetailRecord) -> DailyIndexForecastD
         status=detail.status,  # type: ignore[arg-type]
         argo_namespace=detail.argo_namespace,
         argo_workflow_name=detail.argo_workflow_name,
+        resolution=detail.resolution,
         params=detail.params,
         artifact_dir=detail.artifact_dir,
         summary_metrics=detail.summary_metrics,
         feature_run=feature_run_response,
         dataset_manifest=manifest,
+        holdout_dates=holdout_dates,
         targets=[
             {
                 "id": target.id,
@@ -214,6 +236,7 @@ def list_daily_index_forecast_models(
             argo_workflow_name=item.argo_workflow_name,
             symbol=item.symbol,
             benchmark_symbol=item.benchmark_symbol,
+            resolution=item.resolution,
             decision_times=item.decision_times,
             start_date=item.start_date,
             end_date=item.end_date,

@@ -665,6 +665,7 @@ export function SettingsPage() {
                   })
                 }
                 options={[
+                  ['overview', 'Overview'],
                   ['backtests', 'Backtests'],
                   ['new_backtest', 'New Backtest'],
                   ['chart', 'Chart'],

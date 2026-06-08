@@ -70,6 +70,55 @@ def test_main_writes_blank_options_outputs_when_disabled(tmp_path: Path, monkeyp
     assert (tmp_path / "options-manifest-path.txt").read_text(encoding="utf-8") == ""
 
 
+def test_main_persists_timestamps_in_written_parquet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    timestamps = pd.to_datetime(
+        ["2026-06-01T14:30:00Z", "2026-06-01T14:35:00Z"],
+        utc=True,
+    )
+    frame = pd.DataFrame(
+        {
+            "Open": [100.0, 101.0],
+            "High": [101.0, 102.0],
+            "Low": [99.5, 100.5],
+            "Close": [100.5, 101.5],
+            "Volume": [1_000, 1_200],
+        },
+        index=pd.DatetimeIndex(timestamps, name="datetime"),
+    )
+    options_frame = frame.copy()
+
+    monkeypatch.setattr(module, "build_alpaca_data_feed_with_cache", lambda *args, **kwargs: (frame, "miss"))
+    monkeypatch.setattr(
+        module,
+        "build_alpaca_options_data_feed_with_cache",
+        lambda *args, **kwargs: (options_frame, "miss"),
+    )
+
+    module.main(
+        symbol="AAPL",
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 8).isoformat(),
+        end_date=date(2026, 6, 7).isoformat(),
+        options_enabled=True,
+        options_feed="indicative",
+        output_dir=str(tmp_path),
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+        dataset_path_out=str(tmp_path / "dataset-path.txt"),
+        manifest_path_out=str(tmp_path / "manifest-path.txt"),
+        options_dataset_path_out=str(tmp_path / "options-dataset-path.txt"),
+        options_manifest_path_out=str(tmp_path / "options-manifest-path.txt"),
+    )
+
+    dataset = pd.read_parquet(tmp_path / "AAPL-alpaca-5m.parquet")
+    options_dataset = pd.read_parquet(tmp_path / "AAPL-alpaca-options-5m.parquet")
+
+    assert "timestamp" in dataset.columns
+    assert "timestamp" in options_dataset.columns
+    assert dataset["timestamp"].iloc[0] == timestamps[0]
+    assert options_dataset["timestamp"].iloc[0] == timestamps[0]
+
+
 def test_alpaca_options_bars_request_does_not_send_feed_query_param(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ALPACA_API_KEY", "key")
     monkeypatch.setenv("ALPACA_SECRET_KEY", "secret")

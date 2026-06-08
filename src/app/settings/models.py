@@ -111,7 +111,7 @@ class PlatformBehaviorSettings(BaseModel):
     auto_refresh_interval_seconds: float = Field(default=1.5, ge=0.5, le=60)
     market_overview_refresh_interval_seconds: float = Field(default=300.0, ge=30.0, le=24 * 60 * 60)
     confirm_before_launch: bool = False
-    preferred_landing_page: Literal["backtests", "new_backtest", "chart"] = "backtests"
+    preferred_landing_page: Literal["overview", "backtests", "new_backtest", "chart"] = "overview"
     backtest_execution_backend: Literal["local", "argo"] = "argo"
     argo_split_by: Literal["run", "symbol", "strategy", "symbol_strategy"] = "symbol_strategy"
 

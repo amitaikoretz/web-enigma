@@ -194,7 +194,7 @@ def test_get_settings_returns_defaults_when_file_missing(tmp_path):
     assert body["backtest_defaults"]["analyzers"]["include_candidate_log"] is False
     assert body["backtest_defaults"]["analyzers"]["include_risk_auxiliary"] is False
     assert body["live_defaults"]["include_candidate_log"] is False
-    assert body["platform_behavior"]["preferred_landing_page"] == "backtests"
+    assert body["platform_behavior"]["preferred_landing_page"] == "overview"
 
 
 def test_put_settings_persists_round_trip(tmp_path):

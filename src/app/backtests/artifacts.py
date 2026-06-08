@@ -683,6 +683,31 @@ def _write_parquet(rows: list[dict], path: Path) -> None:
     temp_path.replace(path)
 
 
+def _normalize_parquet_value(value: object) -> object:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            return value.item()
+        except Exception:
+            return value
+    return value
+
+
+def _row_payload(row: pd.Series) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for key, value in row.to_dict().items():
+        if key == "run_id":
+            continue
+        payload[key] = _normalize_parquet_value(value)
+    return payload
+
+
 def _maybe_write_parquet(rows: list[dict], path_value: str | None) -> str | None:
     if not rows or not path_value:
         return None
@@ -701,8 +726,7 @@ def _load_grouped_from_parquet(
     grouped: dict[str, list[RecordT]] = {}
     for _, row in frame.iterrows():
         run_id = str(row.get("run_id", ""))
-        payload = row.to_dict()
-        payload.pop("run_id", None)
+        payload = _row_payload(row)
         grouped.setdefault(run_id, []).append(model_validate(payload))
     return grouped
 
@@ -872,10 +896,9 @@ def load_features_from_parquet(path: Path) -> dict[str, list[FeatureSnapshotReco
     grouped: dict[str, list[FeatureSnapshotRecord]] = {}
     for _, row in frame.iterrows():
         run_id = str(row.get("run_id", ""))
-        payload = row.to_dict()
-        payload.pop("run_id", None)
+        payload = _row_payload(row)
         metadata_json = payload.pop("metadata_features_json", None)
-        if metadata_json and not pd.isna(metadata_json):
+        if metadata_json is not None:
             parsed = json.loads(str(metadata_json))
             payload["metadata_features"] = parsed if isinstance(parsed, dict) else {}
         else:

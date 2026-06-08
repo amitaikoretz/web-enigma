@@ -24,7 +24,7 @@ class _FakeDailyIndexArgoSubmitter:
         self.config = SimpleNamespace(namespace="daily-index-tests")
         self.submissions: list[dict] = []
 
-    def _http_request(self, method: str, path: str, json: dict) -> SimpleNamespace:
+    def _http_request(self, method: str, path: str, json: dict, **_: object) -> SimpleNamespace:
         self.submissions.append({"method": method, "path": path, "json": json})
         return SimpleNamespace(status_code=200, text="")
 
@@ -356,13 +356,16 @@ def test_daily_index_forecast_api_create_detail_retry_delete(tmp_path: Path, mon
     assert len(list_payload) == 1
     assert list_payload[0]["group_id"] == group_id
     assert list_payload[0]["symbol"] == "SPY"
+    assert list_payload[0]["resolution"] == "5m"
     assert list_payload[0]["summary_metrics"]["holdout"]["regression"]["mae"] == 1.234
 
     detail_response = client.get(f"/daily-index-forecast-models/{group_id}")
     assert detail_response.status_code == 200
     detail_payload = detail_response.json()
+    assert detail_payload["resolution"] == "5m"
     assert detail_payload["feature_run"]["symbol"] == "SPY"
     assert detail_payload["feature_run"]["benchmark_symbol"] == "QQQ"
+    assert detail_payload["feature_run"]["resolution"] == "5m"
     assert detail_payload["feature_run"]["decision_times"] == ["09:45"]
     assert detail_payload["dataset_manifest"]["feature_rows"] == 9
     assert detail_payload["targets"][0]["target_key"] == "regression"

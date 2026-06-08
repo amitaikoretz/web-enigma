@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { defaultPlatformSettings } from '../settings/defaults'
+import type { BacktestSelectionSummary } from '../types/backtests'
 
 const fetchBacktestDetailMock = vi.hoisted(() => vi.fn())
 const fetchBacktestStatusMock = vi.hoisted(() => vi.fn())
@@ -65,7 +66,9 @@ vi.mock('../components/BacktestConfigInspector', () => ({
 }))
 
 vi.mock('../components/BacktestRunDetailPanel', () => ({
-  BacktestRunDetailPanel: () => <div data-testid="run-detail" />,
+  BacktestRunDetailPanel: ({ selection }: { selection?: BacktestSelectionSummary | null }) => (
+    <div data-testid="run-detail">{selection ? `${selection.start_date} → ${selection.end_date}` : 'none'}</div>
+  ),
 }))
 
 vi.mock('../components/BacktestRunsComparisonTable', () => ({
@@ -95,15 +98,7 @@ function buildBacktestDetail() {
       completed_runs: 1,
       successful_runs: 1,
       failed_runs: 0,
-      selection: {
-        start_date: '2026-05-01',
-        end_date: '2026-05-31',
-        resolution: '1d',
-        feed: 'iex',
-        symbols: ['AAPL'],
-        triggers: ['trigger'],
-        exit_rules: ['exit'],
-      },
+      selection: null,
       error_message: null,
       execution_backend: 'argo',
       workflow_name: 'wf-1',
@@ -119,7 +114,26 @@ function buildBacktestDetail() {
       app_version: '1.0.0',
       config_sha256: 'abcdef0123456789',
       input_config_path: null,
-      input_config: {},
+      input_config: {
+        runs: [
+          {
+            run_id: 'run-1',
+            start_date: '2026-05-01',
+            end_date: '2026-05-31',
+            data: {
+              symbol: 'AAPL',
+              interval: '1d',
+              feed: 'iex',
+            },
+            trigger: {
+              name: 'trigger',
+            },
+            exit_rules: {
+              name: 'exit',
+            },
+          },
+        ],
+      },
       total_runs: 1,
       successful_runs: 1,
       failed_runs: 0,
@@ -206,5 +220,27 @@ describe('BacktestDetailPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: /logs/i }))
     expect(screen.getAllByText('Load universe').length).toBeGreaterThan(0)
     await screen.findByText(/workflow step logs/i)
+  })
+
+  it('reconstructs selection from the report input config when metadata omits it', async () => {
+    fetchBacktestDetailMock.mockResolvedValue(buildBacktestDetail())
+    fetchBacktestStatusMock.mockResolvedValue({
+      ...buildBacktestDetail().metadata,
+      progress_pct: 100,
+      is_terminal: true,
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/backtests/bt-1']}>
+        <Routes>
+          <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(screen.getByText('Submission summary')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getAllByTestId('run-detail')[0]).toHaveTextContent('2026-05-01 → 2026-05-31'),
+    )
   })
 })

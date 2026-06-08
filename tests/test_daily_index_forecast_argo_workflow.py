@@ -30,10 +30,18 @@ def test_daily_index_forecast_workflow_passes_group_id_to_all_steps() -> None:
     assert "workspace" in volume_names
     assert "backtest-results" in volume_names
 
-    for step_group in main["steps"]:
+    step_names = [step["name"] for group in main["steps"] for step in group]
+    assert step_names[0] == "print-payload"
+
+    for step_group in main["steps"][1:]:
         step = step_group[0]
         params = {item["name"]: item["value"] for item in step["arguments"]["parameters"]}
         assert params["group-id"] == "{{workflow.parameters.group-id}}"
+
+    print_payload = _template(spec, "print-payload")
+    args = print_payload["container"]["args"]
+    assert "--command-line" in args
+    assert "__COMMAND_LINE__" not in args
 
     extract = _template(spec, "extract-features")
     extract_inputs = {item["name"] for item in extract["inputs"]["parameters"]}

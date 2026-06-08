@@ -88,14 +88,6 @@ templates:
                 value: "{{workflow.parameters.backtest-id}}"
   - name: print-payload
     retryStrategy: {limit: 3, retryPolicy: Always}
-    podSpecPatch: |
-      containers:
-        - name: main
-          resources:
-            requests:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-            limits:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
     inputs:
       parameters:
         - name: api-base-url
@@ -105,6 +97,7 @@ templates:
         - name: backtest-id
         - name: output-path
     container:
+      name: main
       image: __WORKFLOW_IMAGE__
       imagePullPolicy: IfNotPresent
       command: ["python", "-m", "app.standalone.print_argo_payload"]
@@ -138,14 +131,6 @@ templates:
         - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
   - name: plan-shards
     retryStrategy: {limit: 3, retryPolicy: Always}
-    podSpecPatch: |
-      containers:
-        - name: main
-          resources:
-            requests:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-            limits:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
     inputs:
       parameters:
         - name: config-path
@@ -153,6 +138,7 @@ templates:
         - name: split-by
         - name: backtest-id
     container:
+      name: main
       image: __WORKFLOW_IMAGE__
       imagePullPolicy: IfNotPresent
       command: ["python", "-m", "app.standalone.plan_shards_argo"]
@@ -189,20 +175,13 @@ templates:
       annotations:
         workflows.argoproj.io/progress: "0/100"
     retryStrategy: {limit: 3, retryPolicy: Always}
-    podSpecPatch: |
-      containers:
-        - name: main
-          resources:
-            requests:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-            limits:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
     inputs:
       parameters:
         - name: shard-id
         - name: shard-config-path
         - name: shard-output-path
     container:
+      name: main
       image: __WORKFLOW_IMAGE__
       imagePullPolicy: IfNotPresent
       command: ["python", "-m", "app.standalone.run_shard_argo"]
@@ -235,20 +214,13 @@ templates:
         - {name: error-traceback, valueFrom: {path: /tmp/error-traceback.txt}}
   - name: merge-reports
     retryStrategy: {limit: 3, retryPolicy: Always}
-    podSpecPatch: |
-      containers:
-        - name: main
-          resources:
-            requests:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
-            limits:
-              memory: "{{=retries == 0 ? '4Gi' : retries == 1 ? '8Gi' : retries == 2 ? '16Gi' : '32Gi'}}"
     inputs:
       parameters:
         - name: manifest-path
         - name: output-path
         - name: backtest-id
     container:
+      name: main
       image: __WORKFLOW_IMAGE__
       imagePullPolicy: IfNotPresent
       command: ["python", "-m", "app.standalone.merge_reports_argo"]

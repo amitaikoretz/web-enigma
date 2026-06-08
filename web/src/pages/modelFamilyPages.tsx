@@ -1623,6 +1623,7 @@ function ModelListContent({ config }: { config: ModelFamilyConfig }) {
 
 function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
   const { platformSettings, appearance } = useSettings()
+  const navigate = useNavigate()
   const { groupId = '' } = useParams()
   const [detail, setDetail] = useState<ModelDetail | null>(null)
   const [status, setStatus] = useState<ModelStatusResponse | null>(null)
@@ -1630,15 +1631,85 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
   const [error, setError] = useState<string | null>(null)
   const [workflowErrorsOpen, setWorkflowErrorsOpen] = useState(false)
   const [workflowStepsOpen, setWorkflowStepsOpen] = useState(false)
+  const [retryDialogOpen, setRetryDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [mainTab, setMainTab] = useState<MainTab>('overview')
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [savingName, setSavingName] = useState(false)
+  const [retrying, setRetrying] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const refreshIntervalMs = platformSettings.platform_behavior.auto_refresh_interval_seconds * 1000
   const timezone = platformSettings.platform_behavior.timezone
   const timeDisplayFormat = appearance.time_display_format
   const singularLower = lowerLabel(config.singularLabel)
   const pluralLower = lowerLabel(config.pluralLabel)
+
+  async function refreshDetail(isCancelled?: () => boolean) {
+    const fetchModelDetail = config.fetchModelDetail
+    if (!fetchModelDetail) {
+      throw new Error('Model detail fetcher is not configured')
+    }
+
+    const response = await fetchModelDetail(groupId)
+    if (isCancelled?.()) {
+      return
+    }
+
+    setDetail(response)
+    setStatus({
+      group_id: response.group_id,
+      status: response.status,
+      argo_namespace: response.argo_namespace,
+      argo_workflow_name: response.argo_workflow_name,
+      argo_phase: null,
+    })
+
+    try {
+      const nextStatus = await config.fetchModelStatus(groupId)
+      if (!isCancelled?.()) {
+        setStatus(nextStatus)
+      }
+    } catch {
+      // Status polling is best-effort; the detail page can still render from the main payload.
+    }
+  }
+
+  async function confirmRetry() {
+    if (!detail || !config.retryModel) {
+      return
+    }
+
+    setRetrying(true)
+    setError(null)
+    try {
+      await config.retryModel(detail.group_id)
+      setRetryDialogOpen(false)
+      await refreshDetail()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to retry ${singularLower}`)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  async function confirmDelete() {
+    if (!detail || !config.deleteModel) {
+      return
+    }
+
+    setDeleting(true)
+    setError(null)
+    try {
+      await config.deleteModel(detail.group_id)
+      setDeleteDialogOpen(false)
+      navigate(config.listPath)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `Failed to delete ${singularLower}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -1648,32 +1719,7 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
       setLoading(true)
       setError(null)
       try {
-        const fetchModelDetail = config.fetchModelDetail
-        if (!fetchModelDetail) {
-          throw new Error('Model detail fetcher is not configured')
-        }
-
-        const response = await fetchModelDetail(groupId)
-        if (cancelled) {
-          return
-        }
-        setDetail(response)
-        setStatus({
-          group_id: response.group_id,
-          status: response.status,
-          argo_namespace: response.argo_namespace,
-          argo_workflow_name: response.argo_workflow_name,
-          argo_phase: null,
-        })
-
-        try {
-          const nextStatus = await config.fetchModelStatus(groupId)
-          if (!cancelled) {
-            setStatus(nextStatus)
-          }
-        } catch {
-          // Status polling is best-effort; the detail page can still render from the main payload.
-        }
+        await refreshDetail(() => cancelled)
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : `Failed to load ${singularLower} detail`)
@@ -1928,6 +1974,17 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
                     Rename
                   </Button>
                 )}
+                {config.deleteModel && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="error"
+                    onClick={() => setDeleteDialogOpen(true)}
+                    sx={{ ml: { xs: 0, sm: 1 } }}
+                  >
+                    Delete
+                  </Button>
+                )}
               </Stack>
               <Typography color="text.secondary" sx={{ maxWidth: 760 }}>
                 Dashboard view for the training set, targets, metrics, and operational metadata behind this{' '}
@@ -1994,8 +2051,18 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
                         color="error"
                         startIcon={<BugReportOutlinedIcon />}
                         onClick={() => setWorkflowErrorsOpen(true)}
+                        >
+                          View workflow errors
+                        </Button>
+                    )}
+                    {config.retryModel && (
+                      <Button
+                        variant="outlined"
+                        color="warning"
+                        startIcon={<ReplayIcon />}
+                        onClick={() => setRetryDialogOpen(true)}
                       >
-                        View workflow errors
+                        Retry model
                       </Button>
                     )}
                   </Stack>
@@ -2337,6 +2404,50 @@ function ModelDetailContent({ config }: { config: ModelFamilyConfig }) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        title={`Delete ${singularLower} ${detailName ?? detail.group_id}?`}
+        intent="error"
+        icon={<DeleteOutlineIcon />}
+        confirmLabel={`Delete ${config.singularLabel}`}
+        cancelLabel="Cancel"
+        onCancel={() => {
+          if (!deleting) {
+            setDeleteDialogOpen(false)
+          }
+        }}
+        onConfirm={() => void confirmDelete()}
+        loading={deleting}
+        description={
+          <Typography color="text.secondary">
+            This permanently deletes the {singularLower} group, its DB rows, and its artifact directory. If it is
+            running, its Argo workflow will be terminated best-effort.
+          </Typography>
+        }
+      />
+
+      <ConfirmDialog
+        open={retryDialogOpen}
+        title={`Retry ${singularLower}?`}
+        intent="warning"
+        icon={<ReplayIcon />}
+        confirmLabel="Retry"
+        cancelLabel="Cancel"
+        onCancel={() => setRetryDialogOpen(false)}
+        onConfirm={() => void confirmRetry()}
+        loading={retrying}
+        description={
+          <Stack spacing={1}>
+            <Typography color="text.secondary">
+              This will submit a new Argo workflow using the stored launch parameters for this model.
+            </Typography>
+            <Typography color="text.secondary">
+              If the workflow request fails, the error will be shown here instead of silently disappearing.
+            </Typography>
+          </Stack>
+        }
+      />
 
       <ModelWorkflowErrorDialog
         groupId={workflowErrorsOpen ? detail.group_id : null}

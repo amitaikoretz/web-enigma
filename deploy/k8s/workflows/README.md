@@ -38,7 +38,7 @@ The workflow service account needs `create`/`patch` on `workflowtaskresults` so 
 
 The `plan-shards` step writes its `withParam` output to `/tmp/shards-param.json` (not on the workspace PVC). Argo's emissary executor cannot collect output parameters from workflow volume mounts reliably. The step also writes `manifest-path` and `work-dir` to `/tmp/manifest-path.txt` and `/tmp/work-dir.txt` for downstream merge wiring.
 
-The first workflow step, `print-payload`, logs a copy-pasteable `curl` command for `POST /backtests/argo` using the workflow parameters. Override the API target when port-forwarding locally:
+Every workflow starts with a `print-payload` step. For backtests, it logs a copy-pasteable `curl` command for `POST /backtests/argo` using the workflow parameters. Override the API target when port-forwarding locally:
 
 ```bash
 argo submit -n backtest-workflows --from workflowtemplate/backtest-batch \

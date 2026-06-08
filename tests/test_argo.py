@@ -66,6 +66,7 @@ def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
     print_payload_template = next(
         item for item in spec["templates"] if item["name"] == "print-payload"
     )
+    assert print_payload_template["container"]["name"] == "main"
     outputs = {item["name"]: item["valueFrom"]["path"] for item in print_payload_template["outputs"]["parameters"]}
     assert outputs["launch-curl"] == "/tmp/launch-curl.txt"
     assert outputs["terminal-command"] == "/tmp/terminal-command.txt"
@@ -108,7 +109,7 @@ def test_build_backtest_workflow_spec_embeds_config_yaml() -> None:
     assert "/tmp/merged-output-path.txt" in merge_args
 
 
-def test_build_backtest_workflow_spec_retries_each_step_with_increasing_memory() -> None:
+def test_build_backtest_workflow_spec_has_no_pod_spec_patch() -> None:
     spec = build_backtest_workflow_spec(
         config_path="/data/config.yaml",
         output_path="/data/output.json",
@@ -116,15 +117,11 @@ def test_build_backtest_workflow_spec_retries_each_step_with_increasing_memory()
         backtest_id="abc123",
     )
 
-    expected_retry = {"limit": 3, "retryPolicy": "Always"}
     for template_name in {"print-payload", "plan-shards", "run-shard", "merge-reports"}:
         template = next(item for item in spec["templates"] if item["name"] == template_name)
-        assert template["retryStrategy"] == expected_retry
-        assert "podSpecPatch" in template
-        assert "retries == 0 ? '4Gi'" in template["podSpecPatch"]
-        assert "retries == 1 ? '8Gi'" in template["podSpecPatch"]
-        assert "retries == 2 ? '16Gi'" in template["podSpecPatch"]
-        assert "'32Gi'" in template["podSpecPatch"]
+        assert template["retryStrategy"] == {"limit": 3, "retryPolicy": "Always"}
+        assert "podSpecPatch" not in template
+        assert template["container"]["name"] == "main"
 
 
 def test_build_backtest_workflow_spec_uses_configured_service_account(

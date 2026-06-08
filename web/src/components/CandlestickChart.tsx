@@ -597,13 +597,29 @@ export function CandlestickChart({
       }
 
       const timeScale = chart.timeScale()
-      const fromLogical = timeScale.coordinateToLogical(Math.min(startX, endX))
-      const toLogical = timeScale.coordinateToLogical(Math.max(startX, endX))
-      if (fromLogical === null || toLogical === null) {
+      const chartWidth = timeScale.width()
+      const fromX = Math.max(0, Math.min(Math.min(startX, endX), chartWidth))
+      const toX = Math.max(0, Math.min(Math.max(startX, endX), chartWidth))
+
+      const fromLogical = timeScale.coordinateToLogical(fromX)
+      const toLogical = timeScale.coordinateToLogical(toX)
+      if (fromLogical === null || toLogical === null || toLogical <= fromLogical) {
         return
       }
 
-      timeScale.setVisibleLogicalRange({ from: fromLogical, to: toLogical })
+      const visibleSpan = toLogical - fromLogical
+      const barSpacing = chartWidth / visibleSpan
+      const baseIndex = dataRef.current?.rows.length ? dataRef.current.rows.length - 1 : null
+      if (baseIndex === null) {
+        return
+      }
+
+      chart.applyOptions({
+        timeScale: {
+          barSpacing,
+          rightOffset: toLogical - baseIndex,
+        },
+      })
     }
 
     const shouldStartSelection = (event: PointerEvent) =>

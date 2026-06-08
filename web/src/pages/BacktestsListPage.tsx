@@ -6,10 +6,6 @@ import {
   Button,
   Checkbox,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   IconButton,
   Paper,
   Stack,
@@ -21,7 +17,6 @@ import {
   TableRow,
   Tooltip,
   Typography,
-  Link,
   Tabs,
   Tab,
 } from '@mui/material'
@@ -30,21 +25,11 @@ import { Link as RouterLink, useLocation, useNavigate, useSearchParams } from 'r
 
 import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
 import { deleteBacktest, fetchBacktests, retryBacktest, retryBacktestForce } from '../api/backtests'
-import { createReturnForecastModel } from '../api/returnForecastModels'
-import { createRiskModel } from '../api/riskModels'
 import { ConfirmDialog } from '../components/ConfirmDialog'
-import { ModelTrainingLaunchDialog, type ModelTrainingFamily, type ModelTrainingLaunchPayload } from '../components/ModelTrainingLaunchDialog'
 import { useSettings } from '../settings/useSettings'
 import type { BacktestListItem } from '../types/backtests'
 import { canRetryBacktest } from '../utils/backtestConfigPrefill'
-
-interface LaunchResultState {
-  status: 'success' | 'failed'
-  message: string
-  backtestId?: string
-  modelName?: string | null
-  family: ModelTrainingFamily
-}
+import { familyWizardPath } from './modelLaunchRoutes'
 
 const DEFAULT_PAGE_SIZE = 25
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -96,10 +81,6 @@ export function BacktestsListPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [retryTarget, setRetryTarget] = useState<BacktestListItem | null>(null)
-  const [launchFamily, setLaunchFamily] = useState<ModelTrainingFamily | null>(null)
-  const [launchSubmitting, setLaunchSubmitting] = useState(false)
-  const [launchError, setLaunchError] = useState<string | null>(null)
-  const [launchResult, setLaunchResult] = useState<LaunchResultState | null>(null)
   const activeTab = location.pathname.startsWith('/backtests/datasets') ? 'datasets' : 'backtests'
 
   const visibleColumns = useMemo(
@@ -175,17 +156,6 @@ export function BacktestsListPage() {
       cancelled = true
     }
   }, [loadPage, page, pageSize])
-
-  useEffect(() => {
-    const state = location.state as { launchResult?: LaunchResultState } | null
-    if (!state?.launchResult) {
-      return
-    }
-
-    setLaunchResult(state.launchResult)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-    navigate(location.pathname + location.search, { replace: true, state: null })
-  }, [location.pathname, location.search, location.state, navigate])
 
   useEffect(() => {
     if (!hasActiveJobs) {
@@ -294,50 +264,6 @@ export function BacktestsListPage() {
     }
   }
 
-  async function submitModelLaunch(payload: ModelTrainingLaunchPayload) {
-    const ids = items.filter((item) => selectedIds.has(item.id)).map((item) => item.id)
-    if (ids.length === 0) {
-      return
-    }
-    setLaunchSubmitting(true)
-    setLaunchError(null)
-    setError(null)
-    try {
-      const response =
-        payload.family === 'risk'
-          ? await createRiskModel({
-              ...(payload.request as any),
-              backtest_ids: ids,
-            })
-          : await createReturnForecastModel({
-              ...(payload.request as any),
-              backtest_ids: ids,
-            })
-      setLaunchFamily(null)
-      setLaunchResult({
-        family: payload.family,
-        status: 'success',
-        message:
-          payload.family === 'risk'
-            ? 'Risk model launch submitted successfully.'
-            : 'Return forecast model launch submitted successfully.',
-        backtestId: response.group_id,
-        modelName: response.name ?? null,
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to launch model'
-      setLaunchError(message)
-      setError(message)
-      setLaunchResult({
-        family: payload.family,
-        status: 'failed',
-        message,
-      })
-    } finally {
-      setLaunchSubmitting(false)
-    }
-  }
-
   function toggleRowSelection(backtestId: string, checked: boolean) {
     setSelectedIds((current) => {
       const next = new Set(current)
@@ -347,6 +273,22 @@ export function BacktestsListPage() {
         next.delete(backtestId)
       }
       return next
+    })
+  }
+
+  function launchModel(family: 'risk' | 'return_forecast') {
+    const sourceIds = items.filter((item) => selectedIds.has(item.id)).map((item) => item.id)
+    if (sourceIds.length === 0) {
+      return
+    }
+
+    navigate(familyWizardPath(family), {
+      state: {
+        sourceKind: 'backtest',
+        sourceIds,
+        selectedCount: sourceIds.length,
+        selectionLabel: 'backtests',
+      },
     })
   }
 
@@ -380,9 +322,16 @@ export function BacktestsListPage() {
           <Button
             variant="outlined"
             disabled={selectedOnPageCount === 0 || bulkDeleting}
-            onClick={() => setLaunchFamily('risk')}
+            onClick={() => launchModel('risk')}
           >
-            Train model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
+            Train risk model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
+          </Button>
+          <Button
+            variant="outlined"
+            disabled={selectedOnPageCount === 0 || bulkDeleting}
+            onClick={() => launchModel('return_forecast')}
+          >
+            Train return forecast{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
           </Button>
           <Button
             color="error"
@@ -399,57 +348,6 @@ export function BacktestsListPage() {
       </Stack>
 
       {error && <Alert severity="error">{error}</Alert>}
-
-      <Dialog
-        open={launchResult !== null}
-        onClose={() => setLaunchResult(null)}
-        aria-labelledby="launch-result-title"
-        aria-describedby="launch-result-description"
-        slotProps={{
-          backdrop: {
-            sx: {
-              backdropFilter: 'blur(6px)',
-              backgroundColor: 'rgba(0, 0, 0, 0.55)',
-            },
-          },
-          paper: {
-            sx: {
-              width: '100%',
-              maxWidth: 520,
-              p: 0.5,
-            },
-          },
-        }}
-      >
-        <DialogTitle id="launch-result-title" sx={{ pb: 1 }}>
-          {launchResult?.status === 'success' ? 'Model launched' : 'Model launch failed'}
-        </DialogTitle>
-        <DialogContent id="launch-result-description" sx={{ pt: 0 }}>
-          <Stack spacing={1.5}>
-            <Alert severity={launchResult?.status === 'success' ? 'success' : 'error'}>
-              {launchResult?.message}
-            </Alert>
-            {launchResult?.status === 'success' && launchResult.backtestId && (
-              <Typography color="text.secondary">
-                You can open the new job from{' '}
-                <Link
-                  component={RouterLink}
-                  to={launchResult.family === 'risk' ? `/models/risk/${launchResult.backtestId}` : `/models/returns/${launchResult.backtestId}`}
-                >
-                  {launchResult.family === 'risk' ? 'risk model' : 'return forecast model'}{' '}
-                  {launchResult.modelName ?? launchResult.backtestId}
-                </Link>
-                .
-              </Typography>
-            )}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
-          <Button onClick={() => setLaunchResult(null)} variant="contained">
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Paper sx={{ p: 0, overflow: 'hidden' }}>
         {loading ? (
@@ -587,22 +485,6 @@ export function BacktestsListPage() {
           </>
         )}
       </Paper>
-
-      <ModelTrainingLaunchDialog
-        open={launchFamily !== null}
-        allowedFamilies={['risk', 'return_forecast']}
-        selectedCount={selectedOnPageCount}
-        selectionLabel="backtests"
-        submitting={launchSubmitting}
-        error={launchError}
-        onClose={() => {
-          if (!launchSubmitting) {
-            setLaunchFamily(null)
-            setLaunchError(null)
-          }
-        }}
-        onSubmit={(payload) => void submitModelLaunch(payload)}
-      />
 
       <ConfirmDialog
         open={retryTarget !== null}

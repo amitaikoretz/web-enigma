@@ -20,6 +20,15 @@ def test_risk_workflow_templates_have_terminal_and_error_outputs() -> None:
         artifact_dir="/data/backtest-results/risk-models/g1",
     )
 
+    main = _extract_template(spec, "main")
+    step_names = [step["name"] for group in main["steps"] for step in group]
+    assert step_names == ["print-payload", "build-dataset", "train-stop", "train-mae", "register-results"]
+
+    print_payload = _extract_template(spec, "print-payload")
+    args = print_payload["container"]["args"]
+    assert "--command-line" in args
+    assert "__COMMAND_LINE__" not in args
+
     for name in ["build-dataset", "train-stop", "train-mae", "register-results"]:
         tmpl = _extract_template(spec, name)
         outputs = tmpl.get("outputs", {})
@@ -34,4 +43,3 @@ def test_risk_workflow_templates_have_terminal_and_error_outputs() -> None:
     register = _extract_template(spec, "register-results")
     args = register["container"]["args"]
     assert "--family" in args
-

@@ -5,10 +5,12 @@ import shlex
 import sys
 from pathlib import Path
 
+import pandas as pd
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.config.models import AlpacaDataSource, AlpacaOptionsDataSource, DataCacheConfig, YahooDataSource
+from app.datasets.models import validate_dataset_parquet_frame
 from app.data.loaders import (
     build_alpaca_data_feed_with_cache,
     build_alpaca_options_data_feed_with_cache,
@@ -27,6 +29,30 @@ def _write_text(path: str | None, text: str) -> None:
 
 def _terminal_command(argv: list[str]) -> str:
     return " ".join(shlex.quote(arg) for arg in argv)
+
+
+def _frame_with_timestamp_column(frame: pd.DataFrame) -> pd.DataFrame:
+    if "timestamp" in frame.columns:
+        return frame
+
+    if "datetime" in frame.columns:
+        out = frame.rename(columns={"datetime": "timestamp"}).copy()
+        if "index" in out.columns:
+            out = out.drop(columns=["index"])
+        return out
+
+    out = frame.reset_index()
+    if "timestamp" in out.columns:
+        return out
+
+    if "index" in out.columns:
+        return out.rename(columns={"index": "timestamp"})
+
+    # Fall back to the first column created by reset_index when the index has a custom name.
+    index_columns = [column for column in out.columns if column not in frame.columns]
+    if index_columns:
+        return out.rename(columns={index_columns[0]: "timestamp"})
+    return out
 
 
 def _log(message: str) -> None:
@@ -107,9 +133,11 @@ def main(
             end,
             cache_config,
         )
+        options_frame = _frame_with_timestamp_column(options_frame)
         options_parquet_path = out_dir / f"{symbol_normalized}-alpaca-options-{resolution}.parquet"
         options_manifest = out_dir / f"{symbol_normalized}-alpaca-options-{resolution}.manifest.json"
         _log(f"Saving options parquet to {options_parquet_path}")
+        validate_dataset_parquet_frame(options_frame)
         options_frame.to_parquet(options_parquet_path, index=False)
         _log(f"Saving options manifest to {options_manifest}")
         options_manifest.write_text(
@@ -131,9 +159,11 @@ def main(
     row_count = int(len(frame))
     _log(f"Downloaded frame with {row_count} rows")
 
+    frame = _frame_with_timestamp_column(frame)
     parquet_path = out_dir / f"{symbol_normalized}-{provider_normalized}-{resolution}.parquet"
     manifest_path = out_dir / f"{symbol_normalized}-{provider_normalized}-{resolution}.manifest.json"
     _log(f"Saving parquet to {parquet_path}")
+    validate_dataset_parquet_frame(frame)
     frame.to_parquet(parquet_path, index=False)
     _log(f"Saving manifest to {manifest_path}")
     manifest_path.write_text(

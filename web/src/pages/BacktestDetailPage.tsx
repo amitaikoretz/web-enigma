@@ -54,6 +54,7 @@ import {
 import { summarizeCandidateActivity } from '../utils/backtestDiagnostics'
 import { formatInTimezone } from '../utils/datetime'
 import { canEditAndRetryBacktest, canRetryBacktest } from '../utils/backtestConfigPrefill'
+import type { BacktestSelectionSummary } from '../types/backtests'
 
 function formatTimestamp(
   value: string,
@@ -70,6 +71,84 @@ function listItemToStatus(item: BacktestListItem): BacktestStatusResponse {
     ...item,
     progress_pct,
     is_terminal: item.status === 'completed' || item.status === 'failed',
+  }
+}
+
+function deriveSelectionFromReport(report: BacktestDetailResponse['report']): BacktestSelectionSummary | null {
+  const inputConfig = report?.input_config
+  if (!inputConfig || typeof inputConfig !== 'object') {
+    return null
+  }
+
+  const runsValue = (inputConfig as { runs?: unknown }).runs
+  if (!Array.isArray(runsValue) || runsValue.length === 0) {
+    return null
+  }
+
+  const symbols: string[] = []
+  const triggers: string[] = []
+  const exitRules: string[] = []
+  let startDate: string | null = null
+  let endDate: string | null = null
+  let resolution = '1d'
+  let feed: BacktestSelectionSummary['feed'] = 'iex'
+
+  for (const run of runsValue) {
+    if (!run || typeof run !== 'object') {
+      continue
+    }
+
+    const runRecord = run as Record<string, unknown>
+    if (startDate === null && typeof runRecord.start_date === 'string') {
+      startDate = runRecord.start_date
+    }
+    if (typeof runRecord.end_date === 'string') {
+      endDate = runRecord.end_date
+    }
+
+    const data = runRecord.data
+    if (data && typeof data === 'object') {
+      const dataRecord = data as Record<string, unknown>
+      if (typeof dataRecord.symbol === 'string' && !symbols.includes(dataRecord.symbol)) {
+        symbols.push(dataRecord.symbol)
+      }
+      if (typeof dataRecord.interval === 'string') {
+        resolution = dataRecord.interval
+      }
+      if (dataRecord.feed === 'iex' || dataRecord.feed === 'sip' || dataRecord.feed === 'otc') {
+        feed = dataRecord.feed
+      }
+    }
+
+    const trigger = runRecord.trigger
+    if (trigger && typeof trigger === 'object') {
+      const triggerRecord = trigger as Record<string, unknown>
+      if (typeof triggerRecord.name === 'string' && !triggers.includes(triggerRecord.name)) {
+        triggers.push(triggerRecord.name)
+      }
+    }
+
+    const exitRulesValue = runRecord.exit_rules
+    if (exitRulesValue && typeof exitRulesValue === 'object' && !Array.isArray(exitRulesValue)) {
+      const exitRulesRecord = exitRulesValue as Record<string, unknown>
+      if (typeof exitRulesRecord.name === 'string' && !exitRules.includes(exitRulesRecord.name)) {
+        exitRules.push(exitRulesRecord.name)
+      }
+    }
+  }
+
+  if (!startDate || !endDate) {
+    return null
+  }
+
+  return {
+    start_date: startDate,
+    end_date: endDate,
+    resolution,
+    feed,
+    symbols: symbols.length > 0 ? symbols : ['UNKNOWN'],
+    triggers: triggers.length > 0 ? triggers : ['unknown'],
+    exit_rules: exitRules.length > 0 ? exitRules : ['unknown'],
   }
 }
 
@@ -192,6 +271,7 @@ export function BacktestDetailPage() {
   }, [backtestId, refreshIntervalMs])
 
   const report = detail?.report ?? null
+  const resolvedSelection = metadata?.selection ?? deriveSelectionFromReport(report)
   const canRetry = metadata ? canRetryBacktest(metadata) : false
   const canEditAndRetry = metadata ? canEditAndRetryBacktest(metadata, report?.input_config) : false
   const candidateSummary = useMemo(
@@ -306,7 +386,7 @@ export function BacktestDetailPage() {
     return <Alert severity="warning">Backtest detail is unavailable.</Alert>
   }
 
-  const selectionSymbols = metadata.selection?.symbols ?? []
+  const selectionSymbols = resolvedSelection?.symbols ?? []
   const visibleSymbols = selectionSymbols.slice(0, 30)
   const hiddenSymbolCount = Math.max(0, selectionSymbols.length - visibleSymbols.length)
   const symbolsInline = selectionSymbols.length > 0 ? visibleSymbols.join(', ') : '—'
@@ -472,10 +552,10 @@ export function BacktestDetailPage() {
       <Paper sx={{ p: 3 }}>
         <Stack spacing={2}>
           <Typography variant="h6">Submission summary</Typography>
-          {metadata.selection ? (
+          {resolvedSelection ? (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
-              <Metric label="Date range" value={`${metadata.selection.start_date} → ${metadata.selection.end_date}`} />
-              <Metric label="Resolution" value={metadata.selection.resolution} />
+              <Metric label="Date range" value={`${resolvedSelection.start_date} → ${resolvedSelection.end_date}`} />
+              <Metric label="Resolution" value={resolvedSelection.resolution} />
               <Metric
                 label="Symbols"
                 value={
@@ -494,8 +574,8 @@ export function BacktestDetailPage() {
                   </Stack>
                 }
               />
-              <Metric label="Triggers" value={metadata.selection.triggers.join(', ')} />
-              <Metric label="Exit rules" value={metadata.selection.exit_rules.join(', ')} />
+              <Metric label="Triggers" value={resolvedSelection.triggers.join(', ')} />
+              <Metric label="Exit rules" value={resolvedSelection.exit_rules.join(', ')} />
             </Stack>
           ) : (
             <Typography color="text.secondary">Selection summary unavailable.</Typography>
@@ -634,7 +714,7 @@ export function BacktestDetailPage() {
               <BacktestRunDetailPanel
                 backtestId={metadata?.id ?? backtestId}
                 result={selectedRun}
-                selection={metadata?.selection ?? null}
+                selection={resolvedSelection}
               />
             </Paper>
           )}
@@ -701,13 +781,13 @@ export function BacktestDetailPage() {
               }}
             >
               <Typography variant="body2" color="text.secondary">
-                {metadata.selection
-                  ? `${metadata.selection.start_date} → ${metadata.selection.end_date}`
+                {resolvedSelection
+                  ? `${resolvedSelection.start_date} → ${resolvedSelection.end_date}`
                   : 'Selection summary unavailable'}
               </Typography>
               <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {metadata.selection
-                  ? `${metadata.selection.symbols?.length ?? 0} symbols · ${metadata.selection.triggers?.length ?? 0} triggers`
+                {resolvedSelection
+                  ? `${resolvedSelection.symbols?.length ?? 0} symbols · ${resolvedSelection.triggers?.length ?? 0} triggers`
                   : '—'}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>

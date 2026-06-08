@@ -6,6 +6,8 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pandas as pd
+
 from app.backtests.argo import ArgoWorkflowSubmitter, load_argo_workflow_config
 from app.backtests.argo_workflow import workflow_results_mount
 from app.datasets.argo_workflow import build_dataset_workflow_spec
@@ -113,7 +115,7 @@ class DatasetService:
             workflow_name, namespace = self._submit_workflow(
                 dataset_id=dataset_id,
                 payload=payload,
-                output_dir=workflow_output_dir,
+                output_dir=workflow_output_dir / dataset_id,
             )
             self.repository.update(
                 item.model_copy(
@@ -215,7 +217,7 @@ class DatasetService:
         item = self.repository.get(dataset_id)
         if item is None:
             return None
-        return DatasetDetailResponse(metadata=item)
+        return DatasetDetailResponse(metadata=item, symbol_options=self._resolve_symbol_options(item))
 
     def get_status(self, dataset_id: str) -> DatasetStatusResponse | None:
         item = self.repository.get(dataset_id)
@@ -383,6 +385,9 @@ class DatasetService:
         if path_str:
             candidate_paths.append(self._resolve_dataset_path(item, Path(path_str)))
         if item.output_dir:
+            dataset_dir = Path(item.output_dir).resolve() / item.id
+            candidate_paths.append(dataset_dir / fallback_name)
+        if item.output_dir:
             candidate_paths.append(Path(item.output_dir) / fallback_name)
         for path in candidate_paths:
             if path.is_file():
@@ -432,3 +437,28 @@ class DatasetService:
         if not isinstance(phase, str):
             return None
         return phase
+
+    def _resolve_symbol_options(self, item: DatasetListItem) -> list[str]:
+        options: list[str] = []
+        parquet_path = self._resolve_dataset_parquet_path(item)
+        if parquet_path is not None and parquet_path.is_file():
+            try:
+                frame = pd.read_parquet(parquet_path, columns=["symbol"])
+            except Exception:
+                try:
+                    frame = pd.read_parquet(parquet_path)
+                except Exception:
+                    frame = None
+            if frame is not None and "symbol" in frame.columns:
+                seen: set[str] = set()
+                for value in frame["symbol"].dropna().astype(str):
+                    symbol = value.strip().upper()
+                    if symbol and symbol not in seen:
+                        seen.add(symbol)
+                        options.append(symbol)
+
+        if options:
+            return options
+
+        fallback_symbol = item.symbol.strip().upper()
+        return [fallback_symbol] if fallback_symbol else []

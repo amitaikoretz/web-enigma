@@ -40,10 +40,13 @@ class SqlAlchemyMarketOverviewRepository:
             row.confidence = payload["confidence"]
             row.fragility = payload["fragility"]
             row.contradiction_score = payload["contradiction_score"]
+            row.market_indicators_json = payload["market_indicators"]
             row.pillar_scores_json = payload["pillar_scores"]
             row.developments_json = payload["developments"]
             row.freshness_json = payload["freshness"]
             row.summary_text = payload["summary_text"]
+            row.watch_next_json = payload["watch_next"]
+            row.methodology_json = payload["methodology"] or {}
             row.evidence_json = payload["evidence"]
             row.params_json = payload["params"]
             row.error_message = payload["error_message"]
@@ -86,10 +89,13 @@ class SqlAlchemyMarketOverviewRepository:
             confidence=float(row.confidence or 0.0),
             fragility=float(row.fragility or 0.0),
             contradiction_score=float(row.contradiction_score or 0.0),
+            market_indicators=list(row.market_indicators_json or []),
             pillar_scores=row.pillar_scores_json or {},
             developments=list(row.developments_json or []),
             freshness=row.freshness_json or {},
             summary_text=row.summary_text,
+            watch_next=list(row.watch_next_json or []),
+            methodology=row.methodology_json or None,
             evidence=row.evidence_json or {},
             params=row.params_json or {},
             error_message=row.error_message,

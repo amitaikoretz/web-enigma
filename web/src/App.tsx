@@ -53,11 +53,13 @@ import { ReturnForecastModelDetailPage } from './pages/ReturnForecastModelDetail
 import { DailyIndexForecastModelsListPage } from './pages/DailyIndexForecastModelsListPage'
 import { DailyIndexForecastModelDetailPage } from './pages/DailyIndexForecastModelDetailPage'
 import { DailyIndexForecastWizardPage } from './pages/DailyIndexForecastWizardPage'
+import { RiskModelWizardPage } from './pages/RiskModelWizardPage'
+import { ReturnForecastModelWizardPage } from './pages/ReturnForecastModelWizardPage'
 import { MarketOverviewPage } from './pages/MarketOverviewPage'
 
-const NAV_ITEMS = [
-  { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
+export const NAV_ITEMS = [
   { label: 'Overview', to: '/market-overview', icon: <QueryStatsIcon /> },
+  { label: 'Backtests', to: '/backtests', icon: <InsightsIcon /> },
   { label: 'Models', to: '/models', icon: <ShieldIcon /> },
   { label: 'Data', to: '/data/downloads', icon: <CloudDownloadIcon /> },
   { label: 'Scanners', to: '/scanners', icon: <ManageSearchIcon /> },
@@ -67,14 +69,17 @@ const NAV_ITEMS = [
   { label: 'Settings', to: '/settings', icon: <SettingsSuggestIcon /> },
 ]
 
-function resolveLandingPage(preferredLandingPage: 'backtests' | 'new_backtest' | 'chart'): string {
+function resolveLandingPage(preferredLandingPage: 'overview' | 'backtests' | 'new_backtest' | 'chart'): string {
+  if (preferredLandingPage === 'overview') {
+    return '/market-overview'
+  }
   if (preferredLandingPage === 'backtests') {
     return '/backtests'
   }
   if (preferredLandingPage === 'chart') {
     return '/chart'
   }
-  return '/backtests/new'
+  return '/market-overview'
 }
 
 function NavButtons({
@@ -224,8 +229,10 @@ function App() {
           <Route path="/backtests/:backtestId" element={<BacktestDetailPage />} />
           <Route path="/models" element={<ModelsLandingPage />} />
           <Route path="/models/risk" element={<RiskModelsListPage />} />
+          <Route path="/models/risk/new" element={<RiskModelWizardPage />} />
           <Route path="/models/risk/:groupId" element={<RiskModelDetailPage />} />
           <Route path="/models/returns" element={<ReturnForecastModelsListPage />} />
+          <Route path="/models/returns/new" element={<ReturnForecastModelWizardPage />} />
           <Route path="/models/returns/:groupId" element={<ReturnForecastModelDetailPage />} />
           <Route path="/models/daily-index" element={<DailyIndexForecastModelsListPage />} />
           <Route path="/models/daily-index/new" element={<DailyIndexForecastWizardPage />} />

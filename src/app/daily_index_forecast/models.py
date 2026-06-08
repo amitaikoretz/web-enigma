@@ -134,6 +134,7 @@ class DailyIndexForecastListItemResponse(BaseModel):
     argo_workflow_name: str | None = None
     symbol: str
     benchmark_symbol: str | None = None
+    resolution: str | None = None
     decision_times: list[str] = Field(default_factory=list)
     start_date: date
     end_date: date
@@ -195,6 +196,7 @@ class DailyIndexForecastFeatureRunResponse(BaseModel):
     argo_workflow_name: str | None = None
     symbol: str
     benchmark_symbol: str | None = None
+    resolution: str | None = None
     decision_times: list[str] = Field(default_factory=list)
     start_date: date
     end_date: date
@@ -217,11 +219,13 @@ class DailyIndexForecastDetailResponse(BaseModel):
     status: DailyIndexForecastStatus
     argo_namespace: str | None = None
     argo_workflow_name: str | None = None
+    resolution: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
     artifact_dir: str
     summary_metrics: dict[str, Any] | None = None
     feature_run: DailyIndexForecastFeatureRunResponse | None = None
     dataset_manifest: DailyIndexForecastDatasetManifestSummary | None = None
+    holdout_dates: list[date] = Field(default_factory=list)
     targets: list[DailyIndexForecastTargetRowResponse] = Field(default_factory=list)
     feature_importance: FeatureImportanceTarget | None = None
 

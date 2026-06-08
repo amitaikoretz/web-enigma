@@ -18,16 +18,20 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
     op.add_column("risk_model_sources", sa.Column("dataset_id", sa.String(length=64), nullable=True))
-    op.create_foreign_key(
-        "fk_risk_model_sources_dataset_id_dataset_jobs",
-        "risk_model_sources",
-        "dataset_jobs",
-        ["dataset_id"],
-        ["id"],
-    )
+    if bind.dialect.name != "sqlite":
+        op.create_foreign_key(
+            "fk_risk_model_sources_dataset_id_dataset_jobs",
+            "risk_model_sources",
+            "dataset_jobs",
+            ["dataset_id"],
+            ["id"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_risk_model_sources_dataset_id_dataset_jobs", "risk_model_sources", type_="foreignkey")
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        op.drop_constraint("fk_risk_model_sources_dataset_id_dataset_jobs", "risk_model_sources", type_="foreignkey")
     op.drop_column("risk_model_sources", "dataset_id")

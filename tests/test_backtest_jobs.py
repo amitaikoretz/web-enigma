@@ -291,6 +291,111 @@ def test_create_backtest_can_resolve_dataset_paths_from_dataset_id(tmp_path: Pat
     assert detail["report"]["input_config"]["runs"][0]["data"] == {"type": "parquet", "path": str(dataset_path)}
 
 
+def test_create_backtest_argo_translates_dataset_path_to_workflow_mount(tmp_path: Path, monkeypatch) -> None:
+    client = _build_client(tmp_path)
+
+    workflow_root = tmp_path / "workflow-results"
+    workflow_root.mkdir()
+    monkeypatch.setenv("BACKTEST_WORKFLOW_RESULTS_MOUNT", str(workflow_root))
+
+    settings = client.app.state.deps.settings_service.load()
+    settings.platform_behavior.backtest_execution_backend = "argo"
+    client.app.state.deps.settings_service.save(settings)
+
+    class _FakeArgoSubmitter:
+        def __init__(self) -> None:
+            self.last_submit: dict[str, str | None] | None = None
+
+        @property
+        def is_configured(self) -> bool:
+            return True
+
+        def submit(
+            self,
+            *,
+            config_path: str,
+            output_path: str,
+            split_by: str,
+            backtest_id: str,
+            config_yaml: str | None = None,
+        ) -> tuple[str, str]:
+            self.last_submit = {
+                "config_path": config_path,
+                "output_path": output_path,
+                "split_by": split_by,
+                "backtest_id": backtest_id,
+                "config_yaml": config_yaml,
+            }
+            return f"backtest-{backtest_id[:8]}", "backtest-workflows"
+
+    fake_submitter = _FakeArgoSubmitter()
+    client.app.state.deps.backtest_jobs.argo_submitter = fake_submitter
+
+    output_dir = tmp_path / "datasets"
+    output_dir.mkdir()
+    dataset_path = output_dir / "AAPL-alpaca-1d.parquet"
+    manifest_path = output_dir / "AAPL-alpaca-1d.manifest.json"
+    dataset_path.write_text("data", encoding="utf-8")
+    manifest_path.write_text(
+        '{"symbol":"AAPL","provider":"alpaca","resolution":"1d","start_date":"2024-01-01","end_date":"2024-01-31","dataset_path":"'
+        + str(dataset_path)
+        + '"}',
+        encoding="utf-8",
+    )
+
+    client.app.state.deps.datasets.repository.create(
+        DatasetListItem(
+            id="ds-1",
+            name="My dataset",
+            symbol="AAPL",
+            provider="alpaca",
+            resolution="1d",
+            start_date=date(2024, 1, 1),
+            end_date=date(2024, 1, 31),
+            created_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+            status="completed",
+            argo_namespace=None,
+            argo_workflow_name=None,
+            params_json={},
+            output_dir=str(output_dir),
+            dataset_parquet_path=None,
+            manifest_path=None,
+            options_parquet_path=None,
+            options_manifest_path=None,
+            error_message=None,
+            progress_pct=100.0,
+        )
+    )
+
+    response = client.post(
+        "/backtests",
+        json={
+            "dataset_id": "ds-1",
+            "resolution": "1d",
+            "triggers": [{"name": "buy_and_hold", "params": {"stake": 1}}],
+            "exit_rules": [
+                {
+                    "rules": [
+                        {"name": "fixed_pct_oco", "params": {"atr_period": 14, "sl_atr_mult": 1.5, "tp_atr_mult": 3.0}},
+                    ]
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 202
+    assert fake_submitter.last_submit is not None
+    config_yaml = fake_submitter.last_submit["config_yaml"]
+    assert config_yaml is not None
+    config_raw = yaml.safe_load(config_yaml)
+    assert config_raw["runs"][0]["data"] == {
+        "type": "parquet",
+        "path": f"{workflow_root.resolve()}/AAPL-alpaca-1d.parquet",
+    }
+    assert fake_submitter.last_submit["output_path"] == f"{workflow_root.resolve()}/{response.json()['backtest_id']}/{response.json()['backtest_id']}.json"
+
+
 def test_trade_replay_launch_config_exposes_alpaca_env_vars() -> None:
     capsule = BacktestTradeReplayCapsule.model_validate(
         {
