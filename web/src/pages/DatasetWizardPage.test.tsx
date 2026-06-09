@@ -8,11 +8,13 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 
 const createDatasetMock = vi.hoisted(() => vi.fn())
 const navigateMock = vi.hoisted(() => vi.fn())
+const fetchDatasetDetailMock = vi.hoisted(() => vi.fn())
 const fetchUniversesMock = vi.hoisted(() => vi.fn())
 const fetchUniverseConstituentsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/datasets', () => ({
   createDataset: createDatasetMock,
+  fetchDatasetDetail: fetchDatasetDetailMock,
 }))
 
 vi.mock('../api/universes', () => ({
@@ -45,6 +47,43 @@ describe('DatasetWizardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     navigateMock.mockReset()
+    fetchDatasetDetailMock.mockResolvedValue({
+      metadata: {
+        id: 'source-ds-1',
+        name: 'Source dataset',
+        symbol: 'AAPL',
+        symbols: ['AAPL', 'MSFT'],
+        provider: 'alpaca',
+        resolution: '1d',
+        start_date: '2026-04-01',
+        end_date: '2026-05-01',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+        status: 'completed',
+        argo_namespace: null,
+        argo_workflow_name: null,
+        params_json: {
+          symbol: 'AAPL',
+          symbols: ['AAPL', 'MSFT'],
+          provider: 'alpaca',
+          resolution: '1d',
+          start_date: '2026-04-01',
+          end_date: '2026-05-01',
+          name: 'Source dataset',
+          options: {
+            enabled: true,
+            feed: 'opra',
+          },
+        },
+        output_dir: '/tmp/datasets',
+        dataset_parquet_path: '/tmp/datasets/source.parquet',
+        manifest_path: '/tmp/datasets/source.manifest.json',
+        options_parquet_path: '/tmp/datasets/source-options.parquet',
+        options_manifest_path: '/tmp/datasets/source-options.manifest.json',
+        error_message: null,
+        progress_pct: 100,
+      },
+    })
     fetchUniversesMock.mockResolvedValue([
       {
         key: 'sp500',
@@ -155,5 +194,47 @@ describe('DatasetWizardPage', () => {
 
     expect(await screen.findByText('Dataset launch failed')).toBeInTheDocument()
     expect(screen.getByText('Failed to submit Argo workflow: 400 missing group-id')).toBeInTheDocument()
+  })
+
+  it('prefills from an existing dataset and submits an edited copy', async () => {
+    createDatasetMock.mockResolvedValue({
+      dataset_id: 'ds-2',
+      status: 'pending',
+      status_url: '/api/datasets/ds-2/status',
+      detail_url: '/backtests/datasets/ds-2',
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/new?from=source-ds-1']}>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          <Routes>
+            <Route path="/backtests/datasets/new" element={<DatasetWizardPage />} />
+          </Routes>
+        </LocalizationProvider>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText(/prefilled from dataset source-ds-1/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/dataset name/i), { target: { value: 'Edited dataset' } })
+    fireEvent.click(screen.getByRole('button', { name: /launch dataset/i }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Launch dataset?' })).getByRole('button', { name: /^launch dataset$/i }))
+
+    await waitFor(() =>
+      expect(createDatasetMock).toHaveBeenCalledWith({
+        symbol: 'AAPL',
+        symbols: ['AAPL', 'MSFT'],
+        provider: 'alpaca',
+        resolution: '1d',
+        start_date: '2026-04-01',
+        end_date: '2026-05-01',
+        name: 'Edited dataset',
+        options: {
+          enabled: true,
+          feed: 'opra',
+        },
+      }),
+    )
+    expect(await screen.findByText('Dataset launched')).toBeInTheDocument()
   })
 })

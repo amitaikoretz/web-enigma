@@ -162,7 +162,12 @@ def _build_selection_summary(payload: BacktestCreateRequest) -> BacktestSelectio
         if isinstance(manifest, dict):
             start_date = _parse_date_like(manifest.get("start_date")) or start_date
             end_date = _parse_date_like(manifest.get("end_date")) or end_date
-            if isinstance(manifest.get("symbol"), str) and manifest["symbol"].strip():
+            manifest_symbols = manifest.get("symbols")
+            if isinstance(manifest_symbols, list):
+                normalized_symbols = [str(symbol).strip().upper() for symbol in manifest_symbols if str(symbol).strip()]
+                if normalized_symbols:
+                    symbols = normalized_symbols
+            elif isinstance(manifest.get("symbol"), str) and manifest["symbol"].strip():
                 symbols = [manifest["symbol"].strip().upper()]
     return BacktestSelectionSummary(
         start_date=start_date or payload.start_date or payload.end_date,

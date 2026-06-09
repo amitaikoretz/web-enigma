@@ -40,7 +40,14 @@ from app.strategies.implementations import (
     _volumes,
 )
 from app.strategies.regime import RegimeClassifier, regime_params_from_strategy, resolve_regime_warmup_bars
-from app.strategies.vectorbt_support import VectorbtBuildContext, VectorbtSpec
+from app.strategies.vectorbt_indicators import run_atr, run_close_strength, run_ema, run_session_vwap, run_sma
+from app.strategies.vectorbt_support import (
+    VectorbtBuildContext,
+    VectorbtSpec,
+    broadcast_combinations,
+    broadcast_columns_from_grid,
+    broadcast_grid_from_params,
+)
 
 
 US_EASTERN = ZoneInfo("America/New_York")
@@ -260,10 +267,26 @@ class BuyAndHoldTrigger(TriggerCore):
         return {"has_entered": self.has_entered}
 
     def vectorbt_spec(self, context: VectorbtBuildContext) -> VectorbtSpec | None:
-        entries = np.zeros(len(context.index), dtype=bool)
-        if len(entries) > 0:
-            entries[0] = True
-        return VectorbtSpec(entries=entries, size=float(self.params["stake"]), warmup_bars=1)
+        index = context.index
+        grid = broadcast_grid_from_params(context.params)
+        if not grid:
+            entries = np.zeros(len(index), dtype=bool)
+            if len(entries) > 0:
+                entries[0] = True
+            return VectorbtSpec(entries=entries, size=float(self.params["stake"]), warmup_bars=1)
+
+        columns = broadcast_columns_from_grid(grid)
+        entries = pd.DataFrame(False, index=index, columns=columns)
+        if len(index) > 0:
+            entries.iloc[0, :] = True
+        size = pd.Series(float(self.params["stake"]), index=index)
+        if "stake" in columns.names:
+            size_values = [float(column[columns.names.index("stake")]) for column in columns]
+            size = pd.DataFrame(
+                {column: np.full(len(index), size_values[idx], dtype=float) for idx, column in enumerate(columns)},
+                index=index,
+            )
+        return VectorbtSpec(entries=entries, size=size, warmup_bars=1)
 
     def on_bar(self, context: StrategyContext) -> StrategyDecision:
         if self.has_entered:
@@ -662,7 +685,7 @@ class VwapPullbackTrigger(TriggerCore):
         )
         return StrategyDecision.buy(float(self.params["stake"]), "vwap_pullback", entry_intent=entry_intent)
 
-    def vectorbt_spec(self, context: VectorbtBuildContext) -> VectorbtSpec | None:
+    def _vectorbt_spec_single(self, context: VectorbtBuildContext, params: dict[str, Any]) -> VectorbtSpec | None:
         if context.benchmark_data is None or context.data.empty:
             return None
 
@@ -685,88 +708,84 @@ class VwapPullbackTrigger(TriggerCore):
             return None
 
         index = context.index
-        closes = main_frame["Close"].astype(float).to_numpy()
-        highs = main_frame["High"].astype(float).to_numpy()
-        lows = main_frame["Low"].astype(float).to_numpy()
-        opens = main_frame["Open"].astype(float).to_numpy()
-        volumes = main_frame["Volume"].astype(float).to_numpy()
-        vwap = _frame_session_vwap(main_frame)
-        ema_fast = _ema(closes, int(self.params["trend_ema_fast"]))
-        ema_mid = _ema(closes, int(self.params["trend_ema_mid"]))
-        ema_slow = _ema(closes, int(self.params["trend_ema_slow"]))
-        atr = _atr(highs, lows, closes, 14)
-        volume_sma = _sma(volumes, int(self.params["volume_window"]))
-        close_strength = _frame_close_strength(main_frame)
-        prev_close = np.r_[np.nan, closes[:-1]]
-        prev_high = np.r_[np.nan, highs[:-1]]
+        closes = main_frame["Close"].astype(float)
+        highs = main_frame["High"].astype(float)
+        lows = main_frame["Low"].astype(float)
+        opens = main_frame["Open"].astype(float)
+        volumes = main_frame["Volume"].astype(float)
+        vwap = run_session_vwap(highs, lows, closes, volumes, index)
+        ema_fast = run_ema(closes, int(params["trend_ema_fast"]))
+        ema_mid = run_ema(closes, int(params["trend_ema_mid"]))
+        ema_slow = run_ema(closes, int(params["trend_ema_slow"]))
+        atr = run_atr(highs, lows, closes, 14)
+        volume_sma = run_sma(volumes, int(params["volume_window"]))
+        close_strength = run_close_strength(highs, lows, closes)
+        prev_close = closes.shift(1)
+        prev_high = highs.shift(1)
 
-        benchmark_resolution_minutes = int(self.params["benchmark_resolution_minutes"])
+        benchmark_resolution_minutes = int(params["benchmark_resolution_minutes"])
         benchmark_resampled = _resample_session_frame(benchmark_frame, benchmark_resolution_minutes)
-        if len(benchmark_resampled) < int(self.params["benchmark_ema_slow"]):
+        if len(benchmark_resampled) < int(params["benchmark_ema_slow"]):
             return None
-        benchmark_closes = benchmark_resampled["Close"].astype(float).to_numpy()
-        benchmark_vwap = _frame_session_vwap(benchmark_resampled)
-        benchmark_ema_fast = _ema(benchmark_closes, int(self.params["benchmark_ema_fast"]))
-        benchmark_ema_slow = _ema(benchmark_closes, int(self.params["benchmark_ema_slow"]))
+        benchmark_closes = benchmark_resampled["Close"].astype(float)
+        benchmark_highs = benchmark_resampled["High"].astype(float)
+        benchmark_lows = benchmark_resampled["Low"].astype(float)
+        benchmark_volumes = benchmark_resampled["Volume"].astype(float)
+        benchmark_vwap = run_session_vwap(benchmark_highs, benchmark_lows, benchmark_closes, benchmark_volumes, benchmark_resampled.index)
+        benchmark_ema_fast = run_ema(benchmark_closes, int(params["benchmark_ema_fast"]))
+        benchmark_ema_slow = run_ema(benchmark_closes, int(params["benchmark_ema_slow"]))
         benchmark_ok_resampled = (
             (benchmark_closes > benchmark_vwap)
             & (benchmark_ema_fast > benchmark_ema_slow)
-            & (benchmark_vwap > np.r_[np.nan, benchmark_vwap[:-1]])
+            & (benchmark_vwap > benchmark_vwap.shift(1))
         )
-        benchmark_index = benchmark_resampled.index
-        benchmark_ok = (
-            pd.Series(benchmark_ok_resampled, index=benchmark_index, dtype="boolean")
-            .reindex(index, method="ffill")
-            .fillna(False)
-            .to_numpy(dtype=bool)
-        )
+        benchmark_ok = benchmark_ok_resampled.reindex(index).ffill()
+        benchmark_ok = benchmark_ok.where(benchmark_ok.notna(), False).astype(bool)
 
-        # Precompute the session gate once so the loop can stay focused on the
-        # actual entry logic for each bar.
-        session_ok = np.asarray(
+        session_ok = pd.Series(
             [
                 _timestamp_in_allowed_session_window(
                     timestamp,
-                    morning_start=int(self.params["session_morning_start_minutes"]),
-                    morning_end=int(self.params["session_morning_end_minutes"]),
-                    afternoon_start=int(self.params["session_afternoon_start_minutes"]),
-                    afternoon_end=int(self.params["session_afternoon_end_minutes"]),
+                    morning_start=int(params["session_morning_start_minutes"]),
+                    morning_end=int(params["session_morning_end_minutes"]),
+                    afternoon_start=int(params["session_afternoon_start_minutes"]),
+                    afternoon_end=int(params["session_afternoon_end_minutes"]),
                 )
                 for timestamp in index
             ],
+            index=index,
             dtype=bool,
         )
 
-        recent_window = int(self.params["recent_close_window"])
-        above_vwap_counts = np.zeros(len(main_frame), dtype=int)
-        for idx in range(len(main_frame)):
-            start = max(0, idx - recent_window + 1)
-            recent = closes[start : idx + 1]
-            recent_vwap = vwap[start : idx + 1]
-            above_vwap_counts[idx] = int(np.sum(recent > recent_vwap))
-        above_vwap_ok = above_vwap_counts >= int(self.params["min_closes_above_vwap"])
-
-        pullback_ok = np.isfinite(vwap) & (np.abs(lows - vwap) / vwap <= float(self.params["pullback_distance_pct"]))
+        recent_window = int(params["recent_close_window"])
+        above_vwap_ok = (closes > vwap).rolling(recent_window, min_periods=1).sum() >= int(params["min_closes_above_vwap"])
+        pullback_ok = vwap.notna() & ((lows - vwap).abs() / vwap <= float(params["pullback_distance_pct"]))
         bullish_ok = closes > prev_high
         close_strength_ok = close_strength >= 0.7
-        volume_ok = np.isfinite(volume_sma) & (volumes >= volume_sma * float(self.params["volume_spike_mult"]))
-        gap_ok = np.ones(len(main_frame), dtype=bool)
+        volume_ok = volume_sma.notna() & (volumes >= volume_sma * float(params["volume_spike_mult"]))
+        gap_ok = pd.Series(True, index=index, dtype=bool)
         if len(main_frame) > 1:
-            gap_pct = np.abs(opens[1:] - prev_close[1:]) / np.where(prev_close[1:] > 0, prev_close[1:], np.nan)
-            gap_ok[1:] = np.where(np.isnan(gap_pct), False, gap_pct <= float(self.params["max_entry_gap_pct"]))
+            gap_pct = (opens.shift(1) - prev_close).abs() / prev_close.where(prev_close > 0)
+            gap_ok = gap_pct.le(float(params["max_entry_gap_pct"])).fillna(False)
+            gap_ok.iloc[0] = True
 
-        stop_price = np.minimum(lows, vwap * (1.0 - float(self.params["stop_buffer_pct"])))
+        stop_price = pd.Series(np.minimum(lows.to_numpy(dtype=float), (vwap * (1.0 - float(params["stop_buffer_pct"]))).to_numpy(dtype=float)), index=index)
         stop_distance = closes - stop_price
-        stop_ok = (stop_distance > 0) & (stop_distance / closes <= float(self.params["max_stop_distance_pct"]))
-        atr_ok = np.isfinite(atr) & (atr > 0) & (stop_distance <= float(self.params["max_stop_atr_mult"]) * atr)
+        stop_ok = (stop_distance > 0) & (stop_distance / closes <= float(params["max_stop_distance_pct"]))
+        atr_ok = atr.notna() & (atr > 0) & (stop_distance <= float(params["max_stop_atr_mult"]) * atr)
 
-        warmup_bars = self._warmup_bars()
+        warmup_bars = max(
+            int(params["benchmark_ema_slow"]) * 3,
+            int(params["trend_ema_slow"]),
+            int(params["volume_window"]),
+            int(params["recent_close_window"]),
+            1,
+        )
         entries = np.zeros(len(main_frame), dtype=bool)
         session_trade_date: date | None = None
         session_trades_count = 0
 
         for idx, timestamp in enumerate(index):
-            # Mirror the live trigger's one-trade-per-session behavior.
             bar_date = timestamp.date()
             if session_trade_date != bar_date:
                 session_trade_date = bar_date
@@ -774,51 +793,47 @@ class VwapPullbackTrigger(TriggerCore):
             if idx < warmup_bars:
                 continue
             minutes_since_open = _minutes_since_rth_open_timestamp(timestamp)
-            if minutes_since_open is None or not session_ok[idx]:
+            if minutes_since_open is None or not session_ok.iloc[idx]:
                 continue
             if session_trades_count > 0:
                 continue
-            if not benchmark_ok[idx]:
+            if not bool(benchmark_ok.iloc[idx]):
                 continue
-            if np.isnan(vwap[idx]) or np.isnan(ema_fast[idx]) or np.isnan(ema_mid[idx]) or np.isnan(ema_slow[idx]):
-                continue
-            if np.isnan(atr[idx]) or np.isnan(volume_sma[idx]):
-                continue
-            if not above_vwap_ok[idx]:
-                continue
-            if not (
-                closes[idx] > vwap[idx]
-                and ema_fast[idx] > ema_mid[idx] > ema_slow[idx]
-                and vwap[idx] > vwap[idx - 1]
+            if any(
+                pd.isna(series.iloc[idx])
+                for series in (vwap, ema_fast, ema_mid, ema_slow, atr, volume_sma)
             ):
                 continue
-            if not gap_ok[idx]:
+            if not bool(above_vwap_ok.iloc[idx]):
                 continue
-            if not pullback_ok[idx]:
+            if not (
+                float(closes.iloc[idx]) > float(vwap.iloc[idx])
+                and float(ema_fast.iloc[idx]) > float(ema_mid.iloc[idx]) > float(ema_slow.iloc[idx])
+                and float(vwap.iloc[idx]) > float(vwap.iloc[idx - 1])
+            ):
                 continue
-            if not bullish_ok[idx]:
+            if not bool(gap_ok.iloc[idx]):
                 continue
-            if not close_strength_ok[idx]:
+            if not bool(pullback_ok.iloc[idx]):
                 continue
-            if not volume_ok[idx]:
+            if not bool(bullish_ok.iloc[idx]):
                 continue
-            if not stop_ok[idx]:
+            if not bool(close_strength_ok.iloc[idx]):
                 continue
-            if not atr_ok[idx]:
+            if not bool(volume_ok.iloc[idx]):
+                continue
+            if not bool(stop_ok.iloc[idx]):
+                continue
+            if not bool(atr_ok.iloc[idx]):
                 continue
 
             entries[idx] = True
             session_trades_count += 1
 
         entries_series = pd.Series(entries, index=index)
-        if isinstance(context.shared, dict):
-            context.shared["entries"] = entries_series
-            context.shared["size"] = float(self.params["stake"])
-            context.shared["vectorbt_fill_model"] = "next_bar"
-
         return VectorbtSpec(
             entries=entries_series,
-            size=float(self.params["stake"]),
+            size=float(params["stake"]),
             warmup_bars=warmup_bars,
             metadata={
                 "benchmark_ok": benchmark_ok,
@@ -826,9 +841,52 @@ class VwapPullbackTrigger(TriggerCore):
                     (closes > vwap)
                     & (ema_fast > ema_mid)
                     & (ema_mid > ema_slow)
-                    & np.r_[False, vwap[1:] > vwap[:-1]]
+                    & vwap.gt(vwap.shift(1))
                 ),
             },
+        )
+
+    def vectorbt_spec(self, context: VectorbtBuildContext) -> VectorbtSpec | None:
+        grid = broadcast_grid_from_params(context.params)
+        if not grid:
+            spec = self._vectorbt_spec_single(context, dict(self.params))
+            if spec is not None and isinstance(context.shared, dict):
+                context.shared["entries"] = spec.entries
+                context.shared["size"] = spec.size
+                context.shared["vectorbt_fill_model"] = "next_bar"
+            return spec
+
+        columns = broadcast_columns_from_grid(grid)
+        entries_frames: list[pd.Series] = []
+        size_values: list[float] = []
+        warmups: list[int] = []
+        metadata: dict[str, Any] = {}
+        for combo in broadcast_combinations(grid):
+            combo_params = dict(self.params)
+            combo_params.update(combo)
+            spec = self._vectorbt_spec_single(context, combo_params)
+            if spec is None or spec.entries is None:
+                return None
+            entries_frames.append(spec.entries.rename(tuple(combo[name] for name in grid.keys())))
+            size_values.append(float(spec.size if spec.size is not None else self.params["stake"]))
+            warmups.append(int(spec.warmup_bars))
+            metadata = spec.metadata
+
+        entries = pd.concat(entries_frames, axis=1)
+        entries.columns = columns
+        size = pd.DataFrame(
+            {column: np.full(len(context.index), size_values[idx], dtype=float) for idx, column in enumerate(columns)},
+            index=context.index,
+        )
+        if isinstance(context.shared, dict):
+            context.shared["entries"] = entries
+            context.shared["size"] = size
+            context.shared["vectorbt_fill_model"] = "next_bar"
+        return VectorbtSpec(
+            entries=entries,
+            size=size,
+            warmup_bars=max(warmups),
+            metadata=metadata,
         )
 
 

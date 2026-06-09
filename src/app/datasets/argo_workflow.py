@@ -11,7 +11,7 @@ from app.terminal_command import format_terminal_command
 _TEMPLATE_PATH = Path(__file__).with_name("datasets_workflow_template.yaml")
 _RETRY_LIMIT = 3
 _RETRY_BACKOFF = {"duration": "10s", "factor": 2, "maxDuration": "1m"}
-_RETRY_MEMORY_TIERS = ("4Gi", "8Gi", "16Gi", "32Gi")
+_RETRY_MEMORY_TIERS = ("1Gi", "2Gi", "4Gi", "8Gi")
 _DEFAULT_MAX_PODS = 4
 
 
@@ -69,7 +69,7 @@ def _apply_dataset_retry_strategy(spec: dict[str, Any]) -> None:
     templates = spec.get("templates")
     if not isinstance(templates, list):
         raise ValueError("dataset workflow template must contain a templates list")
-    retryable_templates = {"print-payload", "plan-shards", "download-shard", "combine-shards"}
+    retryable_templates = {"print-payload", "plan-shards", "aggregate-progress", "download-shard", "combine-shards"}
     for template in templates:
         if not isinstance(template, dict):
             continue
@@ -159,7 +159,5 @@ def build_dataset_workflow_spec(
     spec = workflow_template.get("spec")
     if not isinstance(spec, dict):
         raise ValueError("dataset workflow template must contain a spec mapping")
-    spec["parallelism"] = _dataset_max_pods()
     _apply_dataset_retry_strategy(spec)
     return spec
-

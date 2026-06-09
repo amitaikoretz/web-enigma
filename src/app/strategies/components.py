@@ -3,9 +3,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Sequence
 
+import pandas as pd
+
 from app.replay_debug import maybe_break_for_trade_replay
 from app.strategies.core import StrategyContext, StrategyCore, StrategyDecision
 from app.strategies.vectorbt_support import VectorbtSpec
+from app.strategies.vectorbt_support import _broadcast_series_to_frame
 
 
 class TriggerCore(ABC):
@@ -148,18 +151,9 @@ class ComposableStrategyCore(StrategyCore):
         combined_trim_portion = None
         for rule_spec in exit_specs:
             exits = getattr(rule_spec, "exits", None)
-            if exits is None:
-                pass
-            elif combined_exits is None:
-                combined_exits = exits
-            else:
-                combined_exits = combined_exits | exits
+            combined_exits = _merge_masks(combined_exits, exits)
             trim_exits = getattr(rule_spec, "trim_exits", None)
-            if trim_exits is not None:
-                if combined_trim_exits is None:
-                    combined_trim_exits = trim_exits
-                else:
-                    combined_trim_exits = combined_trim_exits | trim_exits
+            combined_trim_exits = _merge_masks(combined_trim_exits, trim_exits)
             trim_portion = getattr(rule_spec, "trim_portion", None)
             if trim_portion is not None:
                 combined_trim_portion = trim_portion
@@ -240,3 +234,19 @@ class ComposableStrategyCore(StrategyCore):
             auditor_rejection=decision.auditor_rejection,
             entry_intent=decision.entry_intent,
         )
+
+
+def _merge_masks(left: Any | None, right: Any | None) -> Any | None:
+    if right is None:
+        return left
+    if left is None:
+        return right
+    if isinstance(left, pd.DataFrame) and isinstance(right, pd.Series):
+        right = _broadcast_series_to_frame(right, left.columns)
+    elif isinstance(left, pd.Series) and isinstance(right, pd.DataFrame):
+        left = _broadcast_series_to_frame(left, right.columns)
+    elif isinstance(left, pd.DataFrame) and isinstance(right, pd.DataFrame):
+        columns = left.columns.union(right.columns)
+        left = left.reindex(columns=columns, fill_value=False)
+        right = right.reindex(columns=columns, fill_value=False)
+    return left | right

@@ -65,6 +65,7 @@ def _weighted_progress_for_nodes(plan: DatasetShardPlan, nodes: dict[str, Any]) 
     by_output_path: dict[str, dict[str, Any]] = {}
     by_shard_id: dict[str, dict[str, Any]] = {}
     combine_node: dict[str, Any] | None = None
+    aggregate_node: dict[str, Any] | None = None
     for node in nodes.values():
         if not isinstance(node, dict):
             continue
@@ -79,6 +80,18 @@ def _weighted_progress_for_nodes(plan: DatasetShardPlan, nodes: dict[str, Any]) 
                 by_output_path[output_dir] = node
         elif template_name == "combine-shards":
             combine_node = node
+        elif template_name == "aggregate-progress":
+            aggregate_node = node
+
+    if aggregate_node is not None:
+        phase = str(aggregate_node.get("phase", ""))
+        if phase == "Succeeded":
+            return 100.0
+        progress = aggregate_node.get("progress")
+        parsed = parse_argo_progress(str(progress)) if progress is not None else None
+        if parsed is not None:
+            n, m = parsed
+            return progress_fraction(n, m) * 100.0
 
     completed = 0.0
     total = 0.0
@@ -135,4 +148,3 @@ def compute_dataset_progress_pct(
     if weighted > 0:
         return weighted
     return _workflow_progress_pct(workflow)
-

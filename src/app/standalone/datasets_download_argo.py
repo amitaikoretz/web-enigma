@@ -4,6 +4,8 @@ import json
 import os
 import shlex
 import sys
+import time
+import shutil
 from datetime import date
 from pathlib import Path
 from typing import Callable
@@ -32,11 +34,20 @@ from app.data.loaders import (
     build_yahoo_data_feed_with_cache,
 )
 from app.script_logging import emit_info, emit_terminal_command
-from app.backtests.argo_progress import ARGO_PROGRESS_TOTAL, ThrottledProgressWriter, resolve_progress_file
+from app.backtests.argo_progress import (
+    ARGO_PROGRESS_TOTAL,
+    ThrottledProgressWriter,
+    parse_argo_progress,
+    progress_fraction,
+    resolve_progress_file,
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
 _DATASET_PLAN_FILENAME = "shard-plan.json"
+_SHARD_PROGRESS_FILENAME = "argo-progress.txt"
+_COMBINE_PROGRESS_FILENAME = "combine-progress.txt"
+_DEFAULT_AGGREGATE_POLL_INTERVAL_SECONDS = 2.0
 
 
 def _write_text(path: str | None, text: str) -> None:
@@ -87,6 +98,62 @@ def _frame_with_timestamp_column(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _log(message: str) -> None:
     emit_info("dataset-download", message, script="datasets_download_argo")
+
+
+def _progress_file_for_shard(output_dir: str | Path) -> Path:
+    return Path(output_dir) / _SHARD_PROGRESS_FILENAME
+
+
+def _progress_file_for_combine(output_dir: str | Path) -> Path:
+    return Path(output_dir) / _COMBINE_PROGRESS_FILENAME
+
+
+def _read_progress_fraction(path: Path) -> float:
+    if not path.exists():
+        return 0.0
+    try:
+        parsed = parse_argo_progress(path.read_text(encoding="utf-8"))
+    except OSError:
+        return 0.0
+    if parsed is None:
+        return 0.0
+    completed, total = parsed
+    return progress_fraction(completed, total)
+
+
+def _shard_progress_fraction(shard: DatasetShardPlan, *, final_complete: bool) -> float:
+    progress_path = _progress_file_for_shard(shard.output_dir)
+    if progress_path.exists():
+        return _read_progress_fraction(progress_path)
+    return 1.0 if final_complete else 0.0
+
+
+def _aggregate_progress_pct(shard_plan: DatasetShardPlan) -> int:
+    total_units = float(max(1, shard_plan.combine_weight_units))
+    completed_units = 0.0
+    final_complete = _aggregate_progress_complete(shard_plan)
+
+    for shard in shard_plan.shards:
+        shard_progress = _shard_progress_fraction(shard, final_complete=final_complete)
+        total_units += float(max(1, shard.work_units))
+        completed_units += shard_progress * float(max(1, shard.work_units))
+
+    combine_progress = _read_progress_fraction(_progress_file_for_combine(shard_plan.output_dir))
+    if combine_progress > 0.0:
+        completed_units += combine_progress * float(max(1, shard_plan.combine_weight_units))
+    elif Path(shard_plan.dataset_output_path).exists() and Path(shard_plan.dataset_manifest_path).exists():
+        completed_units += float(max(1, shard_plan.combine_weight_units))
+
+    if total_units <= 0:
+        return 0
+    return max(0, min(ARGO_PROGRESS_TOTAL, round((completed_units / total_units) * ARGO_PROGRESS_TOTAL)))
+
+
+def _aggregate_progress_complete(shard_plan: DatasetShardPlan) -> bool:
+    final_paths = [Path(shard_plan.dataset_output_path), Path(shard_plan.dataset_manifest_path)]
+    if shard_plan.options_enabled and shard_plan.options_output_path and shard_plan.options_manifest_path:
+        final_paths.extend([Path(shard_plan.options_output_path), Path(shard_plan.options_manifest_path)])
+    return all(path.exists() for path in final_paths)
 
 
 def _canonical_dataset_paths(
@@ -403,7 +470,7 @@ def _legacy_download_bundle(
             options_frame["symbol"] = symbol_normalized
             return options_frame
 
-        options_slug = "-".join(symbols_normalized)
+        options_slug = dataset_slug(symbols_normalized)
         options_parquet_path = out_dir / f"{options_slug}-alpaca-options-{resolution}.parquet"
         options_manifest = out_dir / f"{options_slug}-alpaca-options-{resolution}.manifest.json"
         _log(f"Saving options parquet to {options_parquet_path}")
@@ -415,24 +482,24 @@ def _legacy_download_bundle(
         )
         _log(f"Saving options manifest to {options_manifest}")
         options_manifest.write_text(
-            json.dumps(
-                {
-                    "symbol": symbols_normalized[0],
-                    "symbols": symbols_normalized,
-                    "provider": "alpaca-options",
-                    "resolution": resolution,
-                    "start_date": start.isoformat(),
-                    "end_date": end.isoformat(),
-                    "row_count": options_row_count,
-                    "dataset_path": str(options_parquet_path),
-                },
-                indent=2,
-            ),
+            _dataset_manifest(
+                dataset_kind="options",
+                dataset_id=out_dir.name or "dataset",
+                symbols=symbols_normalized,
+                provider="alpaca-options",
+                resolution=resolution,
+                start_date=start,
+                end_date=end,
+                output_path=options_parquet_path,
+                plan_path="",
+                row_count=options_row_count,
+                total_size_bytes=options_parquet_path.stat().st_size,
+            ).model_dump_json(indent=2),
             encoding="utf-8",
         )
 
     _log("Saving dataset parquet")
-    dataset_slug_value = "-".join(symbols_normalized)
+    dataset_slug_value = dataset_slug(symbols_normalized)
     parquet_path = out_dir / f"{dataset_slug_value}-{provider_normalized}-{resolution}.parquet"
     manifest_path = out_dir / f"{dataset_slug_value}-{provider_normalized}-{resolution}.manifest.json"
     row_count = _write_parquet_from_frames(
@@ -444,19 +511,19 @@ def _legacy_download_bundle(
     _log(f"Downloaded frame with {row_count} rows")
     _log(f"Saving manifest to {manifest_path}")
     manifest_path.write_text(
-        json.dumps(
-            {
-                "symbol": symbols_normalized[0],
-                "symbols": symbols_normalized,
-                "provider": provider_normalized,
-                "resolution": resolution,
-                "start_date": start.isoformat(),
-                "end_date": end.isoformat(),
-                "row_count": row_count,
-                "dataset_path": str(parquet_path),
-            },
-            indent=2,
-        ),
+        _dataset_manifest(
+            dataset_kind="market",
+            dataset_id=out_dir.name or "dataset",
+            symbols=symbols_normalized,
+            provider=provider_normalized,
+            resolution=resolution,
+            start_date=start,
+            end_date=end,
+            output_path=parquet_path,
+            plan_path="",
+            row_count=row_count,
+            total_size_bytes=parquet_path.stat().st_size,
+        ).model_dump_json(indent=2),
         encoding="utf-8",
     )
 
@@ -605,6 +672,16 @@ def _combine_dataset_kind(
             temp_output.unlink()
         if progress_writer is not None:
             progress_writer.write_immediate(max(1, completed_shards))
+
+
+def _cleanup_shard_artifacts(shard_plan: DatasetShardPlan) -> None:
+    shards_root = Path(shard_plan.output_dir) / "shards"
+    for shard in shard_plan.shards:
+        shard_dir = Path(shard.output_dir)
+        if shard_dir.exists():
+            shutil.rmtree(shard_dir)
+    if shards_root.exists() and not any(shards_root.iterdir()):
+        shards_root.rmdir()
 
 
 @app.command(help="Argo-safe dataset downloader that writes parquet artifacts to shared storage.")
@@ -779,10 +856,39 @@ def download_shard_command(
         options_frame_loader=options_loader,
         progress_total_units=progress_total_units,
         progress_symbol_units=progress_symbol_units,
-        progress_file=None,
+        progress_file=str(_progress_file_for_shard(shard_dir)),
         shard_label=shard_id,
     )
     _log(f"Completed shard {shard_id}")
+
+
+@app.command("aggregate-progress", help="Aggregate shard progress into a workflow-level progress stream.")
+def aggregate_progress_command(
+    plan_path: str = typer.Option(..., "--plan-path"),
+    poll_interval_seconds: float = typer.Option(
+        _DEFAULT_AGGREGATE_POLL_INTERVAL_SECONDS,
+        "--poll-interval-seconds",
+    ),
+    terminal_command_out: str = typer.Option("/tmp/terminal-command.txt", "--terminal-command-out"),
+) -> None:
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="datasets_download_argo")
+
+    shard_plan = DatasetShardPlan.model_validate_json(Path(plan_path).read_text(encoding="utf-8"))
+    progress_path = resolve_progress_file(None)
+    progress_writer = ThrottledProgressWriter(progress_path) if progress_path is not None else None
+    if progress_writer is not None:
+        progress_writer.write_immediate(0)
+
+    interval = max(0.1, float(poll_interval_seconds))
+    while True:
+        aggregate_pct = _aggregate_progress_pct(shard_plan)
+        if progress_writer is not None:
+            progress_writer.write(aggregate_pct)
+        if aggregate_pct >= ARGO_PROGRESS_TOTAL and _aggregate_progress_complete(shard_plan):
+            if progress_writer is not None:
+                progress_writer.write_immediate(ARGO_PROGRESS_TOTAL)
+            return
+        time.sleep(interval)
 
 
 @app.command("combine-shards", help="Combine shard parquet files into the final dataset parquet(s).")
@@ -801,12 +907,13 @@ def combine_shards_command(
     _write_text(options_manifest_path_out, "")
 
     shard_plan = DatasetShardPlan.model_validate_json(Path(plan_path).read_text(encoding="utf-8"))
+    progress_file = str(_progress_file_for_combine(shard_plan.output_dir))
     market_manifest = _combine_dataset_kind(
         shard_plan=shard_plan,
         dataset_kind="market",
         final_output_path=Path(shard_plan.dataset_output_path),
         final_manifest_path=Path(shard_plan.dataset_manifest_path),
-        progress_file=None,
+        progress_file=progress_file,
     )
     if market_manifest is None:
         raise RuntimeError("Market dataset combine unexpectedly returned no manifest")
@@ -820,11 +927,13 @@ def combine_shards_command(
             dataset_kind="options",
             final_output_path=Path(shard_plan.options_output_path),
             final_manifest_path=Path(shard_plan.options_manifest_path),
-            progress_file=None,
+            progress_file=progress_file,
         )
         if options_manifest is not None:
             _write_text(options_dataset_path_out, str(shard_plan.options_output_path))
             _write_text(options_manifest_path_out, str(shard_plan.options_manifest_path))
+
+    _cleanup_shard_artifacts(shard_plan)
 
 
 if __name__ == "__main__":

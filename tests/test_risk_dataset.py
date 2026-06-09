@@ -142,6 +142,15 @@ def _write_sidecar_report(
     return report_path
 
 
+def test_risk_dataset_package_exports_import_without_cycles() -> None:
+    from app.backtests import BacktestArtifactStore
+    from app.risk.dataset import RiskDatasetReader, build_risk_dataset
+
+    assert RiskDatasetReader.__name__ == "RiskDatasetReader"
+    assert build_risk_dataset.__name__ == "build_risk_dataset"
+    assert BacktestArtifactStore.__name__ == "BacktestArtifactStore"
+
+
 def test_load_candidates_fails_when_empty(tmp_path: Path):
     report_path = tmp_path / "empty.json"
     _write_candidate_report(report_path, [])

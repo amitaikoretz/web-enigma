@@ -339,6 +339,8 @@ class DatasetJob(Base):
     output_dir: Mapped[str] = mapped_column(Text, nullable=False)
     dataset_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    options_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    options_manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -29,6 +29,18 @@ def _normalize_symbols_from_item(item: DatasetListItem) -> list[str]:
     return normalized
 
 
+def _artifact_slug(item: DatasetListItem) -> str:
+    symbols = item.symbols or ([item.symbol] if item.symbol.strip() else [])
+    normalized = _normalize_symbols_from_item(item) if symbols else []
+    return "-".join(normalized) if normalized else (item.symbol.strip().upper() or item.id)
+
+
+def _artifact_directories(item: DatasetListItem, root: Path) -> list[Path]:
+    dated_dir = root / item.created_at.date().isoformat() / item.id
+    legacy_dir = root / item.id
+    return [dated_dir, legacy_dir] if dated_dir != legacy_dir else [legacy_dir]
+
+
 @dataclass(frozen=True)
 class DatasetArtifactPaths:
     dataset_parquet_path: str | None = None
@@ -56,6 +68,8 @@ class SqlAlchemyDatasetRepository:
                 output_dir=item.output_dir,
                 dataset_parquet_path=item.dataset_parquet_path,
                 manifest_path=item.manifest_path,
+                options_parquet_path=item.options_parquet_path,
+                options_manifest_path=item.options_manifest_path,
                 error_message=item.error_message,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
@@ -81,6 +95,8 @@ class SqlAlchemyDatasetRepository:
             row.output_dir = item.output_dir
             row.dataset_parquet_path = item.dataset_parquet_path
             row.manifest_path = item.manifest_path
+            row.options_parquet_path = item.options_parquet_path
+            row.options_manifest_path = item.options_manifest_path
             row.error_message = item.error_message
             row.updated_at = _utc_now()
             session.commit()
@@ -114,6 +130,8 @@ class SqlAlchemyDatasetRepository:
                 output_dir=row.output_dir,
                 dataset_parquet_path=row.dataset_parquet_path,
                 manifest_path=row.manifest_path,
+                options_parquet_path=row.options_parquet_path,
+                options_manifest_path=row.options_manifest_path,
                 error_message=row.error_message,
                 progress_pct=100.0 if row.status in {"completed", "failed"} else 0.0,
             )
@@ -145,6 +163,8 @@ class SqlAlchemyDatasetRepository:
                     output_dir=row.output_dir,
                     dataset_parquet_path=row.dataset_parquet_path,
                     manifest_path=row.manifest_path,
+                    options_parquet_path=row.options_parquet_path,
+                    options_manifest_path=row.options_manifest_path,
                     error_message=row.error_message,
                     progress_pct=100.0 if row.status in {"completed", "failed"} else 0.0,
                 )
@@ -184,6 +204,8 @@ class SqlAlchemyDatasetRepository:
                 output_dir=row.output_dir,
                 dataset_parquet_path=row.dataset_parquet_path,
                 manifest_path=row.manifest_path,
+                options_parquet_path=row.options_parquet_path,
+                options_manifest_path=row.options_manifest_path,
                 error_message=row.error_message,
                 progress_pct=100.0 if row.status in {"completed", "failed"} else 0.0,
             )
@@ -191,13 +213,44 @@ class SqlAlchemyDatasetRepository:
             session.commit()
             return item
 
-    def delete_artifacts(self, item: DatasetListItem) -> None:
-        dataset_dir = Path(item.output_dir) / item.id
-        if dataset_dir.is_dir():
-            shutil.rmtree(dataset_dir)
-        for path_str in [item.dataset_parquet_path, item.manifest_path]:
-            if not path_str:
+    def delete_artifacts(self, item: DatasetListItem) -> bool:
+        deleted = False
+
+        candidates: list[Path] = []
+        if item.output_dir:
+            root = Path(item.output_dir).resolve()
+            candidates.extend(_artifact_directories(item, root))
+            artifact_slug = _artifact_slug(item)
+            candidates.extend(
+                [
+                    root / f"{artifact_slug}-{item.provider}-{item.resolution}.parquet",
+                    root / f"{artifact_slug}-{item.provider}-{item.resolution}.manifest.json",
+                    root / f"{artifact_slug}-alpaca-options-{item.resolution}.parquet",
+                    root / f"{artifact_slug}-alpaca-options-{item.resolution}.manifest.json",
+                ]
+            )
+
+        for path_str in [
+            item.dataset_parquet_path,
+            item.manifest_path,
+            item.options_parquet_path,
+            item.options_manifest_path,
+        ]:
+            if path_str:
+                candidates.append(Path(path_str))
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            resolved = str(candidate)
+            if resolved in seen:
                 continue
-            path = Path(path_str)
-            if path.is_file():
-                path.unlink()
+            seen.add(resolved)
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
+                deleted = True
+                continue
+            if candidate.is_file():
+                candidate.unlink()
+                deleted = True
+
+        return deleted

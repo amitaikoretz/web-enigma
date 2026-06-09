@@ -10,6 +10,7 @@ import pytest
 from app.strategies.components import ComposableStrategyCore
 from app.strategies.factory import build_strategy_core
 from app.strategies.exit_rules import ExitRulesSelection
+from app.strategies.vectorbt_indicators import run_sma
 from app.strategies.vectorbt_support import VectorbtBuildContext, build_portfolio_from_spec
 from app.strategies.yaml_io import load_exit_rules_selection, load_trigger_selection
 
@@ -274,3 +275,34 @@ def test_existing_vectorbt_strategies_still_build_with_extended_spec_shape():
     assert spec is not None
     assert spec.trim_exits is None
     assert spec.entries is not None
+
+
+def test_vectorbt_indicator_helpers_broadcast_windows():
+    data = pd.Series([1.0, 2.0, 3.0, 4.0, 5.0], index=pd.date_range("2024-01-01", periods=5, freq="D"))
+    result = run_sma(data, [2, 3], param_product=True)
+
+    assert isinstance(result, pd.DataFrame)
+    assert result.columns.tolist() == [2, 3]
+    assert result.iloc[2, 0] == pytest.approx(2.5)
+    assert result.iloc[4, 1] == pytest.approx(4.0)
+
+
+def test_vectorbt_build_portfolio_supports_broadcasted_strategy_grid():
+    trigger = load_trigger_selection(str(REPO_ROOT / "examples/triggers/buy_and_hold.yaml"), base_dir=REPO_ROOT)
+    exit_rules = ExitRulesSelection.model_validate(
+        {"rules": [{"name": "max_hold_bars", "params": {"max_hold_bars": 2}}]}
+    )
+    core = build_strategy_core(trigger=trigger, exit_rules=exit_rules)
+    data = _make_intraday_frame(total_bars=6)
+    context = _vectorbt_context(data, None)
+    context.params["broadcast"] = {"stake": [1.0, 2.0], "max_hold_bars": [1, 2]}
+
+    spec = core.vectorbt_spec(context)
+    assert spec is not None
+    assert isinstance(spec.entries, pd.DataFrame)
+    assert spec.entries.columns.names == ["stake", "max_hold_bars"]
+    assert spec.entries.iloc[0].sum() == 4
+
+    portfolio = build_portfolio_from_spec(spec, context, init_cash=10_000.0, fill_model="next_bar", freq="5min")
+
+    assert len(portfolio.orders.records_readable) == 8

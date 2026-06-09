@@ -244,21 +244,39 @@ class MaxHoldBarsExit(ExitRuleCore):
         entries = context.shared.get("entries")
         if entries is None:
             return None
-        entry_mask = mask_like(entries, context.index).to_numpy(dtype=bool)
-        exits = np.zeros(len(context.index), dtype=bool)
-        in_trade = False
-        entry_index = -1
         max_hold_bars = int(self.params["max_hold_bars"])
-        for idx, is_entry in enumerate(entry_mask):
-            if not in_trade and is_entry:
-                in_trade = True
-                entry_index = idx
-                continue
-            if in_trade and idx - entry_index >= max_hold_bars:
-                exits[idx] = True
-                in_trade = False
-                entry_index = -1
+        if isinstance(entries, pd.DataFrame):
+            exits = pd.DataFrame(index=context.index, columns=entries.columns, dtype=bool)
+            for column in entries.columns:
+                column_max_hold = max_hold_bars
+                if isinstance(entries.columns, pd.MultiIndex) and "max_hold_bars" in entries.columns.names:
+                    column_max_hold = int(column[entries.columns.names.index("max_hold_bars")])
+                exits[column] = _max_hold_exit_mask(
+                    entries[column].astype(bool).to_numpy(dtype=bool),
+                    len(context.index),
+                    column_max_hold,
+                )
+            return VectorbtSpec(exits=exits, warmup_bars=max_hold_bars)
+
+        entry_mask = mask_like(entries, context.index).to_numpy(dtype=bool)
+        exits = _max_hold_exit_mask(entry_mask, len(context.index), max_hold_bars)
         return VectorbtSpec(exits=exits, warmup_bars=max_hold_bars)
+
+
+def _max_hold_exit_mask(entry_mask: np.ndarray, length: int, max_hold_bars: int) -> np.ndarray:
+    exits = np.zeros(length, dtype=bool)
+    in_trade = False
+    entry_index = -1
+    for idx, is_entry in enumerate(entry_mask):
+        if not in_trade and is_entry:
+            in_trade = True
+            entry_index = idx
+            continue
+        if in_trade and idx - entry_index >= max_hold_bars:
+            exits[idx] = True
+            in_trade = False
+            entry_index = -1
+    return exits
 
 
 class SmaCrossDownExit(ExitRuleCore):
@@ -546,74 +564,52 @@ class VwapPullbackManageExit(ExitRuleCore):
         if not bars:
             return None
 
-        index = context.index
-        entry_mask = mask_like(entries, index).to_numpy(dtype=bool)
         closes = _closes(bars)
         highs = _highs(bars)
         lows = _lows(bars)
         opens = np.asarray([bar.open for bar in bars], dtype=float)
         vwap = _session_vwap(bars)
         ema9 = _ema(closes, 9)
+        index = context.index
 
-        trim_mask = np.zeros(len(bars), dtype=bool)
-        exit_mask = np.zeros(len(bars), dtype=bool)
-        entry_price: float | None = None
-        initial_stop: float | None = None
-        signal_low: float | None = None
-        signal_vwap: float | None = None
-        entry_exec_idx: int | None = None
-        trimmed = False
-        breakeven_armed = False
-        pending_entry_idx: int | None = None
+        def build_masks(entry_mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            trim_mask = np.zeros(len(bars), dtype=bool)
+            exit_mask = np.zeros(len(bars), dtype=bool)
+            entry_price: float | None = None
+            initial_stop: float | None = None
+            signal_low: float | None = None
+            signal_vwap: float | None = None
+            entry_exec_idx: int | None = None
+            trimmed = False
+            breakeven_armed = False
+            pending_entry_idx: int | None = None
 
-        for idx, bar in enumerate(bars):
-            if pending_entry_idx is not None and idx == pending_entry_idx:
-                entry_price = float(opens[idx])
-                if signal_low is None:
-                    signal_low = float(lows[idx])
-                if signal_vwap is None or np.isnan(signal_vwap):
-                    signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
-                initial_stop = min(
-                    signal_low,
-                    signal_vwap * (1.0 - float(self.params["stop_buffer_pct"])),
-                )
-                entry_exec_idx = idx
-                trimmed = False
-                breakeven_armed = False
-                pending_entry_idx = None
+            for idx, bar in enumerate(bars):
+                if pending_entry_idx is not None and idx == pending_entry_idx:
+                    entry_price = float(opens[idx])
+                    if signal_low is None:
+                        signal_low = float(lows[idx])
+                    if signal_vwap is None or np.isnan(signal_vwap):
+                        signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
+                    initial_stop = min(
+                        signal_low,
+                        signal_vwap * (1.0 - float(self.params["stop_buffer_pct"])),
+                    )
+                    entry_exec_idx = idx
+                    trimmed = False
+                    breakeven_armed = False
+                    pending_entry_idx = None
 
-            position_open = entry_price is not None and initial_stop is not None and entry_exec_idx is not None
-            if not position_open:
-                if entry_mask[idx]:
-                    signal_low = float(lows[idx])
-                    signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
-                    pending_entry_idx = idx + 1
-                continue
-
-            close = float(closes[idx])
-            if close <= float(initial_stop):
-                exit_mask[idx] = True
-                entry_price = None
-                initial_stop = None
-                signal_low = None
-                signal_vwap = None
-                entry_exec_idx = None
-                trimmed = False
-                breakeven_armed = False
-                pending_entry_idx = None
-                continue
-
-            if not trimmed:
-                one_r = float(entry_price) + (float(entry_price) - float(initial_stop))
-                if close >= one_r:
-                    trim_mask[idx] = True
-                    trimmed = True
-                    breakeven_armed = True
+                position_open = entry_price is not None and initial_stop is not None and entry_exec_idx is not None
+                if not position_open:
+                    if entry_mask[idx]:
+                        signal_low = float(lows[idx])
+                        signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
+                        pending_entry_idx = idx + 1
                     continue
 
-            if breakeven_armed:
-                breakeven_stop = float(entry_price) * (1.0 + float(self.params["breakeven_buffer_pct"]))
-                if close <= breakeven_stop:
+                close = float(closes[idx])
+                if close <= float(initial_stop):
                     exit_mask[idx] = True
                     entry_price = None
                     initial_stop = None
@@ -625,57 +621,104 @@ class VwapPullbackManageExit(ExitRuleCore):
                     pending_entry_idx = None
                     continue
 
-            if close < float(ema9[idx]):
-                exit_mask[idx] = True
-                entry_price = None
-                initial_stop = None
-                signal_low = None
-                signal_vwap = None
-                entry_exec_idx = None
-                trimmed = False
-                breakeven_armed = False
-                pending_entry_idx = None
-                continue
-            if close < float(vwap[idx]):
-                exit_mask[idx] = True
-                entry_price = None
-                initial_stop = None
-                signal_low = None
-                signal_vwap = None
-                entry_exec_idx = None
-                trimmed = False
-                breakeven_armed = False
-                pending_entry_idx = None
-                continue
-            if idx - int(entry_exec_idx) + 1 >= int(self.params["time_stop_bars"]):
-                exit_mask[idx] = True
-                entry_price = None
-                initial_stop = None
-                signal_low = None
-                signal_vwap = None
-                entry_exec_idx = None
-                trimmed = False
-                breakeven_armed = False
-                pending_entry_idx = None
-                continue
-            minutes_since_open = _minutes_since_rth_open(bar)
-            if minutes_since_open is not None and minutes_since_open >= int(self.params["eod_flatten_minutes"]):
-                exit_mask[idx] = True
-                entry_price = None
-                initial_stop = None
-                signal_low = None
-                signal_vwap = None
-                entry_exec_idx = None
-                trimmed = False
-                breakeven_armed = False
-                pending_entry_idx = None
-                continue
+                if not trimmed:
+                    one_r = float(entry_price) + (float(entry_price) - float(initial_stop))
+                    if close >= one_r:
+                        trim_mask[idx] = True
+                        trimmed = True
+                        breakeven_armed = True
+                        continue
 
-            if entry_mask[idx]:
-                signal_low = float(lows[idx])
-                signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
-                pending_entry_idx = idx + 1
+                if breakeven_armed:
+                    breakeven_stop = float(entry_price) * (1.0 + float(self.params["breakeven_buffer_pct"]))
+                    if close <= breakeven_stop:
+                        exit_mask[idx] = True
+                        entry_price = None
+                        initial_stop = None
+                        signal_low = None
+                        signal_vwap = None
+                        entry_exec_idx = None
+                        trimmed = False
+                        breakeven_armed = False
+                        pending_entry_idx = None
+                        continue
 
+                if close < float(ema9[idx]):
+                    exit_mask[idx] = True
+                    entry_price = None
+                    initial_stop = None
+                    signal_low = None
+                    signal_vwap = None
+                    entry_exec_idx = None
+                    trimmed = False
+                    breakeven_armed = False
+                    pending_entry_idx = None
+                    continue
+                if close < float(vwap[idx]):
+                    exit_mask[idx] = True
+                    entry_price = None
+                    initial_stop = None
+                    signal_low = None
+                    signal_vwap = None
+                    entry_exec_idx = None
+                    trimmed = False
+                    breakeven_armed = False
+                    pending_entry_idx = None
+                    continue
+                if idx - int(entry_exec_idx) + 1 >= int(self.params["time_stop_bars"]):
+                    exit_mask[idx] = True
+                    entry_price = None
+                    initial_stop = None
+                    signal_low = None
+                    signal_vwap = None
+                    entry_exec_idx = None
+                    trimmed = False
+                    breakeven_armed = False
+                    pending_entry_idx = None
+                    continue
+                minutes_since_open = _minutes_since_rth_open(bar)
+                if minutes_since_open is not None and minutes_since_open >= int(self.params["eod_flatten_minutes"]):
+                    exit_mask[idx] = True
+                    entry_price = None
+                    initial_stop = None
+                    signal_low = None
+                    signal_vwap = None
+                    entry_exec_idx = None
+                    trimmed = False
+                    breakeven_armed = False
+                    pending_entry_idx = None
+                    continue
+
+                if entry_mask[idx]:
+                    signal_low = float(lows[idx])
+                    signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
+                    pending_entry_idx = idx + 1
+
+            return trim_mask, exit_mask
+
+        if isinstance(entries, pd.DataFrame):
+            trim_frame = pd.DataFrame(index=index, columns=entries.columns, dtype=bool)
+            exit_frame = pd.DataFrame(index=index, columns=entries.columns, dtype=bool)
+            for column in entries.columns:
+                trim_mask, exit_mask = build_masks(mask_like(entries[column], index).to_numpy(dtype=bool))
+                trim_frame[column] = trim_mask
+                exit_frame[column] = exit_mask
+            if isinstance(context.shared, dict):
+                context.shared["trim_exits"] = trim_frame
+                context.shared["exits"] = exit_frame
+            return VectorbtSpec(
+                exits=exit_frame,
+                trim_exits=trim_frame,
+                trim_portion=float(self.params["partial_trim_portion"]),
+                warmup_bars=10,
+                metadata={
+                    "trim_count": int(trim_frame.to_numpy(dtype=bool).sum()),
+                    "exit_count": int(exit_frame.to_numpy(dtype=bool).sum()),
+                },
+            )
+
+        entry_mask = mask_like(entries, index).to_numpy(dtype=bool)
+        trim_mask, exit_mask = build_masks(entry_mask)
         if isinstance(context.shared, dict):
             context.shared["trim_exits"] = pd.Series(trim_mask, index=index)
             context.shared["exits"] = pd.Series(exit_mask, index=index)

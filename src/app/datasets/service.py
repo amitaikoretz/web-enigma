@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 import logging
 import os
@@ -28,6 +29,10 @@ from app.settings.service import PlatformSettingsService
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _dataset_output_subdir(dataset_id: str, created_at: datetime) -> str:
+    return f"{created_at.date().isoformat()}/{dataset_id}"
 
 
 def _normalize_symbols(symbols: list[str], fallback_symbol: str | None = None) -> list[str]:
@@ -135,11 +140,12 @@ class DatasetService:
         )
         self.repository.create(item)
         try:
+            workflow_output_dir = workflow_output_dir / _dataset_output_subdir(dataset_id, created_at)
             workflow_name, namespace = self._submit_workflow(
                 dataset_id=dataset_id,
                 payload=payload,
                 symbols=symbols,
-                output_dir=workflow_output_dir / dataset_id,
+                output_dir=workflow_output_dir,
             )
             self.repository.update(
                 item.model_copy(
@@ -261,7 +267,7 @@ class DatasetService:
             return None
         phase = self.get_argo_phase(dataset_id)
         payload = item.model_dump()
-        payload["progress_pct"] = 100.0 if item.status in {"completed", "failed"} else 0.0
+        payload["progress_pct"] = item.progress_pct
         return DatasetStatusResponse(
             **payload,
             is_terminal=item.status in {"completed", "failed"},
@@ -368,9 +374,9 @@ class DatasetService:
         item = self.repository.get(dataset_id)
         if item is None:
             return False
-        self.repository.delete_artifacts(item)
+        deleted_artifacts = self.repository.delete_artifacts(item)
         deleted = self.repository.delete(dataset_id)
-        return deleted is not None
+        return deleted is not None or deleted_artifacts
 
     def get_dataset_parquet_path(self, dataset_id: str) -> Path | None:
         item = self.repository.get(dataset_id)
@@ -419,13 +425,167 @@ class DatasetService:
             return path
         return host_root / relative
 
+    def _artifact_root_candidates(self, item: DatasetListItem) -> list[Path]:
+        roots: list[Path] = []
+        settings_path = getattr(self.settings_service, "path", None)
+        candidates = [
+            Path(item.output_dir),
+            Path(workflow_results_mount()),
+            Path.cwd() / "data" / "backtest-results",
+        ]
+        if settings_path is not None:
+            candidates.append(Path(settings_path).parent.parent)
+        for candidate in candidates:
+            try:
+                resolved = candidate.expanduser().resolve()
+            except OSError:
+                continue
+            if resolved not in roots:
+                roots.append(resolved)
+        return roots
+
+    def _artifact_directories(self, item: DatasetListItem, root: Path) -> list[Path]:
+        dated_dir = root / item.created_at.date().isoformat() / item.id
+        legacy_dir = root / item.id
+        return [dated_dir, legacy_dir] if dated_dir != legacy_dir else [legacy_dir]
+
+    def _translate_from_workflow_mount(self, item: DatasetListItem, path: Path, *, host_root: Path) -> Path:
+        workflow_root = Path(workflow_results_mount()).resolve()
+        try:
+            relative = path.resolve().relative_to(workflow_root)
+        except ValueError:
+            return path
+        return host_root / relative
+
+    def _load_manifest_payload(self, path: Path) -> dict[str, object] | None:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+    def _is_matching_artifact_manifest(self, item: DatasetListItem, path: Path, *, dataset_kind: str) -> bool:
+        payload = self._load_manifest_payload(path)
+        if not isinstance(payload, dict):
+            return False
+        if payload.get("dataset_id") != item.id:
+            return False
+        if payload.get("dataset_kind") != dataset_kind:
+            return False
+        return True
+
+    def _resolve_manifest_path_from_roots(
+        self,
+        item: DatasetListItem,
+        *,
+        dataset_kind: str,
+        preferred_path: Path | None,
+        fallback_name: str,
+    ) -> Path | None:
+        if dataset_kind == "market":
+            candidate_names = [
+                fallback_name,
+                f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.manifest.json",
+                "manifest.json",
+                "market.manifest.json",
+            ]
+        else:
+            candidate_names = [
+                fallback_name,
+                f"{_artifact_slug(item)}-alpaca-options-{item.resolution}.manifest.json",
+                "manifest.json",
+                "options.manifest.json",
+            ]
+        seen_paths: set[Path] = set()
+        roots = self._artifact_root_candidates(item)
+        for root in roots:
+            for artifact_dir in self._artifact_directories(item, root):
+                candidate_paths: list[Path] = []
+                if preferred_path is not None:
+                    candidate_paths.append(self._translate_from_workflow_mount(item, preferred_path, host_root=root))
+                candidate_paths.append(artifact_dir / fallback_name)
+                candidate_paths.append(artifact_dir / "manifest.json")
+                for name in candidate_names:
+                    candidate_paths.append(artifact_dir / name)
+                for candidate in artifact_dir.glob("*.manifest.json"):
+                    candidate_paths.append(candidate)
+
+                for candidate in candidate_paths:
+                    if candidate in seen_paths:
+                        continue
+                    seen_paths.add(candidate)
+                    if candidate.is_file():
+                        if candidate.name in candidate_names or candidate.name == "manifest.json":
+                            return candidate
+                        if self._is_matching_artifact_manifest(item, candidate, dataset_kind=dataset_kind):
+                            return candidate
+        return None
+
+    def _resolve_dataset_artifact_from_roots(
+        self,
+        item: DatasetListItem,
+        *,
+        dataset_kind: str,
+        stored_path: str | None,
+        fallback_name: str,
+        preferred_manifest_path: str | None = None,
+    ) -> tuple[Path | None, Path | None]:
+        roots = self._artifact_root_candidates(item)
+        candidate_paths: list[Path] = []
+        if stored_path:
+            candidate_paths.append(Path(stored_path))
+        for root in roots:
+            for artifact_dir in self._artifact_directories(item, root):
+                candidate_paths.append(artifact_dir / fallback_name)
+                candidate_paths.append(artifact_dir / "dataset.parquet" if dataset_kind == "market" else artifact_dir / "options.parquet")
+                if stored_path:
+                    candidate_paths.append(self._translate_from_workflow_mount(item, Path(stored_path), host_root=root))
+
+        for candidate in candidate_paths:
+            if candidate.is_file():
+                manifest_path = candidate.with_suffix(".manifest.json")
+                if manifest_path.is_file() and self._is_matching_artifact_manifest(item, manifest_path, dataset_kind=dataset_kind):
+                    return candidate, manifest_path
+                found_manifest = self._resolve_manifest_path_from_roots(
+                    item,
+                    dataset_kind=dataset_kind,
+                    preferred_path=Path(preferred_manifest_path) if preferred_manifest_path else None,
+                    fallback_name=manifest_path.name,
+                )
+                return candidate, found_manifest
+
+        manifest_path = None
+        if stored_path:
+            manifest_path = Path(stored_path).with_suffix(".manifest.json")
+            if not manifest_path.is_file():
+                manifest_path = None
+        found_manifest = self._resolve_manifest_path_from_roots(
+            item,
+            dataset_kind=dataset_kind,
+            preferred_path=Path(preferred_manifest_path) if preferred_manifest_path else manifest_path,
+            fallback_name=fallback_name.replace(".parquet", ".manifest.json"),
+        )
+        if found_manifest is None:
+            return None, None
+
+        manifest_payload = self._load_manifest_payload(found_manifest)
+        output_path = None
+        if isinstance(manifest_payload, dict):
+            raw_output_path = manifest_payload.get("output_path")
+            if isinstance(raw_output_path, str) and raw_output_path.strip():
+                translated = self._translate_from_workflow_mount(item, Path(raw_output_path), host_root=found_manifest.parent.parent)
+                output_path = translated if translated.is_file() else Path(raw_output_path)
+        if output_path is not None and output_path.is_file():
+            return output_path, found_manifest
+        return None, found_manifest
+
     def _resolve_artifact_path(self, item: DatasetListItem, path_str: str | None, fallback_name: str) -> Path | None:
         candidate_paths: list[Path] = []
         if path_str:
             candidate_paths.append(self._resolve_dataset_path(item, Path(path_str)))
         if item.output_dir:
-            dataset_dir = Path(item.output_dir).resolve() / item.id
-            candidate_paths.append(dataset_dir / fallback_name)
+            dataset_root = Path(item.output_dir).resolve()
+            for dataset_dir in self._artifact_directories(item, dataset_root):
+                candidate_paths.append(dataset_dir / fallback_name)
         if item.output_dir:
             candidate_paths.append(Path(item.output_dir) / fallback_name)
         for path in candidate_paths:
@@ -434,26 +594,63 @@ class DatasetService:
         return None
 
     def _resolve_dataset_parquet_path(self, item: DatasetListItem) -> Path | None:
-        return self._resolve_artifact_path(item, item.dataset_parquet_path, f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.parquet")
+        resolved, _manifest = self._resolve_dataset_artifact_from_roots(
+            item,
+            dataset_kind="market",
+            stored_path=item.dataset_parquet_path,
+            fallback_name=f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.parquet",
+            preferred_manifest_path=item.manifest_path,
+        )
+        return resolved
 
     def _resolve_dataset_manifest_path(self, item: DatasetListItem) -> Path | None:
-        manifest_name = f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.manifest.json"
-        if item.dataset_parquet_path:
-            parquet_path = self._resolve_dataset_path(item, Path(item.dataset_parquet_path))
-            if parquet_path.is_file():
-                sibling_manifest = parquet_path.with_suffix(".manifest.json")
-                if sibling_manifest.is_file():
-                    return sibling_manifest
-        return self._resolve_artifact_path(item, item.manifest_path, manifest_name)
+        _parquet_path, manifest_path = self._resolve_dataset_artifact_from_roots(
+            item,
+            dataset_kind="market",
+            stored_path=item.dataset_parquet_path,
+            fallback_name=f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.parquet",
+            preferred_manifest_path=item.manifest_path,
+        )
+        return manifest_path
+
+    def _resolve_options_dataset_parquet_path(self, item: DatasetListItem) -> Path | None:
+        if not item.options_manifest_path and not item.options_parquet_path:
+            return None
+        resolved, _manifest = self._resolve_dataset_artifact_from_roots(
+            item,
+            dataset_kind="options",
+            stored_path=item.options_parquet_path,
+            fallback_name=f"{_artifact_slug(item)}-alpaca-options-{item.resolution}.parquet",
+            preferred_manifest_path=item.options_manifest_path,
+        )
+        return resolved
+
+    def _resolve_options_dataset_manifest_path(self, item: DatasetListItem) -> Path | None:
+        if not item.options_manifest_path and not item.options_parquet_path:
+            return None
+        _parquet_path, manifest_path = self._resolve_dataset_artifact_from_roots(
+            item,
+            dataset_kind="options",
+            stored_path=item.options_parquet_path,
+            fallback_name=f"{_artifact_slug(item)}-alpaca-options-{item.resolution}.parquet",
+            preferred_manifest_path=item.options_manifest_path,
+        )
+        return manifest_path
 
     def _hydrate_artifact_paths(self, item: DatasetListItem, *, write_back: bool = True) -> None:
         dataset_parquet_path = self._resolve_dataset_parquet_path(item)
         manifest_path = self._resolve_dataset_manifest_path(item)
+        options_dataset_path = self._resolve_options_dataset_parquet_path(item)
+        options_manifest_path = self._resolve_options_dataset_manifest_path(item)
         updates: dict[str, object] = {}
         if dataset_parquet_path is not None and str(dataset_parquet_path) != item.dataset_parquet_path:
             updates["dataset_parquet_path"] = str(dataset_parquet_path)
         if manifest_path is not None and str(manifest_path) != item.manifest_path:
             updates["manifest_path"] = str(manifest_path)
+        if options_dataset_path is not None and str(options_dataset_path) != item.options_parquet_path:
+            updates["options_parquet_path"] = str(options_dataset_path)
+        if options_manifest_path is not None and str(options_manifest_path) != item.options_manifest_path:
+            updates["options_manifest_path"] = str(options_manifest_path)
         if not updates:
             return
         updated = item.model_copy(update={**updates, "updated_at": _utc_now()})

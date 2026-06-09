@@ -45,10 +45,16 @@ vi.mock('../settings/storage', () => ({
 import { DatasetDetailPage } from './DatasetDetailPage'
 import { SettingsProvider } from '../settings/SettingsContext'
 import { defaultPlatformSettings } from '../settings/defaults'
+import { buildDatasetCopySnippet } from '../utils/datasetCopy'
 
 describe('DatasetDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
     loadAppearanceSettingsMock.mockReturnValue(defaultPlatformSettings.appearance)
     fetchPlatformSettingsMock.mockResolvedValue({
       backtest_defaults: defaultPlatformSettings.backtest_defaults,
@@ -183,6 +189,260 @@ describe('DatasetDetailPage', () => {
     await waitFor(() =>
       expect(downloadDatasetParquetMock).toHaveBeenCalledWith('ds-1'),
     )
+  })
+
+  it('copies a Python snippet that loads the dataset with the risk dataset reader', async () => {
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/ds-1']}>
+        <SettingsProvider>
+          <Routes>
+            <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
+          </Routes>
+        </SettingsProvider>
+      </MemoryRouter>,
+    )
+
+    const copyButton = await screen.findByRole('button', { name: /copy code/i })
+    fireEvent.click(copyButton)
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+      buildDatasetCopySnippet({
+        manifestPath: '/tmp/datasets/aapl.manifest.json',
+        datasetParquetPath: '/tmp/datasets/aapl.parquet',
+      }),
+    )
+    expect(await screen.findByRole('button', { name: /copied/i })).toBeInTheDocument()
+  })
+
+  it('shows a single train model button with family choices in a menu', async () => {
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/ds-1']}>
+        <SettingsProvider>
+          <Routes>
+            <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
+          </Routes>
+        </SettingsProvider>
+      </MemoryRouter>,
+    )
+
+    const trainButtons = await screen.findAllByRole('button', { name: /train model/i })
+    expect(trainButtons).toHaveLength(1)
+
+    fireEvent.click(trainButtons[0])
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Risk model' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Return forecast model' })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Daily index forecast model' })).toBeInTheDocument()
+  })
+
+  it('polls dataset status until it fails and shows a determinate progress bar', async () => {
+    fetchPlatformSettingsMock.mockResolvedValueOnce({
+      backtest_defaults: defaultPlatformSettings.backtest_defaults,
+      live_defaults: defaultPlatformSettings.live_defaults,
+      platform_behavior: {
+        ...defaultPlatformSettings.platform_behavior,
+        auto_refresh_interval_seconds: 0.01,
+      },
+    })
+
+    fetchDatasetDetailMock
+      .mockResolvedValueOnce({
+        metadata: {
+          id: 'ds-5',
+          name: 'Running dataset',
+          symbol: 'AAPL',
+          provider: 'alpaca',
+          resolution: '1d',
+          start_date: '2026-05-01',
+          end_date: '2026-06-01',
+          created_at: '2026-06-07T00:00:00Z',
+          updated_at: '2026-06-07T00:00:00Z',
+          status: 'running',
+          argo_namespace: 'ns',
+          argo_workflow_name: 'wf',
+          params_json: {},
+          output_dir: '/tmp/datasets',
+          dataset_parquet_path: null,
+          manifest_path: null,
+          options_parquet_path: null,
+          options_manifest_path: null,
+          error_message: null,
+          progress_pct: 37,
+        },
+      })
+      .mockResolvedValueOnce({
+        metadata: {
+          id: 'ds-5',
+          name: 'Running dataset',
+          symbol: 'AAPL',
+          provider: 'alpaca',
+          resolution: '1d',
+          start_date: '2026-05-01',
+          end_date: '2026-06-01',
+          created_at: '2026-06-07T00:00:00Z',
+          updated_at: '2026-06-07T00:00:00Z',
+          status: 'failed',
+          argo_namespace: 'ns',
+          argo_workflow_name: 'wf',
+          params_json: {},
+          output_dir: '/tmp/datasets',
+          dataset_parquet_path: null,
+          manifest_path: null,
+          options_parquet_path: null,
+          options_manifest_path: null,
+          error_message: 'boom',
+          progress_pct: 100,
+        },
+      })
+    fetchDatasetStatusMock
+      .mockResolvedValueOnce({
+        id: 'ds-5',
+        name: 'Running dataset',
+        symbol: 'AAPL',
+        provider: 'alpaca',
+        resolution: '1d',
+        start_date: '2026-05-01',
+        end_date: '2026-06-01',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+        status: 'running',
+        argo_namespace: 'ns',
+        argo_workflow_name: 'wf',
+        params_json: {},
+        output_dir: '/tmp/datasets',
+        dataset_parquet_path: null,
+        manifest_path: null,
+        options_parquet_path: null,
+        options_manifest_path: null,
+        error_message: null,
+        progress_pct: 37,
+        is_terminal: false,
+      })
+      .mockResolvedValueOnce({
+        id: 'ds-5',
+        name: 'Running dataset',
+        symbol: 'AAPL',
+        provider: 'alpaca',
+        resolution: '1d',
+        start_date: '2026-05-01',
+        end_date: '2026-06-01',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+        status: 'failed',
+        argo_namespace: 'ns',
+        argo_workflow_name: 'wf',
+        params_json: {},
+        output_dir: '/tmp/datasets',
+        dataset_parquet_path: null,
+        manifest_path: null,
+        options_parquet_path: null,
+        options_manifest_path: null,
+        error_message: 'boom',
+        progress_pct: 100,
+        is_terminal: true,
+      })
+
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/ds-5']}>
+        <SettingsProvider>
+          <Routes>
+            <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
+          </Routes>
+        </SettingsProvider>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Running dataset')).toBeInTheDocument()
+    expect(await screen.findByText('37.0% complete')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37')
+    expect(await screen.findByRole('button', { name: /edit and resubmit/i })).toBeInTheDocument()
+
+    await waitFor(() => expect(fetchDatasetStatusMock).toHaveBeenCalledTimes(2))
+
+    expect(await screen.findByText('Failed')).toBeInTheDocument()
+    expect(await screen.findByText('100.0% complete')).toBeInTheDocument()
+  })
+
+  it('links edit and resubmit into the dataset wizard', async () => {
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/ds-1']}>
+        <SettingsProvider>
+          <Routes>
+            <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
+          </Routes>
+        </SettingsProvider>
+      </MemoryRouter>,
+    )
+
+    const editLink = await screen.findByRole('link', { name: /edit and resubmit/i })
+    expect(editLink).toHaveAttribute('href', '/backtests/datasets/new?from=ds-1')
+  })
+
+  it('merges live status artifact paths into the detail view', async () => {
+    fetchDatasetDetailMock.mockResolvedValue({
+      metadata: {
+        id: 'ds-4',
+        name: 'Merged dataset',
+        symbol: 'AAPL',
+        provider: 'alpaca',
+        resolution: '1d',
+        start_date: '2026-05-01',
+        end_date: '2026-06-01',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+        status: 'completed',
+        argo_namespace: null,
+        argo_workflow_name: null,
+        params_json: {},
+        output_dir: '/tmp/datasets',
+        dataset_parquet_path: null,
+        manifest_path: null,
+        options_parquet_path: null,
+        options_manifest_path: null,
+        error_message: null,
+        progress_pct: 100,
+      },
+    })
+    fetchDatasetStatusMock.mockResolvedValue({
+      id: 'ds-4',
+      name: 'Merged dataset',
+      symbol: 'AAPL',
+      provider: 'alpaca',
+      resolution: '1d',
+      start_date: '2026-05-01',
+      end_date: '2026-06-01',
+      created_at: '2026-06-07T00:00:00Z',
+      updated_at: '2026-06-07T00:00:00Z',
+      status: 'completed',
+      argo_namespace: null,
+      argo_workflow_name: null,
+      params_json: {},
+      output_dir: '/tmp/datasets',
+      dataset_parquet_path: '/tmp/datasets/aapl.parquet',
+      manifest_path: '/tmp/datasets/aapl.manifest.json',
+      options_parquet_path: '/tmp/datasets/aapl-options.parquet',
+      options_manifest_path: '/tmp/datasets/aapl-options.manifest.json',
+      error_message: null,
+      progress_pct: 100,
+      is_terminal: true,
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/ds-4']}>
+        <SettingsProvider>
+          <Routes>
+            <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
+          </Routes>
+        </SettingsProvider>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Artifact outputs')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/datasets/aapl.parquet')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/datasets/aapl.manifest.json')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/datasets/aapl-options.parquet')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/datasets/aapl-options.manifest.json')).toBeInTheDocument()
   })
 
   it('allows download even when the parquet path is not stored explicitly', async () => {

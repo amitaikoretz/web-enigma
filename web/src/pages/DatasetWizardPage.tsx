@@ -23,13 +23,13 @@ import type { SxProps, Theme } from '@mui/material/styles'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs, { type Dayjs } from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useLocation } from 'react-router-dom'
 
-import { createDataset } from '../api/datasets'
+import { createDataset, fetchDatasetDetail } from '../api/datasets'
 import { fetchUniverses, fetchUniverseConstituents } from '../api/universes'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
-import type { DatasetOptionsFeed, DatasetProvider, DatasetResolution } from '../types/datasets'
+import type { DatasetDetailResponse, DatasetOptionsFeed, DatasetProvider, DatasetResolution } from '../types/datasets'
 import type { SymbolUniverse } from '../types/universes'
 
 const RESOLUTIONS: DatasetResolution[] = ['1m', '5m', '15m', '1h', '1d']
@@ -42,6 +42,10 @@ function normalizeSymbols(values: string[]): string[] {
     .map((item) => item.trim().toUpperCase())
     .filter(Boolean)
     .filter((item, index, allValues) => allValues.indexOf(item) === index)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function sampleSymbols(symbols: string[], sampleSize: number): string[] {
@@ -58,7 +62,7 @@ function sampleSymbols(symbols: string[], sampleSize: number): string[] {
 }
 
 export function DatasetWizardPage() {
-  const navigate = useNavigate()
+  const location = useLocation()
   const { platformSettings } = useSettings()
   const [symbols, setSymbols] = useState<string[]>(
     normalizeSymbols(platformSettings.backtest_defaults.symbols_seed_list),
@@ -81,6 +85,9 @@ export function DatasetWizardPage() {
   const [startDate, setStartDate] = useState<Dayjs | null>(dayjs().subtract(30, 'day'))
   const [endDate, setEndDate] = useState<Dayjs | null>(dayjs())
   const [error, setError] = useState<string | null>(null)
+  const [prefillSourceId, setPrefillSourceId] = useState<string | null>(null)
+  const [prefillLoading, setPrefillLoading] = useState(false)
+  const [prefillError, setPrefillError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [launchResult, setLaunchResult] = useState<
@@ -100,8 +107,14 @@ export function DatasetWizardPage() {
     () => availableUniverses.find((item) => item.key === selectedUniverseKey) ?? null,
     [availableUniverses, selectedUniverseKey],
   )
+  const defaultSymbols = useMemo(
+    () => normalizeSymbols(platformSettings.backtest_defaults.symbols_seed_list),
+    [platformSettings.backtest_defaults.symbols_seed_list.join('\u0000')],
+  )
+  const defaultResolution = platformSettings.backtest_defaults.resolution
 
   const primarySymbol = symbols[0] ?? platformSettings.backtest_defaults.symbols_seed_list[0] ?? 'AAPL'
+  const prefillFromId = useMemo(() => new URLSearchParams(location.search).get('from'), [location.search])
 
   useEffect(() => {
     let cancelled = false
@@ -136,6 +149,79 @@ export function DatasetWizardPage() {
       setSelectedUniverseKey(availableUniverses[0].key)
     }
   }, [availableUniverses, selectedUniverseKey])
+
+  useEffect(() => {
+    if (!prefillFromId) {
+      setPrefillSourceId(null)
+      setPrefillLoading(false)
+      setPrefillError(null)
+      return undefined
+    }
+
+    let cancelled = false
+    setPrefillLoading(true)
+    setPrefillError(null)
+
+    void fetchDatasetDetail(prefillFromId)
+      .then((response: DatasetDetailResponse) => {
+        if (cancelled) {
+          return
+        }
+
+        const metadata = response.metadata
+        const params = isRecord(metadata.params_json) ? metadata.params_json : {}
+        const parsedSymbols = Array.isArray(params.symbols)
+          ? normalizeSymbols(params.symbols.filter((item): item is string => typeof item === 'string'))
+          : []
+        const fallbackSymbol =
+          typeof params.symbol === 'string' && params.symbol.trim()
+            ? params.symbol.trim().toUpperCase()
+            : null
+        const nextSymbols = parsedSymbols.length > 0 ? parsedSymbols : fallbackSymbol ? [fallbackSymbol] : defaultSymbols
+        const nextProvider =
+          typeof params.provider === 'string' && PROVIDERS.includes(params.provider as DatasetProvider)
+            ? (params.provider as DatasetProvider)
+            : 'alpaca'
+        const nextResolution =
+          typeof params.resolution === 'string' &&
+          RESOLUTIONS.includes(params.resolution as DatasetResolution)
+            ? (params.resolution as DatasetResolution)
+            : defaultResolution
+        const nextName = typeof params.name === 'string' ? params.name : ''
+        const nextStartDate = typeof params.start_date === 'string' ? dayjs(params.start_date) : null
+        const nextEndDate = typeof params.end_date === 'string' ? dayjs(params.end_date) : null
+        const nextOptions = isRecord(params.options) ? params.options : {}
+        const nextIncludeOptions = Boolean(nextOptions.enabled)
+        const nextOptionsFeed =
+          typeof nextOptions.feed === 'string' && (nextOptions.feed === 'indicative' || nextOptions.feed === 'opra')
+            ? (nextOptions.feed as DatasetOptionsFeed)
+            : 'indicative'
+
+        setSymbols(nextSymbols.length > 0 ? nextSymbols : defaultSymbols)
+        setName(nextName)
+        setProvider(nextProvider)
+        setResolution(nextResolution)
+        setIncludeOptions(nextIncludeOptions)
+        setOptionsFeed(nextOptionsFeed)
+        setStartDate(nextStartDate?.isValid() ? nextStartDate : null)
+        setEndDate(nextEndDate?.isValid() ? nextEndDate : null)
+        setPrefillSourceId(metadata.id)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setPrefillError(err instanceof Error ? err.message : 'Failed to load dataset prefill')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPrefillLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [defaultResolution, defaultSymbols, prefillFromId])
 
   useEffect(() => {
     let cancelled = false
@@ -217,30 +303,11 @@ export function DatasetWizardPage() {
         message: 'Dataset launch submitted successfully.',
         datasetId: response.dataset_id,
       })
-      navigate('/backtests/datasets', {
-        replace: true,
-        state: {
-          launchResult: {
-            status: 'success',
-            message: 'Dataset launch submitted successfully.',
-            datasetId: response.dataset_id,
-          },
-        },
-      })
     } catch (err) {
       setConfirmOpen(false)
       setLaunchResult({
         status: 'failed',
         message: err instanceof Error ? err.message : 'Failed to create dataset',
-      })
-      navigate('/backtests/datasets', {
-        replace: true,
-        state: {
-          launchResult: {
-            status: 'failed',
-            message: err instanceof Error ? err.message : 'Failed to create dataset',
-          },
-        },
       })
     } finally {
       setSubmitting(false)
@@ -285,6 +352,21 @@ export function DatasetWizardPage() {
       <Button component={RouterLink} to="/backtests/datasets" startIcon={<ArrowBackIcon />} sx={{ width: 'fit-content' }}>
         Back to datasets
       </Button>
+
+      {prefillLoading && prefillFromId && (
+        <Alert severity="info">Loading dataset settings from {prefillFromId}…</Alert>
+      )}
+      {prefillError && (
+        <Alert severity="warning">
+          {prefillError}
+          {prefillFromId ? ` Editing will continue with the default dataset settings.` : ''}
+        </Alert>
+      )}
+      {prefillSourceId && !prefillLoading && (
+        <Alert severity="info">
+          Prefilled from dataset <strong>{prefillSourceId}</strong>. Edit any field before launching.
+        </Alert>
+      )}
 
       <Dialog
         open={launchResult !== null}

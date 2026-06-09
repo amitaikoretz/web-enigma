@@ -313,7 +313,7 @@ def test_combine_shards_command_streams_parquet_inputs(tmp_path: Path, monkeypat
         output_dir=tmp_path / "ds-1",
         max_shards=4,
         max_pods=2,
-        target_work_units=100,
+        target_work_units=1,
     )
     write_json_file(Path(plan.plan_path), plan)
 
@@ -355,3 +355,119 @@ def test_combine_shards_command_streams_parquet_inputs(tmp_path: Path, monkeypat
     assert len(manifest["chunks"]) == 2
     assert manifest["chunks"][0]["chunk_index"] == 0
     assert manifest["chunks"][0]["split_key_values"]["symbol"] == "AAPL"
+
+
+def test_combine_shards_command_deletes_shard_artifacts_after_combining(tmp_path: Path) -> None:
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-1",
+        symbols=["AAPL", "MSFT"],
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 3),
+        options_enabled=True,
+        options_feed="indicative",
+        output_dir=tmp_path / "ds-1",
+        max_shards=4,
+        max_pods=2,
+        target_work_units=1,
+    )
+    write_json_file(Path(plan.plan_path), plan)
+
+    for index, shard in enumerate(plan.shards):
+        shard_dir = Path(shard.output_dir)
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        frame = pd.DataFrame(
+            {
+                "timestamp": [f"2026-05-0{index + 1}T00:00:00Z"],
+                "Open": [100.0 + index],
+                "High": [101.0 + index],
+                "Low": [99.0 + index],
+                "Close": [100.5 + index],
+                "Volume": [1_000.0 + index],
+                "symbol": [shard.symbols[0]],
+            }
+        )
+        frame.to_parquet(shard.market_parquet_path, index=False)
+        frame.to_parquet(shard.options_parquet_path, index=False)
+
+    module.combine_shards_command(
+        plan_path=plan.plan_path,
+        dataset_path_out=str(tmp_path / "dataset-path.txt"),
+        manifest_path_out=str(tmp_path / "manifest-path.txt"),
+        options_dataset_path_out=str(tmp_path / "options-dataset-path.txt"),
+        options_manifest_path_out=str(tmp_path / "options-manifest-path.txt"),
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+    )
+
+    for shard in plan.shards:
+        assert not Path(shard.output_dir).exists()
+    assert not (Path(plan.output_dir) / "shards").exists()
+    assert Path(plan.dataset_output_path).exists()
+    assert Path(plan.dataset_manifest_path).exists()
+    assert Path(plan.options_output_path).exists()
+    assert Path(plan.options_manifest_path).exists()
+
+
+def test_aggregate_progress_pct_reads_shared_shard_files(tmp_path: Path) -> None:
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-1",
+        symbols=["AAPL", "MSFT"],
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 3),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=tmp_path / "ds-1",
+        max_shards=4,
+        max_pods=2,
+        target_work_units=100,
+    )
+
+    write_json_file(Path(plan.plan_path), plan)
+    for index, shard in enumerate(plan.shards):
+        shard_dir = Path(shard.output_dir)
+        shard_dir.mkdir(parents=True, exist_ok=True)
+        pct = 25 if index == 0 else 75
+        (shard_dir / "argo-progress.txt").write_text(f"{pct}/100\n", encoding="utf-8")
+
+    combine_progress = Path(plan.output_dir) / "combine-progress.txt"
+    combine_progress.parent.mkdir(parents=True, exist_ok=True)
+    combine_progress.write_text("50/100\n", encoding="utf-8")
+
+    total_units = float(max(1, plan.combine_weight_units))
+    completed_units = 0.0
+    for index, shard in enumerate(plan.shards):
+        pct = 0.25 if index == 0 else 0.75
+        weight = float(max(1, shard.work_units))
+        total_units += weight
+        completed_units += pct * weight
+    completed_units += 0.5 * float(max(1, plan.combine_weight_units))
+    expected_pct = round((completed_units / total_units) * 100)
+
+    assert module._aggregate_progress_pct(plan) == expected_pct
+
+
+def test_aggregate_progress_pct_treats_missing_shards_as_complete_after_finalize(tmp_path: Path) -> None:
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-1",
+        symbols=["AAPL", "MSFT"],
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 3),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=tmp_path / "ds-1",
+        max_shards=4,
+        max_pods=2,
+        target_work_units=100,
+    )
+
+    write_json_file(Path(plan.plan_path), plan)
+    Path(plan.dataset_output_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(plan.dataset_output_path).write_bytes(b"PAR1")
+    Path(plan.dataset_manifest_path).write_text("{}", encoding="utf-8")
+
+    assert module._aggregate_progress_pct(plan) == 100
