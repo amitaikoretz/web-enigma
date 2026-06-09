@@ -10,7 +10,7 @@ from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.daily_index_forecast.models import DailyIndexForecastDatasetManifestSummary
 from app.daily_index_forecast.persistence import SqlAlchemyDailyIndexForecastRepository
 from app.db.session import get_session_factory
-from app.standalone.daily_index_common import terminal_command, write_text
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -27,7 +27,7 @@ def main(
     artifact_dir: str = typer.Option(..., "--artifact-dir"),
     terminal_command_out: str | None = typer.Option(None, "--terminal-command-out"),
 ) -> None:
-    write_text(terminal_command_out, terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="daily_index_register_results_argo")
 
     manifest = DailyIndexForecastDatasetManifestSummary.model_validate_json(Path(manifest_path).read_text(encoding="utf-8"))
     metrics = json.loads(Path(metrics_path).read_text(encoding="utf-8"))
@@ -67,4 +67,3 @@ def main(
 
 if __name__ == "__main__":
     run_typer_app_with_argo_error_outputs(app)
-

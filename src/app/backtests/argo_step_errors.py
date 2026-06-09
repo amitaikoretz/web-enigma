@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import os
+import sys
 import traceback
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import typer
+
+from app.script_logging import emit_error
 
 _DEFAULT_TMP_DIR = "/tmp"
 
@@ -103,7 +106,7 @@ def run_typer_app_with_argo_error_outputs(typer_app: Callable[[], Any], tmp_dir:
         message = str(exc).strip()
         one_liner = f"{exc_type}: {message}" if message else exc_type
         try:
-            typer.echo(one_liner, err=True)
+            emit_error("unhandled-exception", one_liner, script="argo-step", stream=sys.stderr)
             traceback.print_exception(type(exc), exc, exc.__traceback__)
         except Exception:
             # Never block error propagation due to logging issues.

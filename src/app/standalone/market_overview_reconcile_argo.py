@@ -10,6 +10,7 @@ from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.db.session import get_session_factory
 from app.market_overview.persistence import SqlAlchemyMarketOverviewRepository
 from app.market_overview.service import MarketOverviewService
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -29,7 +30,7 @@ def main(
     snapshot_id: str = typer.Option(..., "--snapshot-id"),
     terminal_command_out: str = typer.Option("/tmp/terminal-command.txt", "--terminal-command-out"),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="market_overview_reconcile_argo")
     session_factory = get_session_factory()
     service = MarketOverviewService(
         session_factory=session_factory,

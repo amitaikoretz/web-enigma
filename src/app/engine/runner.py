@@ -68,8 +68,6 @@ class DataFeedBuildResult:
 
 
 def _benchmark_symbol_for_strategy(strategy_name: str, params: dict[str, Any]) -> str | None:
-    if strategy_name != "volume_rally":
-        return None
     symbol = str(params.get("benchmark_symbol", "")).strip().upper()
     return symbol or None
 

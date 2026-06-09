@@ -17,7 +17,8 @@ class DatasetOptionsRequest(BaseModel):
 
 
 class DatasetCreateRequest(BaseModel):
-    symbol: str
+    symbol: str | None = None
+    symbols: list[str] = Field(default_factory=list)
     provider: Literal["alpaca", "yahoo"]
     resolution: str
     start_date: date
@@ -27,11 +28,31 @@ class DatasetCreateRequest(BaseModel):
 
     @field_validator("symbol")
     @classmethod
-    def normalize_symbol(cls, value: str) -> str:
+    def normalize_symbol(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         symbol = value.strip().upper()
         if not symbol:
             raise ValueError("symbol must not be empty")
         return symbol
+
+    @field_validator("symbols", mode="before")
+    @classmethod
+    def normalize_symbols(cls, values: object) -> list[str]:
+        if values is None:
+            return []
+        if not isinstance(values, list):
+            raise TypeError("symbols must be a list")
+        normalized: list[str] = []
+        for value in values:
+            if not isinstance(value, str):
+                raise TypeError("symbols must contain strings")
+            symbol = value.strip().upper()
+            if not symbol:
+                raise ValueError("symbols must not contain empty values")
+            if symbol not in normalized:
+                normalized.append(symbol)
+        return normalized
 
     @field_validator("resolution")
     @classmethod
@@ -55,6 +76,17 @@ class DatasetCreateRequest(BaseModel):
     def validate_dates(self) -> "DatasetCreateRequest":
         if self.start_date > self.end_date:
             raise ValueError("start_date must be <= end_date")
+        if not self.symbols and self.symbol is None:
+            raise ValueError("symbols must not be empty")
+        if self.symbols and self.symbol is None:
+            self.symbol = self.symbols[0]
+        elif self.symbol is not None and not self.symbols:
+            self.symbols = [self.symbol]
+        elif self.symbol is not None and self.symbols and self.symbols[0] != self.symbol:
+            if self.symbol not in self.symbols:
+                self.symbols = [self.symbol, *self.symbols]
+            else:
+                self.symbols = [self.symbol, *[item for item in self.symbols if item != self.symbol]]
         return self
 
 
@@ -62,6 +94,7 @@ class DatasetListItem(BaseModel):
     id: str
     name: str | None = None
     symbol: str
+    symbols: list[str] = Field(default_factory=list)
     provider: str
     resolution: str
     start_date: date
@@ -85,6 +118,7 @@ class DatasetParquetRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     timestamp: datetime
+    symbol: str = Field(min_length=1)
     open: float = Field(alias="Open")
     high: float = Field(alias="High")
     low: float = Field(alias="Low")
@@ -97,6 +131,14 @@ _DATASET_PARQUET_ROWS = TypeAdapter(list[DatasetParquetRow])
 
 def validate_dataset_parquet_frame(frame: pd.DataFrame) -> None:
     _DATASET_PARQUET_ROWS.validate_python(frame.to_dict(orient="records"))
+
+
+from app.datasets.sharding import (  # noqa: E402  (re-export shard manifest models)
+    DatasetArtifactManifest,
+    DatasetChunkRecord,
+    DatasetShardPlan,
+    DatasetShardSpec,
+)
 
 
 class DatasetStatusResponse(DatasetListItem):

@@ -16,8 +16,10 @@ import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.feature_importance.io import build_linear_feature_importance, write_feature_importance_artifact
+from app.risk.dataset import RiskDatasetReader
 from app.risk.dataset.feature_columns import select_risk_feature_columns
 from app.risk.walk_forward import make_walk_forward_folds, resolve_walk_forward_config
+from app.script_logging import emit_terminal_command, emit_warning
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -60,6 +62,13 @@ def _metric_mean(values: list[float | None]) -> float | None:
     return float(mean(valid))
 
 
+def _load_dataset_frame(dataset_path: str, manifest_path: str) -> pd.DataFrame:
+    manifest = Path(manifest_path)
+    if manifest.exists():
+        return RiskDatasetReader.from_manifest_path(manifest).load()
+    return pd.read_parquet(dataset_path)
+
+
 @app.command(help="Train MAE regression model and write model + metrics (for Argo workflow).")
 def main(
     group_id: str = typer.Option(..., "--group-id"),
@@ -76,7 +85,7 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="risk_train_mae_argo")
     # Pre-create output parameter files so Argo can always collect them, even on failure.
     _write_text(model_path_out, "")
     _write_text(metrics_path_out, "")
@@ -88,7 +97,7 @@ def main(
     alpha = float(train_cfg.get("ridge_alpha", 1.0))
     random_seed = int(train_cfg.get("random_seed", 7))
 
-    df = pd.read_parquet(dataset_path)
+    df = _load_dataset_frame(dataset_path, manifest_path)
     feature_cols = json.loads(feature_cols_json)
     if not isinstance(feature_cols, list) or not all(isinstance(x, str) for x in feature_cols):
         raise ValueError("--feature-cols-json must be a JSON array of strings")
@@ -100,7 +109,11 @@ def main(
 
     feature_cols, skipped_feature_cols = select_risk_feature_columns(df, feature_cols)
     if skipped_feature_cols:
-        typer.echo("Skipping non-feature columns from MAE training: " + ", ".join(skipped_feature_cols), err=True)
+        emit_warning(
+            "risk-feature-filter",
+            "Skipping non-feature columns from MAE training: " + ", ".join(skipped_feature_cols),
+            script="risk_train_mae_argo",
+        )
     if not feature_cols:
         raise ValueError("No valid numeric MAE features remained after filtering")
 

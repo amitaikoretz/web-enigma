@@ -12,6 +12,7 @@ from app.db.session import get_session_factory
 from app.market_overview.persistence import SqlAlchemyMarketOverviewRepository
 from app.market_overview.service import MarketOverviewService
 from app.settings.service import PlatformSettingsService
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -30,7 +31,7 @@ def _terminal_command(argv: list[str]) -> str:
 def main(
     terminal_command_out: str = typer.Option("/tmp/terminal-command.txt", "--terminal-command-out"),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="market_overview_scheduler_argo")
     session_factory = get_session_factory()
     results_root = Path(os.environ.get("BACKTEST_RESULTS_DIR", ".cache/backtest-results"))
     settings_service = PlatformSettingsService(results_root / "settings" / "platform-settings.json")

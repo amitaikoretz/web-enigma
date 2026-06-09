@@ -16,4 +16,10 @@ def test_print_argo_command_writes_terminal_command(tmp_path: Path, capsys, monk
 
     assert terminal_command_out.read_text(encoding="utf-8").strip() == "python -m app.standalone.print_argo_command --flag"
     captured = capsys.readouterr()
-    assert "python -m app.standalone.example --flag value" in captured.out
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert lines[0].startswith("ts=")
+    assert "level=info" in lines[0]
+    assert "script=print_argo_command" in lines[0]
+    assert "event=terminal-command" in lines[0]
+    assert "python -m app.standalone.print_argo_command --flag" in lines[0]
+    assert any("event=launch-command" in line and "python -m app.standalone.example --flag value" in line for line in lines)

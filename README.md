@@ -13,6 +13,7 @@ Built-in strategies include:
 - `breakout_channel`
 - `buy_oco_atr_tp_sl`
 - `buy_oco_atr_tp_trailing`
+- `vwap_pullback` for leveraged ETF intraday pullback entries with 15m benchmark confirmation, VWAP support, volume confirmation, and stateful trim/breakeven management
 - `volume_rally` for confirmed breakout/rally detection using volume, VWAP, MACD, ADX, and ATR exits
 - `fast_upswing` for conservative fast-continuation entries using consecutive up bars, volume expansion, and VWAP confirmation
 

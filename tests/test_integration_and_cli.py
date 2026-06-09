@@ -1,12 +1,64 @@
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
+import pandas as pd
 import yaml
 
 from app.cli import main
 from app.config.models import BacktestConfig
 from app.engine.runner import _extract_trade_counts, run_backtests
+
+
+def _make_vwap_pullback_feed(
+    *,
+    start_price: float,
+    close_step: float,
+    volume_base: float,
+    entry_index: int | None = None,
+    trim_index: int | None = None,
+    total_bars: int = 78,
+) -> pd.DataFrame:
+    tz = ZoneInfo("America/New_York")
+    start = datetime(2024, 1, 2, 9, 30, tzinfo=tz)
+    rows: list[dict[str, object]] = []
+    for idx in range(total_bars):
+        close = start_price + idx * close_step
+        if entry_index is not None and idx == entry_index:
+            close = 102.4
+        if trim_index is not None and idx == trim_index:
+            close = 104.0
+        if rows and idx > (trim_index if trim_index is not None else -1):
+            close = max(close, float(rows[-1]["Close"]) + 0.03)
+        open_price = close - 0.04
+        high = close + 0.05
+        low = close - 0.08
+        volume = volume_base + idx * 15
+        if entry_index is not None and idx == entry_index:
+            open_price = float(rows[-1]["Close"]) + 0.01 if rows else close - 0.04
+            high = close + 0.04
+            low = 100.95
+            volume = volume_base * 3
+        if trim_index is not None and idx == trim_index:
+            open_price = float(rows[-1]["Close"]) + 0.02 if rows else close - 0.04
+            high = close + 0.18
+            low = close - 0.15
+            volume = volume_base * 2.5
+        rows.append(
+            {
+                "datetime": start + timedelta(minutes=5 * idx),
+                "Open": open_price,
+                "High": high,
+                "Low": low,
+                "Close": close,
+                "Volume": volume,
+            }
+        )
+    frame = pd.DataFrame(rows).set_index("datetime")
+    frame.index = pd.DatetimeIndex(frame.index)
+    return frame
 
 
 def test_csv_single_run_integration():
@@ -99,6 +151,100 @@ def test_csv_oco_atr_tp_trailing_integration():
     assert report.total_runs == 1
     assert report.successful_runs == 1
     assert report.results[0].status == "success"
+
+
+def test_vwap_pullback_backtest_trims_and_flattens_before_overnight(monkeypatch):
+    main_feed = _make_vwap_pullback_feed(
+        start_price=100.0,
+        close_step=0.1,
+        volume_base=1000.0,
+        entry_index=23,
+        trim_index=24,
+        total_bars=78,
+    )
+    benchmark_feed = _make_vwap_pullback_feed(
+        start_price=200.0,
+        close_step=0.1,
+        volume_base=2000.0,
+        total_bars=78,
+    )
+
+    def fake_yahoo_data_feed_with_cache(data, start_date, end_date, cache_config, force_refresh):
+        symbol = str(getattr(data, "symbol", "")).upper()
+        if symbol == "TQQQ":
+            return main_feed.copy(), "mock"
+        if symbol == "QQQ":
+            return benchmark_feed.copy(), "mock"
+        raise AssertionError(f"unexpected symbol {symbol!r}")
+
+    monkeypatch.setattr("app.engine.runner.build_yahoo_data_feed_with_cache", fake_yahoo_data_feed_with_cache)
+
+    raw = {
+        "runs": [
+            {
+                "run_id": "vwap_pullback_e2e",
+                "start_date": "2024-01-02",
+                "end_date": "2024-01-02",
+                "data": {"type": "yahoo", "symbol": "TQQQ", "interval": "5m"},
+                "execution": {"fill_model": "next_bar"},
+                    "trigger": {
+                        "name": "vwap_pullback",
+                        "params": {
+                            "stake": 10,
+                        "benchmark_symbol": "QQQ",
+                        "trend_ema_fast": 2,
+                        "trend_ema_mid": 3,
+                        "trend_ema_slow": 4,
+                        "benchmark_ema_fast": 2,
+                        "benchmark_ema_slow": 3,
+                        "volume_window": 3,
+                        "volume_spike_mult": 1.1,
+                        "pullback_distance_pct": 0.01,
+                        "min_closes_above_vwap": 1,
+                        "recent_close_window": 3,
+                        "max_entry_gap_pct": 0.01,
+                        "stop_buffer_pct": 0.001,
+                        "max_stop_distance_pct": 0.05,
+                        "max_stop_atr_mult": 10.0,
+                        "session_morning_start_minutes": 0,
+                        "session_morning_end_minutes": 390,
+                        "session_afternoon_start_minutes": 0,
+                        "session_afternoon_end_minutes": 390,
+                    },
+                },
+                "exit_rules": {
+                    "rules": [
+                        {
+                            "name": "vwap_pullback_manage",
+                            "params": {
+                                "stop_buffer_pct": 0.001,
+                                "breakeven_buffer_pct": 0.0,
+                                "partial_trim_portion": 0.5,
+                                "time_stop_bars": 1000,
+                                "eod_flatten_minutes": 385,
+                            },
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+    config = BacktestConfig.model_validate(raw)
+    report = run_backtests(config, raw)
+
+    assert report.total_runs == 1
+    assert report.successful_runs == 1
+    result = report.results[0]
+    assert result.status == "success"
+    assert result.summary is not None
+    assert result.summary.total_trades == 2
+    assert len(result.orders) == 3
+    assert result.orders[0].is_buy is True and result.orders[0].size == 10.0
+    assert result.orders[1].is_buy is True and result.orders[1].size == 5.0
+    assert result.orders[2].is_buy is False and result.orders[2].size == 5.0
+    assert len(result.trades) == 1
+    assert result.trades[0].reason == "exit:vwap_pullback_manage:one_r_trim"
+    assert result.trades[0].datetime.endswith("11:35:00-05:00")
 
 
 def test_csv_multiple_runs_integration():

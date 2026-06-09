@@ -378,6 +378,21 @@ function buildSourceSpec(
   return { type: 'alpaca', symbol, interval, feed }
 }
 
+function buildLockedDatasetSourceSpec(dataset: DatasetListItem): {
+  sourceType: 'alpaca' | 'yahoo'
+  interval: string
+  feed: string
+  csvPath: string
+} {
+  const sourceType = dataset.provider === 'yahoo' ? 'yahoo' : 'alpaca'
+  return {
+    sourceType,
+    interval: dataset.resolution,
+    feed: sourceType === 'alpaca' ? 'iex' : '',
+    csvPath: '',
+  }
+}
+
 export function DailyIndexForecastModelsListPage({
   fetchModels,
   fetchModelStatus,
@@ -1730,6 +1745,7 @@ export function DailyIndexForecastModelWizardPage({
   const [datasetDetailError, setDatasetDetailError] = useState<string | null>(null)
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(dailyIndexDatasetId)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const isDatasetMode = launchMode === 'dataset'
 
   useEffect(() => {
     setLaunchMode(dailyIndexDatasetId ? 'dataset' : 'manual')
@@ -1841,6 +1857,11 @@ export function DailyIndexForecastModelWizardPage({
     [datasets, selectedDatasetId],
   )
 
+  const lockedDatasetSourceSpec = useMemo(
+    () => (isDatasetMode && selectedDataset ? buildLockedDatasetSourceSpec(selectedDataset) : null),
+    [isDatasetMode, selectedDataset],
+  )
+
   async function handleSubmit() {
     if (launchMode === 'dataset') {
       if (loadingDatasets) {
@@ -1876,6 +1897,13 @@ export function DailyIndexForecastModelWizardPage({
       const resolvedSymbol = normalizedSymbol || sourceDataset?.symbol || 'SPY'
       const resolvedBenchmarkSymbol =
         launchMode === 'dataset' ? resolvedSymbol : benchmarkSymbol.trim().toUpperCase()
+      const sourceSpec =
+        lockedDatasetSourceSpec ?? {
+          sourceType,
+          interval,
+          feed,
+          csvPath,
+        }
       const payload: DailyIndexForecastCreateRequest = {
         name: strip(name) || null,
         universe: {
@@ -1885,7 +1913,13 @@ export function DailyIndexForecastModelWizardPage({
           symbols: [
             {
               symbol: resolvedSymbol,
-              data: buildSourceSpec(resolvedSymbol, sourceType, interval, feed, csvPath),
+              data: buildSourceSpec(
+                resolvedSymbol,
+                sourceSpec.sourceType,
+                sourceSpec.interval,
+                sourceSpec.feed,
+                sourceSpec.csvPath,
+              ),
             },
           ],
           benchmark: resolvedBenchmarkSymbol
@@ -1893,10 +1927,10 @@ export function DailyIndexForecastModelWizardPage({
                 symbol: resolvedBenchmarkSymbol,
                 data: buildSourceSpec(
                   resolvedBenchmarkSymbol,
-                  launchMode === 'dataset' ? sourceType : benchmarkSourceType,
-                  launchMode === 'dataset' ? interval : benchmarkInterval,
-                  launchMode === 'dataset' ? feed : benchmarkFeed,
-                  launchMode === 'dataset' ? csvPath : benchmarkCsvPath,
+                  launchMode === 'dataset' && lockedDatasetSourceSpec ? lockedDatasetSourceSpec.sourceType : benchmarkSourceType,
+                  launchMode === 'dataset' && lockedDatasetSourceSpec ? lockedDatasetSourceSpec.interval : benchmarkInterval,
+                  launchMode === 'dataset' && lockedDatasetSourceSpec ? lockedDatasetSourceSpec.feed : benchmarkFeed,
+                  launchMode === 'dataset' && lockedDatasetSourceSpec ? lockedDatasetSourceSpec.csvPath : benchmarkCsvPath,
                 ),
               }
             : null,
@@ -1980,7 +2014,7 @@ export function DailyIndexForecastModelWizardPage({
               <FormControlLabel
                 control={
                   <Switch
-                    checked={launchMode === 'dataset'}
+                    checked={isDatasetMode}
                     onChange={(_event, checked) => {
                       setLaunchMode(checked ? 'dataset' : 'manual')
                       setValidationError(null)
@@ -1990,9 +2024,9 @@ export function DailyIndexForecastModelWizardPage({
                 label="Use existing dataset"
               />
               <Typography variant="body2" color="text.secondary">
-                Choose a completed dataset to inherit its stored symbol and date range, or keep manual inputs.
+                Choose a completed dataset to inherit its stored symbol, date range, and source provenance, or keep manual inputs.
               </Typography>
-              {launchMode === 'dataset' ? (
+              {isDatasetMode ? (
                 <Stack spacing={1.5}>
                   <Autocomplete
                     options={datasets}
@@ -2074,19 +2108,46 @@ export function DailyIndexForecastModelWizardPage({
                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                   Source configuration
                 </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {isDatasetMode
+                    ? "Locked to the selected dataset's provider and interval."
+                    : 'Choose the raw source settings for a manual launch.'}
+                </Typography>
                 <TextField label="Decision times" value={decisionTimes} onChange={(event) => setDecisionTimes(event.target.value)} helperText="Comma-separated, e.g. 09:45,10:15" />
-                <FormControl fullWidth>
-                  <InputLabel>Data source</InputLabel>
-                  <Select value={sourceType} label="Data source" onChange={(event) => setSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}>
+                <FormControl fullWidth disabled={isDatasetMode}>
+                  <InputLabel id="daily-index-data-source-label">Data source</InputLabel>
+                  <Select
+                    labelId="daily-index-data-source-label"
+                    value={lockedDatasetSourceSpec?.sourceType ?? sourceType}
+                    label="Data source"
+                    onChange={(event) => setSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}
+                  >
                     <MenuItem value="alpaca">Alpaca</MenuItem>
                     <MenuItem value="yahoo">Yahoo</MenuItem>
                     <MenuItem value="csv">CSV</MenuItem>
                   </Select>
                 </FormControl>
-                <TextField label="Interval" value={interval} onChange={(event) => setInterval(event.target.value)} />
-                <TextField label="Feed" value={feed} onChange={(event) => setFeed(event.target.value)} />
-                {sourceType === 'csv' && <TextField label="CSV path" value={csvPath} onChange={(event) => setCsvPath(event.target.value)} />}
-                {launchMode === 'manual' && (
+                <TextField
+                  label="Interval"
+                  value={lockedDatasetSourceSpec?.interval ?? interval}
+                  onChange={(event) => setInterval(event.target.value)}
+                  disabled={isDatasetMode}
+                />
+                <TextField
+                  label="Feed"
+                  value={lockedDatasetSourceSpec?.feed ?? feed}
+                  onChange={(event) => setFeed(event.target.value)}
+                  disabled={isDatasetMode}
+                />
+                {(lockedDatasetSourceSpec?.sourceType ?? sourceType) === 'csv' && (
+                  <TextField
+                    label="CSV path"
+                    value={lockedDatasetSourceSpec?.csvPath ?? csvPath}
+                    onChange={(event) => setCsvPath(event.target.value)}
+                    disabled={isDatasetMode}
+                  />
+                )}
+                {!isDatasetMode && (
                   <>
                     <Divider />
                     <TextField
@@ -2095,8 +2156,9 @@ export function DailyIndexForecastModelWizardPage({
                       onChange={(event) => setBenchmarkSymbol(event.target.value.toUpperCase())}
                     />
                     <FormControl fullWidth>
-                      <InputLabel>Benchmark source</InputLabel>
+                      <InputLabel id="daily-index-benchmark-source-label">Benchmark source</InputLabel>
                       <Select
+                        labelId="daily-index-benchmark-source-label"
                         value={benchmarkSourceType}
                         label="Benchmark source"
                         onChange={(event) => setBenchmarkSourceType(event.target.value as 'alpaca' | 'yahoo' | 'csv')}

@@ -1,41 +1,78 @@
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import {
   Alert,
   Box,
   Button,
+  Autocomplete,
+  Chip,
   FormControlLabel,
-  MenuItem,
-  Paper,
-  Switch,
-  Stack,
-  TextField,
-  Typography,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  MenuItem,
+  Paper,
+  Slider,
+  Switch,
+  Stack,
+  TextField,
+  Typography,
   Link,
 } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import { DatePicker } from '@mui/x-date-pickers/DatePicker'
 import dayjs, { type Dayjs } from 'dayjs'
-import { useState } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 
 import { createDataset } from '../api/datasets'
+import { fetchUniverses, fetchUniverseConstituents } from '../api/universes'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
 import type { DatasetOptionsFeed, DatasetProvider, DatasetResolution } from '../types/datasets'
-import { useNavigate } from 'react-router-dom'
+import type { SymbolUniverse } from '../types/universes'
 
 const RESOLUTIONS: DatasetResolution[] = ['1m', '5m', '15m', '1h', '1d']
 const PROVIDERS: DatasetProvider[] = ['alpaca', 'yahoo']
 
 const fieldSx: SxProps<Theme> = { minWidth: 0 }
 
+function normalizeSymbols(values: string[]): string[] {
+  return values
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean)
+    .filter((item, index, allValues) => allValues.indexOf(item) === index)
+}
+
+function sampleSymbols(symbols: string[], sampleSize: number): string[] {
+  if (sampleSize <= 0 || symbols.length <= sampleSize) {
+    return [...symbols]
+  }
+
+  const shuffled = [...symbols]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+  }
+  return shuffled.slice(0, sampleSize)
+}
+
 export function DatasetWizardPage() {
   const navigate = useNavigate()
   const { platformSettings } = useSettings()
-  const [symbol, setSymbol] = useState(platformSettings.backtest_defaults.symbols_seed_list[0] ?? 'AAPL')
+  const [symbols, setSymbols] = useState<string[]>(
+    normalizeSymbols(platformSettings.backtest_defaults.symbols_seed_list),
+  )
+  const [availableUniverses, setAvailableUniverses] = useState<SymbolUniverse[]>([])
+  const [loadingUniverses, setLoadingUniverses] = useState(false)
+  const [selectedUniverseKey, setSelectedUniverseKey] = useState<string | null>(null)
+  const [sampleDialogOpen, setSampleDialogOpen] = useState(false)
+  const [sampleSize, setSampleSize] = useState(1)
+  const [samplingUniverse, setSamplingUniverse] = useState(false)
+  const [loadingUniverseSymbols, setLoadingUniverseSymbols] = useState(false)
+  const [universeSymbols, setUniverseSymbols] = useState<string[]>([])
+  const [sampledSymbols, setSampledSymbols] = useState<string[]>([])
+  const [chosenSampleSymbols, setChosenSampleSymbols] = useState<string[]>([])
   const [name, setName] = useState('')
   const [provider, setProvider] = useState<DatasetProvider>('alpaca')
   const [resolution, setResolution] = useState<DatasetResolution>(platformSettings.backtest_defaults.resolution)
@@ -59,6 +96,89 @@ export function DatasetWizardPage() {
     | null
   >(null)
 
+  const selectedUniverse = useMemo(
+    () => availableUniverses.find((item) => item.key === selectedUniverseKey) ?? null,
+    [availableUniverses, selectedUniverseKey],
+  )
+
+  const primarySymbol = symbols[0] ?? platformSettings.backtest_defaults.symbols_seed_list[0] ?? 'AAPL'
+
+  useEffect(() => {
+    let cancelled = false
+    setLoadingUniverses(true)
+    void fetchUniverses(false)
+      .then((items) => {
+        if (cancelled) {
+          return
+        }
+        setAvailableUniverses(items)
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        setAvailableUniverses([])
+        setError(err instanceof Error ? err.message : 'Failed to load universes')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingUniverses(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (selectedUniverseKey === null && availableUniverses.length === 1) {
+      setSelectedUniverseKey(availableUniverses[0].key)
+    }
+  }, [availableUniverses, selectedUniverseKey])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!sampleDialogOpen || !selectedUniverse) {
+      setUniverseSymbols([])
+      setSampledSymbols([])
+      setChosenSampleSymbols([])
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setLoadingUniverseSymbols(true)
+    const asOf = startDate?.format('YYYY-MM-DD') ?? dayjs().format('YYYY-MM-DD')
+    void fetchUniverseConstituents(selectedUniverse.key, asOf)
+      .then((constituents) => {
+        if (cancelled) {
+          return
+        }
+        const normalized = normalizeSymbols(constituents.symbols)
+        setUniverseSymbols(normalized)
+        setSampleSize((current) => Math.min(Math.max(current, 1), Math.max(normalized.length, 1)))
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        setUniverseSymbols([])
+        setSampledSymbols([])
+        setChosenSampleSymbols([])
+        setError(err instanceof Error ? err.message : 'Failed to load universe symbols')
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingUniverseSymbols(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [sampleDialogOpen, selectedUniverse, startDate])
+
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
     if (!startDate || !endDate || endDate.isBefore(startDate, 'day')) {
@@ -79,7 +199,8 @@ export function DatasetWizardPage() {
     setError(null)
     try {
       const response = await createDataset({
-        symbol,
+        symbol: primarySymbol,
+        symbols,
         provider,
         resolution,
         start_date: startDate.format('YYYY-MM-DD'),
@@ -126,8 +247,45 @@ export function DatasetWizardPage() {
     }
   }
 
+  const handleSampleFromUniverse = async () => {
+    if (!selectedUniverse) {
+      setError('Choose a universe before sampling symbols.')
+      return
+    }
+    if (universeSymbols.length === 0) {
+      setError('No universe symbols are loaded yet.')
+      return
+    }
+
+    setSamplingUniverse(true)
+    setError(null)
+    try {
+      const nextSymbols = sampleSymbols(universeSymbols, sampleSize)
+      if (nextSymbols.length === 0) {
+        throw new Error(`Universe ${selectedUniverse.key} does not have any symbols to sample.`)
+      }
+      setSampledSymbols(nextSymbols)
+      setChosenSampleSymbols(nextSymbols)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sample universe symbols')
+    } finally {
+      setSamplingUniverse(false)
+    }
+  }
+
+  const handleCloseSampleDialog = () => {
+    if (chosenSampleSymbols.length > 0) {
+      setSymbols((current) => normalizeSymbols([...current, ...chosenSampleSymbols]))
+    }
+    setSampleDialogOpen(false)
+  }
+
   return (
     <Stack component="form" spacing={2.5} onSubmit={handleSubmit}>
+      <Button component={RouterLink} to="/backtests/datasets" startIcon={<ArrowBackIcon />} sx={{ width: 'fit-content' }}>
+        Back to datasets
+      </Button>
+
       <Dialog
         open={launchResult !== null}
         onClose={() => setLaunchResult(null)}
@@ -175,6 +333,141 @@ export function DatasetWizardPage() {
         </DialogActions>
       </Dialog>
 
+      <Dialog
+        open={sampleDialogOpen}
+        onClose={handleCloseSampleDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ pb: 1 }}>Sample from universe</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Autocomplete
+              options={availableUniverses}
+              getOptionLabel={(option) => `${option.name} (${option.key})`}
+              value={selectedUniverse}
+              isOptionEqualToValue={(option, value) => option.key === value.key}
+              onChange={(_event, value) => {
+                setSelectedUniverseKey(value?.key ?? null)
+                setSampledSymbols([])
+                setChosenSampleSymbols([])
+              }}
+              loading={loadingUniverses}
+              noOptionsText={loadingUniverses ? 'Loading universes…' : 'No universes are available yet.'}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Universe"
+                  placeholder="Choose a universe"
+                  helperText="Select a registry or user universe, then sample symbols from it."
+                />
+              )}
+            />
+            <Stack spacing={1}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  Sample size
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {universeSymbols.length > 0
+                    ? `${sampleSize} / ${universeSymbols.length} symbols (${Math.round((sampleSize / universeSymbols.length) * 100)}%)`
+                    : 'Loading…'}
+                </Typography>
+              </Stack>
+              <Slider
+                value={sampleSize}
+                onChange={(_event, nextValue) => {
+                  const next = Array.isArray(nextValue) ? nextValue[0] : nextValue
+                  setSampleSize(next)
+                }}
+                min={1}
+                max={Math.max(universeSymbols.length, 1)}
+                step={1}
+                disabled={loadingUniverseSymbols || universeSymbols.length === 0}
+                valueLabelDisplay="auto"
+                valueLabelFormat={(value) =>
+                  universeSymbols.length > 0
+                    ? `${value} symbols (${Math.round((value / universeSymbols.length) * 100)}%)`
+                    : `${value}`
+                }
+              />
+              <Typography variant="caption" color="text.secondary">
+                {universeSymbols.length > 0
+                  ? 'Drag to choose how many symbols to sample from the universe.'
+                  : 'Loading universe constituents…'}
+              </Typography>
+            </Stack>
+            {sampledSymbols.length > 0 ? (
+              <Stack spacing={1}>
+                <Typography variant="body2" color="text.secondary">
+                  Pick one or more sampled symbols. Closing the modal will add them to the dataset symbol basket.
+                </Typography>
+                <Autocomplete
+                  multiple
+                  options={sampledSymbols}
+                  value={chosenSampleSymbols}
+                  onChange={(_event, value) => setChosenSampleSymbols(normalizeSymbols(value))}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Sampled symbols"
+                      placeholder="Choose one or more symbols"
+                      helperText="Use chips to choose the dataset symbol from the sampled basket."
+                    />
+                  )}
+                />
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {sampledSymbols.map((item) => {
+                    const selected = chosenSampleSymbols.includes(item)
+                    return (
+                      <Chip
+                        key={item}
+                        label={item}
+                        clickable
+                        color={selected ? 'primary' : 'default'}
+                        variant={selected ? 'filled' : 'outlined'}
+                        onClick={() => {
+                          setChosenSampleSymbols((current) =>
+                            current.includes(item)
+                              ? current.filter((value) => value !== item)
+                              : [...current, item],
+                          )
+                        }}
+                      />
+                    )
+                  })}
+                </Box>
+              </Stack>
+            ) : (
+              <Alert severity="info">
+                Sample a universe to preview symbols. Closing the modal will add the chosen symbols to the dataset form.
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'flex-start' }}>
+          <Button onClick={handleCloseSampleDialog} variant="outlined" color="inherit">
+            Close
+          </Button>
+          <Button
+            onClick={() => void handleSampleFromUniverse()}
+            variant="contained"
+            disabled={loadingUniverses || loadingUniverseSymbols || samplingUniverse || selectedUniverse === null}
+          >
+            {samplingUniverse ? 'Sampling…' : 'Sample symbols'}
+          </Button>
+          <Button
+            onClick={() => {
+              handleCloseSampleDialog()
+            }}
+            variant="contained"
+            disabled={chosenSampleSymbols.length === 0}
+          >
+            Use selected
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <ConfirmDialog
         open={confirmOpen}
         title="Launch dataset?"
@@ -194,7 +487,7 @@ export function DatasetWizardPage() {
               }}
             >
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.25 }}>
-                {symbol} · {provider} · {resolution}
+                {symbols.join(', ')} · {provider} · {resolution}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.25 }}>
                 {startDate?.format('YYYY-MM-DD')} to {endDate?.format('YYYY-MM-DD')}
@@ -253,13 +546,27 @@ export function DatasetWizardPage() {
                 onChange={(event) => setName(event.target.value)}
                 helperText="Optional friendly name shown in the dataset list."
               />
-              <TextField
+              <Autocomplete
                 fullWidth
-                sx={fieldSx}
-                label="Symbol"
-                value={symbol}
-                onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+                multiple
+                freeSolo
+                options={platformSettings.backtest_defaults.symbols_seed_list}
+                value={symbols}
+                onChange={(_event, value) => setSymbols(normalizeSymbols(value))}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Symbols"
+                    placeholder="Type a symbol and press Enter"
+                    helperText="Type one or more symbols manually, or sample a basket from a universe."
+                  />
+                )}
               />
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-start', pt: 0.5 }}>
+                <Button variant="outlined" onClick={() => setSampleDialogOpen(true)}>
+                  Sample from universe
+                </Button>
+              </Box>
               <TextField
                 fullWidth
                 sx={fieldSx}
@@ -322,7 +629,7 @@ export function DatasetWizardPage() {
               label="Include options data"
             />
             <Typography variant="body2" color="text.secondary">
-              Optional. When enabled, this launch also downloads Alpaca options bars for the same symbol and date range.
+              Optional. When enabled, this launch also downloads Alpaca options bars for the same symbols and date range.
             </Typography>
             <TextField
               fullWidth

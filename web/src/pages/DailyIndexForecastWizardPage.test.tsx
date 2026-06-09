@@ -161,6 +161,10 @@ describe('DailyIndexForecastWizardPage launch flow', () => {
       </MemoryRouter>,
     )
 
+    expect(screen.getByRole('combobox', { name: /data source/i })).not.toBeDisabled()
+    expect(screen.getByLabelText(/^interval$/i)).not.toBeDisabled()
+    expect(screen.getByLabelText(/^feed$/i)).not.toBeDisabled()
+
     fireEvent.click(screen.getByTestId('daily-index-launch-forecast'))
 
     await waitFor(() =>
@@ -218,12 +222,15 @@ describe('DailyIndexForecastWizardPage launch flow', () => {
     )
 
     const datasetModeSwitches = await screen.findAllByRole('switch', { name: /use existing dataset/i })
-    expect(datasetModeSwitches[0]).toBeChecked()
+    await waitFor(() => expect(datasetModeSwitches[0]).toBeChecked())
     await waitFor(() =>
       expect(screen.getByRole('combobox', { name: /existing dataset/i })).toHaveValue(
         'My dataset - AAPL - 2026-05-01 to 2026-06-01',
       ),
     )
+    expect(screen.getByRole('combobox', { name: /data source/i })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByLabelText(/^interval$/i)).toBeDisabled()
+    expect(screen.getByLabelText(/^feed$/i)).toBeDisabled()
     expect(screen.queryByLabelText(/^benchmark symbol$/i)).not.toBeInTheDocument()
 
     const symbolSelect = screen.getByRole('combobox', { name: /^symbol$/i })
@@ -241,6 +248,12 @@ describe('DailyIndexForecastWizardPage launch flow', () => {
             symbols: [
               expect.objectContaining({
                 symbol: 'MSFT',
+                data: expect.objectContaining({
+                  type: 'alpaca',
+                  symbol: 'MSFT',
+                  interval: '5m',
+                  feed: 'iex',
+                }),
               }),
             ],
             start_date: '2026-05-01',

@@ -269,6 +269,54 @@ def _bars_held(context: StrategyContext) -> int:
     return max(0, len(bars) - 1)
 
 
+def _resample_session_bars(bars: Sequence[Bar], interval_minutes: int) -> list[Bar]:
+    if interval_minutes <= 0:
+        raise ValueError("interval_minutes must be positive")
+    aggregated: list[Bar] = []
+    current_key: tuple[date, int] | None = None
+    bucket: list[Bar] = []
+    source_interval_minutes = interval_minutes
+    for idx in range(1, len(bars)):
+        delta_minutes = int(round((bars[idx].timestamp - bars[idx - 1].timestamp).total_seconds() / 60.0))
+        if delta_minutes > 0:
+            source_interval_minutes = delta_minutes
+            break
+    bars_per_bucket = max(1, interval_minutes // max(1, source_interval_minutes))
+
+    def flush() -> None:
+        nonlocal bucket
+        if len(bucket) != bars_per_bucket:
+            return
+        first = bucket[0]
+        last = bucket[-1]
+        aggregated.append(
+            Bar(
+                timestamp=last.timestamp,
+                open=float(first.open),
+                high=float(max(bar.high for bar in bucket)),
+                low=float(min(bar.low for bar in bucket)),
+                close=float(last.close),
+                volume=float(sum(bar.volume for bar in bucket)),
+                is_complete=all(bar.is_complete for bar in bucket),
+            )
+        )
+        bucket = []
+
+    for bar in bars:
+        minutes_since_open = _minutes_since_rth_open(bar)
+        if minutes_since_open is None:
+            continue
+        key = (_bar_session_date(bar.timestamp), minutes_since_open // interval_minutes)
+        if current_key is None:
+            current_key = key
+        if key != current_key:
+            flush()
+            current_key = key
+        bucket.append(bar)
+    flush()
+    return aggregated
+
+
 def _volume_rally_entry_signal(
     *,
     volume_ok: bool,
@@ -1055,9 +1103,12 @@ class PortableBacktestingStrategy(Strategy):
             entry_regime = getattr(self.core, "entry_regime_label", None)
             self._last_entry_regime = entry_regime() if callable(entry_regime) else None
             self.buy(size=float(decision.size or 0.0))
-        elif decision.action == "close" and self.position:
+        elif decision.action in {"close", "trim"} and self.position:
             self._last_exit_reason = decision.reason
-            self.position.close()
+            if decision.action == "trim":
+                self.position.close(portion=float(decision.portion or 0.0))
+            else:
+                self.position.close()
 
         self._enforce_flat_by_session_close(data_index)
 

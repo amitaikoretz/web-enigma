@@ -408,6 +408,7 @@ def test_get_strategies_returns_all_built_in_strategies_and_parameter_metadata(t
         "buy_and_hold",
         "breakout_channel",
         "buy_oco_atr",
+        "vwap_pullback",
         "volume_rally",
         "fast_upswing",
     ]
@@ -418,7 +419,7 @@ def test_get_strategies_returns_all_built_in_strategies_and_parameter_metadata(t
         "default": 8,
         "required": False,
         "title": "Fast",
-        "description": None,
+        "description": "Fast SMA lookback window in bars.",
         "enum": None,
         "multipleOf": None,
         "minimum": 2,
@@ -434,12 +435,15 @@ def test_get_strategies_returns_all_built_in_strategies_and_parameter_metadata(t
     assert exit_response.status_code == 200
     exit_rules = exit_response.json()
     assert any(item["name"] == "fixed_pct_oco" for item in exit_rules)
+    assert any(item["name"] == "vwap_pullback_manage" for item in exit_rules)
     fixed_pct = next(item for item in exit_rules if item["name"] == "fixed_pct_oco")
     assert "stop_loss_pct" not in fixed_pct["parameters"]
     assert "take_profit_pct" not in fixed_pct["parameters"]
     assert fixed_pct["parameters"]["atr_period"]["type"] == "integer"
     assert fixed_pct["parameters"]["sl_atr_mult"]["type"] == "number"
     assert fixed_pct["parameters"]["tp_atr_mult"]["type"] == "number"
+    vwap_manage = next(item for item in exit_rules if item["name"] == "vwap_pullback_manage")
+    assert vwap_manage["parameters"]["partial_trim_portion"]["default"] == 0.5
 
 
 def test_get_strategies_does_not_invent_cross_field_constraints(tmp_path):

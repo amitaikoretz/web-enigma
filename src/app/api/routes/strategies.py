@@ -16,6 +16,7 @@ def get_strategies() -> list[StrategyMetadataResponse]:
         StrategyMetadataResponse(
             name=spec.name,
             description=spec.description,
+            documentation=spec.documentation,
             parameters=build_strategy_parameters(spec.params_model),
         )
         for spec in list_triggers()
@@ -28,6 +29,7 @@ def get_exit_rules() -> list[StrategyMetadataResponse]:
         StrategyMetadataResponse(
             name=spec.name,
             description=spec.description,
+            documentation=getattr(spec, "documentation", spec.description),
             parameters=build_strategy_parameters(spec.params_model),
         )
         for spec in list_exit_rules()

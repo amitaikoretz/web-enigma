@@ -8,6 +8,7 @@ import pandas as pd
 from app.datasets.argo_workflow import build_dataset_workflow_spec
 from app.datasets.models import DatasetListItem
 from app.datasets.service import DatasetService
+from app.datasets.sharding import build_dataset_shard_plan, write_json_file
 from app.settings.service import PlatformSettingsService
 
 
@@ -90,6 +91,7 @@ def _dataset_item() -> DatasetListItem:
         id="ds-1",
         name="My dataset",
         symbol="AAPL",
+        symbols=["AAPL"],
         provider="alpaca",
         resolution="1d",
         start_date=date(2026, 5, 1),
@@ -101,6 +103,7 @@ def _dataset_item() -> DatasetListItem:
         argo_workflow_name="dataset-ds-1",
         params_json={
             "symbol": "AAPL",
+            "symbols": ["AAPL"],
             "provider": "alpaca",
             "resolution": "1d",
             "start_date": "2026-05-01",
@@ -266,7 +269,7 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     monkeypatch.setenv("BACKTEST_WORKFLOW_RESULTS_MOUNT", "/data/backtest-results")
 
     spec = build_dataset_workflow_spec(
-        symbol="AAPL",
+        symbols=["AAPL", "MSFT"],
         provider="alpaca",
         resolution="5m",
         start_date="2026-01-01",
@@ -283,9 +286,10 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
             "persistentVolumeClaim": {"claimName": "backtest-results"},
         }
     ]
+    assert spec["parallelism"] == 4
     main_template = next(template for template in spec["templates"] if template["name"] == "main")
     step_names = [step["name"] for group in main_template["steps"] for step in group]
-    assert step_names == ["print-payload", "run"]
+    assert step_names == ["print-payload", "plan", "download-shards", "combine"]
 
     print_payload = next(template for template in spec["templates"] if template["name"] == "print-payload")
     print_mounts = print_payload["container"]["volumeMounts"]
@@ -294,22 +298,55 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     assert "__COMMAND_LINE__" not in print_args
     assert "--command-line" in print_args
 
-    run = next(template for template in spec["templates"] if template["name"] == "run")
-    mounts = run["container"]["volumeMounts"]
-    assert mounts == [{"name": "datasets-results", "mountPath": "/data/backtest-results"}]
-    args = run["container"]["args"]
-    assert "{{inputs.parameters.options-enabled-flag}}" in args
-    assert "--options-dataset-path-out" in args
-    assert "/tmp/options-dataset-path.txt" in args
-    assert "--options-manifest-path-out" in args
-    assert "/tmp/options-manifest-path.txt" in args
-    outputs = run["outputs"]["parameters"]
-    names = [item["name"] for item in outputs]
-    assert "terminal-command" in names
-    assert "error-exception" in names
-    assert "error-code-location" in names
-    assert "error-call-stack" in names
-    assert "error-traceback" in names
+    plan = next(template for template in spec["templates"] if template["name"] == "plan-shards")
+    plan_mounts = plan["container"]["volumeMounts"]
+    assert plan_mounts == [{"name": "datasets-results", "mountPath": "/data/backtest-results"}]
+    assert plan["retryStrategy"] == {
+        "limit": 3,
+        "retryPolicy": "Always",
+        "backoff": {"duration": "10s", "factor": 2, "maxDuration": "1m"},
+    }
+    pod_spec_patch = plan["podSpecPatch"]
+    assert "asInt(retries)" in pod_spec_patch
+    assert "4Gi" in pod_spec_patch
+    assert "32Gi" in pod_spec_patch
+    plan_args = plan["container"]["args"]
+    assert "plan-shards" in plan_args
+    assert "--symbol" in plan_args
+    assert "{{inputs.parameters.symbols}}" in plan_args
+    assert "--shards-param-out" in plan_args
+    assert "/tmp/shards-param.json" in plan_args
+    plan_outputs = plan["outputs"]["parameters"]
+    plan_output_names = [item["name"] for item in plan_outputs]
+    assert plan_output_names == ["plan-path", "work-dir", "shards", "terminal-command", "error-exception", "error-code-location", "error-call-stack", "error-traceback"]
+
+    download = next(template for template in spec["templates"] if template["name"] == "download-shard")
+    download_args = download["container"]["args"]
+    assert "download-shard" in download_args
+    assert "{{inputs.parameters.progress-total-units}}" in download_args
+    assert "{{inputs.parameters.progress-symbol-units}}" in download_args
+    assert download["retryStrategy"] == plan["retryStrategy"]
+    assert download["podSpecPatch"] == plan["podSpecPatch"]
+    assert download["metadata"]["annotations"]["workflows.argoproj.io/progress"] == "0/100"
+
+    combine = next(template for template in spec["templates"] if template["name"] == "combine-shards")
+    combine_args = combine["container"]["args"]
+    assert "combine-shards" in combine_args
+    assert "{{inputs.parameters.plan-path}}" in combine_args
+    assert "/tmp/manifest-path.txt" in combine_args
+    combine_outputs = combine["outputs"]["parameters"]
+    combine_output_names = [item["name"] for item in combine_outputs]
+    assert combine_output_names == [
+        "dataset-path",
+        "manifest-path",
+        "options-dataset-path",
+        "options-manifest-path",
+        "terminal-command",
+        "error-exception",
+        "error-code-location",
+        "error-call-stack",
+        "error-traceback",
+    ]
 
 
 def test_submit_uses_workflow_mount_in_argo_payload(tmp_path: Path, monkeypatch) -> None:
@@ -326,7 +363,7 @@ def test_submit_uses_workflow_mount_in_argo_payload(tmp_path: Path, monkeypatch)
     response = service.submit(
         DatasetCreateRequest.model_validate(
             {
-                "symbol": "AAPL",
+                "symbols": ["AAPL", "MSFT"],
                 "provider": "alpaca",
                 "resolution": "1d",
                 "start_date": date(2026, 5, 1),
@@ -343,6 +380,103 @@ def test_submit_uses_workflow_mount_in_argo_payload(tmp_path: Path, monkeypatch)
     params = {item["name"]: item["value"] for item in workflow["spec"]["arguments"]["parameters"]}  # type: ignore[index]
     assert params["output-dir"] == str((workflow_root / repo.item.id).resolve())
     assert params["options-enabled-flag"] == "--no-options-enabled"
+    assert params["symbols"] == "AAPL,MSFT"
+
+
+def test_refresh_from_argo_uses_weighted_shard_progress(tmp_path: Path) -> None:
+    output_dir = tmp_path / "datasets"
+    plan_dir = output_dir / "ds-1"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    item = _dataset_item().model_copy(
+        update={
+            "status": "running",
+            "progress_pct": 10.0,
+            "argo_namespace": "default",
+            "argo_workflow_name": "dataset-ds-1",
+            "output_dir": str(output_dir),
+        }
+    )
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-1",
+        symbols=["AAPL", "MSFT"],
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 6, 1),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=plan_dir,
+        max_shards=4,
+        max_pods=2,
+        target_work_units=1_000,
+    )
+    write_json_file(plan_dir / "shard-plan.json", plan)
+    workflow = {
+        "status": {
+            "phase": "Running",
+            "nodes": {
+                "node1": {
+                    "templateName": "download-shard",
+                    "phase": "Running",
+                    "progress": "50/100",
+                    "inputs": {
+                        "parameters": [
+                            {"name": "shard-id", "value": plan.shards[0].shard_id},
+                            {"name": "output-dir", "value": plan.shards[0].output_dir},
+                        ]
+                    },
+                }
+            },
+        }
+    }
+    repo = FakeDatasetRepository(item)
+    service = DatasetService(repo, FakeSettingsService(), argo_submitter=FakeArgoSubmitter(workflow))
+
+    service._refresh_from_argo(item, write_back=True)
+
+    assert repo.item is not None
+    assert repo.item.status == "running"
+    assert repo.item.progress_pct > 10.0
+    assert repo.item.progress_pct < 100.0
+
+
+def test_refresh_from_argo_marks_terminal_progress_complete(tmp_path: Path) -> None:
+    output_dir = tmp_path / "datasets"
+    plan_dir = output_dir / "ds-1"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    item = _dataset_item().model_copy(
+        update={
+            "status": "running",
+            "progress_pct": 17.0,
+            "argo_namespace": "default",
+            "argo_workflow_name": "dataset-ds-1",
+            "output_dir": str(output_dir),
+        }
+    )
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-1",
+        symbols=["AAPL"],
+        provider="alpaca",
+        resolution="1d",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 6, 1),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=plan_dir,
+        max_shards=4,
+        max_pods=2,
+        target_work_units=1_000,
+    )
+    write_json_file(plan_dir / "shard-plan.json", plan)
+    workflow = {"status": {"phase": "Succeeded", "nodes": {}}}
+    repo = FakeDatasetRepository(item)
+    service = DatasetService(repo, FakeSettingsService(), argo_submitter=FakeArgoSubmitter(workflow))
+
+    service._refresh_from_argo(item, write_back=True)
+
+    assert repo.item is not None
+    assert repo.item.status == "completed"
+    assert repo.item.progress_pct == 100.0
 
 
 def test_default_dataset_storage_root_uses_shared_results_mount() -> None:
@@ -362,7 +496,7 @@ def test_submit_falls_back_to_api_results_dir_when_dataset_root_is_not_writable(
     response = service.submit(
         DatasetCreateRequest.model_validate(
             {
-                "symbol": "AAPL",
+                "symbols": ["AAPL", "MSFT"],
                 "provider": "alpaca",
                 "resolution": "1d",
                 "start_date": date(2026, 5, 1),
@@ -379,6 +513,7 @@ def test_submit_falls_back_to_api_results_dir_when_dataset_root_is_not_writable(
     workflow = submitted["json"]["workflow"]  # type: ignore[index]
     params = {item["name"]: item["value"] for item in workflow["spec"]["arguments"]["parameters"]}  # type: ignore[index]
     assert params["output-dir"] == str((Path("/data/backtest-results") / repo.item.id).resolve())
+    assert params["symbols"] == "AAPL,MSFT"
 
 
 def test_get_dataset_workflow_errors_returns_argo_error_outputs() -> None:
@@ -443,6 +578,6 @@ def test_retry_dataset_submits_a_new_workflow() -> None:
     assert submitted is not None
     workflow = submitted["json"]["workflow"]  # type: ignore[index]
     params = {param["name"]: param["value"] for param in workflow["spec"]["arguments"]["parameters"]}  # type: ignore[index]
-    assert params["symbol"] == "AAPL"
+    assert params["symbols"] == "AAPL"
     assert params["options-enabled"] == "false"
     assert repo.item.params_json["options"]["enabled"] is False

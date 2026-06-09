@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import random
-import socket
 import time
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
@@ -15,6 +14,9 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.config.models import AlpacaExecutionConfig, AlpacaTradingRunConfig
+from app.alpaca_transport import alpaca_transport_failure_label
+from app.alpaca_transport import format_alpaca_transport_failure_message
+from app.alpaca_transport import is_temporary_alpaca_transport_failure
 from app.strategies.candidates import CandidateEvent, record_candidate
 from app.strategies.core import Bar, ExecutionEvent, PositionState, StrategyContext, StrategyCore, StrategyRuntimeSnapshot
 from app.strategies.auditor_logging import log_auditor_rejection
@@ -22,14 +24,6 @@ from app.strategies.implementations import _benchmark_bars_as_of
 from app.strategies.factory import build_strategy_core, composed_strategy_id, resolve_warmup_bars
 
 logger = logging.getLogger(__name__)
-
-
-def _is_temporary_dns_failure(exc: URLError) -> bool:
-    reason = getattr(exc, "reason", None)
-    if isinstance(reason, socket.gaierror):
-        return reason.errno == -3
-    errno = getattr(reason, "errno", None)
-    return errno == -3
 
 
 def _sleep_backoff(attempt_index: int, *, base_s: float = 1.0, cap_s: float = 30.0) -> float:
@@ -136,7 +130,7 @@ class HttpAlpacaTradingClient:
             body = exc.read().decode("utf-8", errors="ignore")
             raise RuntimeError(f"Alpaca trading request failed ({exc.code}): {body or exc.reason}") from exc
         except URLError as exc:
-            raise RuntimeError(f"Failed to reach Alpaca trading API: {exc.reason}") from exc
+            raise RuntimeError(format_alpaca_transport_failure_message(service="trading API", exc=exc)) from exc
 
     def list_open_orders(self, symbol: str) -> list[AlpacaOpenOrder]:
         payload = self._request("GET", "/v2/orders", params={"status": "open", "symbols": symbol})
@@ -216,18 +210,19 @@ class HttpAlpacaBarSource:
                 raise RuntimeError(f"Alpaca data request failed ({exc.code}): {body or exc.reason}") from exc
             except URLError as exc:
                 last_exc = exc
-                if not _is_temporary_dns_failure(exc) or attempt == 5:
-                    raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
+                if not is_temporary_alpaca_transport_failure(exc) or attempt == 5:
+                    raise RuntimeError(format_alpaca_transport_failure_message(service="data API", exc=exc)) from exc
                 delay_s = _sleep_backoff(attempt)
                 logger.warning(
-                    "Alpaca DNS lookup failed (temporary). Retrying in %.2fs (attempt %d/%d). Error=%r",
+                    "Alpaca transport failure (%s). Retrying in %.2fs (attempt %d/%d). Error=%r",
+                    alpaca_transport_failure_label(exc),
                     delay_s,
                     attempt + 1,
                     6,
                     exc.reason,
                 )
         if last_exc is not None:
-            raise RuntimeError(f"Failed to reach Alpaca data API: {last_exc.reason}") from last_exc
+            raise RuntimeError(format_alpaca_transport_failure_message(service="data API", exc=last_exc)) from last_exc
 
         bars: list[Bar] = []
         now = datetime.now(UTC)
@@ -426,12 +421,16 @@ class AlpacaStrategyExecutor:
                     )
                 else:
                     self.seen_client_order_ids.add(order_id)
-        elif decision.action == "close" and position.is_open:
-            order_id = self._client_order_id("close", latest)
+        elif decision.action in {"close", "trim"} and position.is_open:
+            order_action = "trim" if decision.action == "trim" else "close"
+            order_id = self._client_order_id(order_action, latest)
             if order_id not in self.seen_client_order_ids:
+                sell_qty = float(abs(position.size))
+                if decision.action == "trim":
+                    sell_qty *= float(decision.portion or 0.0)
                 response = self.trading_client.submit_market_order(
                     symbol=self.run.symbol,
-                    qty=float(abs(position.size)),
+                    qty=sell_qty,
                     side="sell",
                     client_order_id=order_id,
                 )
@@ -442,9 +441,9 @@ class AlpacaStrategyExecutor:
                             timestamp=latest.iso_timestamp,
                             status=response.status,
                             is_buy=False,
-                            size=float(abs(position.size)),
+                            size=sell_qty,
                             price=latest.close,
-                            value=float(abs(position.size) * latest.close),
+                            value=float(sell_qty * latest.close),
                             reason=decision.reason,
                             order_id=response.client_order_id,
                         )

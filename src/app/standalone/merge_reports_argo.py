@@ -8,6 +8,7 @@ import typer
 
 from app.cli import _cmd_merge
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -38,7 +39,7 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="merge_reports_argo")
 
     resolved_backtest_id = backtest_id.strip() or None
     rc = _cmd_merge(manifest_path=manifest_path, output_path=output_path, backtest_id=resolved_backtest_id)

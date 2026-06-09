@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import ssl
 from datetime import date
 from urllib.parse import urlparse, parse_qs
+from urllib.error import URLError
 
 import pytest
 
@@ -139,6 +141,59 @@ def test_alpaca_request_includes_full_stop_day(tmp_path, monkeypatch):
     assert captured_urls
     assert "start=2024-01-15T00%3A00%3A00Z" in captured_urls[0]
     assert "end=2024-01-16T00%3A00%3A00Z" in captured_urls[0]
+
+
+def test_alpaca_transient_tls_failure_is_retried(tmp_path, monkeypatch):
+    calls = {"n": 0}
+
+    def fake_urlopen(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise URLError(
+                ssl.SSLEOFError(8, "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol")
+            )
+        return _FakeResponse(_mock_alpaca_payload())
+
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.data.loaders._sleep_backoff", lambda *args, **kwargs: 0.0)
+
+    config = AlpacaDataSource(type="alpaca", symbol="AAPL", interval="1d")
+    cache_cfg = DataCacheConfig(directory=str(tmp_path), enabled=False)
+
+    frame, cache_status = build_alpaca_data_feed_with_cache(
+        config, date(2024, 1, 1), date(2024, 1, 3), cache_cfg, force_refresh=False
+    )
+
+    assert calls["n"] == 2
+    assert not frame.empty
+    assert cache_status == "miss"
+
+
+def test_alpaca_transient_tls_failure_message_is_explicit(tmp_path, monkeypatch):
+    calls = {"n": 0}
+
+    def fake_urlopen(*args, **kwargs):
+        calls["n"] += 1
+        raise URLError(
+            ssl.SSLEOFError(8, "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol")
+        )
+
+    monkeypatch.setenv("ALPACA_API_KEY", "k")
+    monkeypatch.setenv("ALPACA_SECRET_KEY", "s")
+    monkeypatch.setattr("app.data.loaders.urlopen", fake_urlopen)
+    monkeypatch.setattr("app.data.loaders._sleep_backoff", lambda *args, **kwargs: 0.0)
+
+    config = AlpacaDataSource(type="alpaca", symbol="AAPL", interval="1d")
+    cache_cfg = DataCacheConfig(directory=str(tmp_path), enabled=False)
+
+    with pytest.raises(RuntimeError, match=r"Failed to reach Alpaca data API \(transient TLS/network handshake failure\)"):
+        build_alpaca_data_feed_with_cache(
+            config, date(2024, 1, 1), date(2024, 1, 3), cache_cfg, force_refresh=False
+        )
+
+    assert calls["n"] == 6
 
 
 def test_alpaca_options_requests_include_requested_feed(tmp_path, monkeypatch):

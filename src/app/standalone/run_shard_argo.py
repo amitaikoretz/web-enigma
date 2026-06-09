@@ -8,6 +8,7 @@ import typer
 
 from app.cli import _cmd_run
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.script_logging import emit_info, emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -39,14 +40,14 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="run_shard_argo")
 
     resolved_shard_id = shard_id.strip()
     if resolved_shard_id:
-        typer.echo(f"Running shard {resolved_shard_id}")
-    typer.echo(f"Shard config: {config_path}")
-    typer.echo(f"Shard output: {output_path}")
-    typer.echo(f"Cache dir: {cache_dir}")
+        emit_info("running-shard", resolved_shard_id, script="run_shard_argo")
+    emit_info("shard-config", f"path={config_path}", script="run_shard_argo")
+    emit_info("shard-output", f"path={output_path}", script="run_shard_argo")
+    emit_info("cache-dir", f"path={cache_dir}", script="run_shard_argo")
 
     try:
         rc = _cmd_run(

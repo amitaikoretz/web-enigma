@@ -260,6 +260,9 @@ Rules:
 This parquet is a joined superset of the candidate, label, and feature contracts, with these rules:
 
 - `dataset_version`, `label_version`, and `feature_version` are inserted as the leading columns.
+- `symbol` is always present and may be stored using a categorical or dictionary-encoded parquet representation.
+- The writer may split the dataset into multiple parquet files when the configured file-size cap is exceeded.
+- Split files are recorded in the manifest JSON with their path, row count, size, and split key values.
 - Candidate metadata is flattened to `meta_...` columns.
 - Feature metadata is flattened to `meta_...` columns when the builder reconstructs the dataset from bars.
 - When candidate logs are missing from the report JSON, the builder may synthesize a reduced candidate frame from the label and feature sidecars. That fallback is documented, but the preferred source of truth is still the candidate log in the report.
@@ -272,14 +275,34 @@ Minimum columns that every joined dataset must have:
 | `label_version` | string | required | Label schema version |
 | `feature_version` | string | required | Feature schema version |
 | `candidate_id` | string | required | Join key |
+| `symbol` | string | required | Traded symbol, stored with an optimized categorical/dictionary-encoded representation when possible |
 | `entry_price` | float | required | Candidate entry price |
 | `planned_stop_pct` | float | required | Candidate stop distance |
 | `planned_horizon_bars` | int | required | Candidate horizon |
 | `stop_pct` | float | required | Label stop distance |
 | `feature_quality_flag` | string | required | Feature quality flag |
 
+Manifest chunk records carry:
+
+| Field | Type | Nullability | Notes |
+|---|---|---|---|
+| `path` | string | required | Absolute parquet chunk path |
+| `row_count` | int | required | Rows in the chunk |
+| `size_bytes` | int | required | On-disk chunk size |
+| `chunk_index` | int | required | Stable chunk order |
+| `split_key_values` | object | required | Split key values used to form the chunk |
+
 **Ordering:** rows are concatenated in input-report order; within a report, the candidate order is preserved as much as possible.  
 **Failure behavior:** inner joins drop candidates that do not have both labels and features. That is intentional and should be reflected in `RiskDatasetManifest`.
+
+The manifest JSON is also strict and records:
+
+- `max_parquet_file_size_bytes`
+- `primary_split_keys`
+- `fallback_split_keys`
+- `chunk_count`
+- `total_parquet_bytes`
+- `files[]`
 
 ## Dataset Download Parquet
 
@@ -289,6 +312,8 @@ Minimum columns that every joined dataset must have:
 **Versioning:** no embedded schema version; the column set is the contract
 
 This contract applies to both the primary market-data parquet and the optional Alpaca options parquet emitted by the downloader.
+Each dataset run now emits a canonical parquet path plus a manifest JSON that lists the chunked final parquet files written under the dataset output directory.
+The canonical parquet remains the compatibility download target; the chunk files are the final sharded outputs.
 
 | Column | Type | Nullability | Notes |
 |---|---|---|---|
@@ -301,6 +326,42 @@ This contract applies to both the primary market-data parquet and the optional A
 
 **Ordering:** rows are sorted by timestamp ascending.  
 **Failure behavior:** rows without a timestamp or without OHLCV columns fail validation before parquet write.
+
+### Dataset Download Manifest
+
+The manifest JSON records the chunked output layout for either `market` or `options` datasets.
+
+| Field | Type | Notes |
+|---|---|---|
+| `manifest_version` | string | `dataset-artifact-manifest-v1` |
+| `dataset_kind` | string | `market` or `options` |
+| `dataset_id` | string | Dataset job id |
+| `symbol` | string | Primary symbol |
+| `symbols` | array[string] | Ordered symbol basket |
+| `provider` | string | Dataset provider |
+| `resolution` | string | Bar resolution |
+| `start_date` | date | Inclusive start date |
+| `end_date` | date | Inclusive end date |
+| `output_path` | string | Canonical parquet path |
+| `plan_path` | string | Shard-plan JSON path used to build the dataset |
+| `primary_split_keys` | array[string] | Primary split policy keys |
+| `fallback_split_keys` | array[string] | Fallback split policy keys |
+| `estimated_total_work_units` | int | Planned work used for linear progress |
+| `shard_count` | int | Planned shard count |
+| `chunk_count` | int | Number of final parquet chunks |
+| `total_row_count` | int | Total rows across chunks |
+| `total_size_bytes` | int | Total bytes across chunks |
+| `chunks[]` | array<object> | Final chunk records |
+
+Each chunk record contains:
+
+| Field | Type | Notes |
+|---|---|---|
+| `path` | string | Chunk parquet path |
+| `row_count` | int | Rows in the chunk |
+| `size_bytes` | int | Chunk file size |
+| `chunk_index` | int | Stable chunk ordering |
+| `split_key_values` | object | Split keys used to form the chunk |
 
 ## Intraday Dataset Parquet
 

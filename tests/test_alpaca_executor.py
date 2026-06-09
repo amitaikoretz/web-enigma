@@ -13,7 +13,7 @@ from app.live.executor import (
     RuntimeStateStore,
     build_alpaca_executor,
 )
-from app.strategies.core import Bar, PositionState, StrategyRuntimeSnapshot
+from app.strategies.core import Bar, PositionState, StrategyDecision, StrategyRuntimeSnapshot
 
 
 BASE_TS = datetime(2024, 1, 1, 14, 30, tzinfo=UTC)
@@ -127,6 +127,52 @@ def test_executor_recovers_open_position_and_submits_close(tmp_path: Path):
 
     executor.process_latest_bar()
 
+    assert client.submitted_orders[-1][2] == "sell"
+
+
+def test_executor_translates_trim_into_partial_sell(tmp_path: Path, monkeypatch):
+    class DummyCore:
+        def load_state(self, state):
+            return None
+
+        def dump_state(self):
+            return {}
+
+        def on_bar(self, context):
+            return StrategyDecision.trim(0.5, "one_r_trim")
+
+    monkeypatch.setattr("app.live.executor.build_strategy_core", lambda **kwargs: DummyCore())
+
+    store = RuntimeStateStore(str(tmp_path))
+    entry_bar = _bars(closes=[100, 101])[0]
+    store.save(
+        "live-demo",
+        StrategyRuntimeSnapshot(
+            last_processed_bar_time=None,
+            position=PositionState(
+                is_open=True,
+                size=2.0,
+                entry_price=100.0,
+                entry_bar_index=0,
+                entry_time=entry_bar.iso_timestamp,
+                bars_held=0,
+            ),
+            core_state={},
+        ),
+    )
+    client = FakeTradingClient(position=AlpacaPosition(symbol="AAPL", qty=2.0, avg_entry_price=100.0))
+    bars = _bars(closes=[100, 101])
+    executor = build_alpaca_executor(
+        run=_run(),
+        execution=AlpacaExecutionConfig(mode="paper", state_directory=str(tmp_path)),
+        trading_client=client,
+        bar_source=FakeBarSource(bars),
+        state_store=store,
+    )
+
+    executor.process_latest_bar()
+
+    assert client.submitted_orders[-1][1] == 1.0
     assert client.submitted_orders[-1][2] == "sell"
 
 

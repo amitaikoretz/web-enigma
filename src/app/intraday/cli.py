@@ -11,6 +11,7 @@ import yaml
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.intraday.models import IntradayRunConfig
 from app.intraday.pipeline import run_intraday_pipeline, write_intraday_artifacts
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -75,7 +76,7 @@ def run(
     ),
     force_refresh: bool = typer.Option(False, "--force-refresh", help="Bypass cached market-data downloads"),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="intraday")
     for path in [dataset_path_out, manifest_path_out, predictions_path_out, positions_path_out, model_path_out, metrics_path_out]:
         _write_text(path, "")
 

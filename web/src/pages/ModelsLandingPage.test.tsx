@@ -140,6 +140,8 @@ describe('ModelsLandingPage', () => {
     )
 
     expect(await screen.findByText('Momentum Risk v1')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /all models \(3\)/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/search models/i)).toBeInTheDocument()
     expect(screen.getByText('Short Horizon Forecast')).toBeInTheDocument()
     expect(screen.getByText('Daily Alpha')).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /^status$/i })).toBeInTheDocument()
@@ -270,5 +272,16 @@ describe('ModelsLandingPage', () => {
     await screen.findByText('Momentum Risk v1')
     expect(screen.getAllByRole('button', { name: /delete selected/i })[0]).toBeDisabled()
     expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(1)
+
+    const riskRow = screen.getByText('Momentum Risk v1').closest('tr')
+    expect(riskRow).not.toBeNull()
+    if (!riskRow) {
+      throw new Error('Risk model row was not rendered')
+    }
+
+    fireEvent.click(within(riskRow).getByRole('checkbox'))
+
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /delete selected/i })[0]).toBeEnabled())
+    expect(screen.getByText(/1 selected/i)).toBeInTheDocument()
   })
 })

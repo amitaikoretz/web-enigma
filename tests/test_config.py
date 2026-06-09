@@ -90,6 +90,26 @@ def test_legacy_strategy_config_is_coerced():
     assert [rule.name for rule in parsed.runs[0].exit_rules.rules] == ["fixed_pct_oco", "max_hold_bars"]
 
 
+def test_legacy_vwap_pullback_strategy_config_is_coerced():
+    config = {
+        "runs": [
+            {
+                "run_id": "legacy_vwap",
+                "start_date": "2024-01-01",
+                "end_date": "2024-01-19",
+                "data": {"type": "csv", "path": "examples/data/sample_daily.csv"},
+                "strategy": "vwap_pullback",
+                "strategy_params": {"benchmark_symbol": "QQQ", "stake": 1},
+            }
+        ]
+    }
+    parsed = BacktestConfig.model_validate(config)
+    assert parsed.runs[0].trigger is not None
+    assert parsed.runs[0].trigger.name == "vwap_pullback"
+    assert parsed.runs[0].exit_rules is not None
+    assert [rule.name for rule in parsed.runs[0].exit_rules.rules] == ["vwap_pullback_manage"]
+
+
 def test_valid_backtest_fill_model():
     run = _base_run()
     run["execution"] = {"fill_model": "next_bar"}

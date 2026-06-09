@@ -9,7 +9,8 @@ export interface DatasetOptionsRequest {
 }
 
 export interface DatasetCreateRequest {
-  symbol: string
+  symbol?: string | null
+  symbols: string[]
   provider: DatasetProvider
   resolution: DatasetResolution
   start_date: string
@@ -29,6 +30,7 @@ export interface DatasetListItem {
   id: string
   name: string | null
   symbol: string
+  symbols?: string[]
   provider: DatasetProvider
   resolution: DatasetResolution
   start_date: string

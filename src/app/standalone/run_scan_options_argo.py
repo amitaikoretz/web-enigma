@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.script_logging import emit_terminal_command
 from app.scans.params import OptionsScanParams
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
@@ -34,7 +35,7 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="run_scan_options_argo")
 
     raw_params = json.loads(params_json or "{}")
     params = OptionsScanParams.model_validate(raw_params).model_dump()

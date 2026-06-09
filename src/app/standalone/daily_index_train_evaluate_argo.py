@@ -12,7 +12,8 @@ from app.daily_index_forecast.metrics import aggregate_nested_metrics
 from app.daily_index_forecast.models import DailyIndexCostConfig, DailyIndexTrainConfig, DailyIndexWalkForwardConfig
 from app.daily_index_forecast.pipeline import train_daily_index_model, write_json
 from app.feature_importance.io import build_linear_feature_importance, write_feature_importance_artifact
-from app.standalone.daily_index_common import json_default, terminal_command, write_text
+from app.standalone.daily_index_common import json_default, write_text
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -32,7 +33,7 @@ def main(
     metrics_path_out: str = typer.Option(..., "--metrics-path-out"),
     terminal_command_out: str | None = typer.Option(None, "--terminal-command-out"),
 ) -> None:
-    write_text(terminal_command_out, terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="daily_index_train_evaluate_argo")
     for path in [model_path_out, metrics_path_out]:
         write_text(path, "")
 

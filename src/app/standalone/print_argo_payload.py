@@ -9,6 +9,7 @@ import typer
 
 from app.backtests.argo_payload import build_argo_launch_payload, format_argo_launch_curl
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.script_logging import emit_error, emit_info, emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -73,18 +74,22 @@ def main(
 
     # Write this early so Argo output parameters always include the invoked command line,
     # even if we exit with an error while parsing inputs.
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="print_argo_payload")
 
     if config_b64 and config_b64.strip():
         try:
             config_text = _decode_config_b64(config_b64)
         except (ValueError, UnicodeDecodeError, OSError) as exc:
-            typer.echo(f"Invalid --config-b64: {exc}", err=True)
+            emit_error("invalid-config-b64", f"Invalid --config-b64: {exc}", script="print_argo_payload")
             raise typer.Exit(code=2) from exc
     elif config_text_file:
         text_path = Path(config_text_file)
         if not text_path.exists():
-            typer.echo(f"Config text file not found: {config_text_file}", err=True)
+            emit_error(
+                "config-text-file-not-found",
+                f"Config text file not found: {config_text_file}",
+                script="print_argo_payload",
+            )
             raise typer.Exit(code=2)
         config_text = text_path.read_text(encoding="utf-8")
 
@@ -102,14 +107,18 @@ def main(
                 backtest_id=backtest_id or "",
             )
         else:
-            typer.echo("Provide one of --config-path, --config-text-file, or --config-b64", err=True)
+            emit_error(
+                "missing-config-source",
+                "Provide one of --config-path, --config-text-file, or --config-b64",
+                script="print_argo_payload",
+            )
             raise typer.Exit(code=2)
     except ValueError as exc:
-        typer.echo(f"Payload build failed: {exc}", err=True)
+        emit_error("payload-build-failed", f"Payload build failed: {exc}", script="print_argo_payload")
         raise typer.Exit(code=2) from exc
 
     curl = format_argo_launch_curl(api_base_url, payload)
-    typer.echo(curl)
+    emit_info("launch-curl", curl, script="print_argo_payload")
 
     _write_text(launch_curl_out, curl)
 

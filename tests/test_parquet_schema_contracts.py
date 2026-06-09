@@ -417,6 +417,7 @@ def test_risk_dataset_schema_matches_component_contracts(tmp_path: Path) -> None
         "label_version",
         "feature_version",
         "candidate_id",
+        "symbol",
         "entry_price",
         "planned_stop_pct",
         "planned_horizon_bars",
@@ -424,6 +425,7 @@ def test_risk_dataset_schema_matches_component_contracts(tmp_path: Path) -> None
         "feature_quality_flag",
         "meta_source_tag",
     }.issubset(df.columns)
+    assert isinstance(df["symbol"].dtype, pd.CategoricalDtype)
     assert is_numeric_dtype(df["entry_price"])
     assert is_numeric_dtype(df["stop_pct"])
     assert df.loc[0, "meta_source_tag"] == "alpha"

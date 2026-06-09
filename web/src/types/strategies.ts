@@ -18,5 +18,6 @@ export interface StrategyParameterMetadata {
 export interface StrategyMetadata {
   name: string
   description: string
+  documentation: string
   parameters: Record<string, StrategyParameterMetadata>
 }

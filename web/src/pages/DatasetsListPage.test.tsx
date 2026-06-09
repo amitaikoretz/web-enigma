@@ -80,7 +80,8 @@ describe('DatasetsListPage', () => {
 
     await screen.findByText('My dataset')
     fireEvent.click(screen.getAllByRole('checkbox')[1])
-    fireEvent.click(screen.getByRole('button', { name: /train daily index forecast/i }))
+    fireEvent.click(screen.getByRole('button', { name: /train model/i }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /daily index forecast model/i }))
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/models/daily-index/new')
     expect(screen.getByTestId('location')).toHaveTextContent('"sourceKind":"dataset"')
@@ -149,6 +150,10 @@ describe('DatasetsListPage', () => {
     await screen.findByText('My dataset')
     fireEvent.click(screen.getAllByRole('checkbox')[1])
     fireEvent.click(screen.getAllByRole('checkbox')[2])
-    expect(screen.getByRole('button', { name: /train daily index forecast/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: /train model/i }))
+    expect(screen.getByRole('menuitem', { name: /daily index forecast model/i })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 })

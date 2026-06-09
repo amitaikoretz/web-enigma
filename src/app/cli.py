@@ -47,6 +47,7 @@ from app.risk.dataset.builder import build_risk_dataset
 from app.strategies.exit_rules import list_exit_rules
 from app.strategies.triggers import list_triggers
 from app.terminal_command import format_terminal_command
+from app.script_logging import emit_terminal_command
 from app.db.session import get_session_factory
 from app.universes.service import SymbolUniverseService
 
@@ -76,14 +77,7 @@ def _global_callback(
         help="Write the full CLI command line to this path for Argo output capture.",
     ),
 ) -> None:
-    cmd = format_terminal_command(sys.argv)
-    print(f"terminal-command: {cmd}")
-
-    if terminal_command_out is None:
-        return
-
-    terminal_command_out.parent.mkdir(parents=True, exist_ok=True)
-    terminal_command_out.write_text(f"{cmd}\n", encoding="utf-8")
+    emit_terminal_command(sys.argv, terminal_command_out=str(terminal_command_out) if terminal_command_out else None, script="cli")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

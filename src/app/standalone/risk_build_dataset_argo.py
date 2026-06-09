@@ -13,8 +13,10 @@ import typer
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.db.session import get_session_factory
 from app.db.models import BacktestJob
+from app.risk.dataset import RiskDatasetReader, build_risk_dataset
 from app.risk.dataset.feature_columns import select_risk_feature_columns
-from app.risk.dataset.builder import build_risk_dataset
+from app.risk.models import RiskDatasetConfig
+from app.script_logging import emit_terminal_command, emit_warning
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -62,7 +64,7 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="risk_build_dataset_argo")
     # Pre-create output parameter files so Argo can always collect them, even on failure.
     _write_text(dataset_path_out, "")
     _write_text(manifest_path_out, "")
@@ -72,13 +74,14 @@ def main(
     if not isinstance(backtest_ids, list) or not all(isinstance(x, str) and x for x in backtest_ids):
         raise ValueError("--backtest-ids-json must be a JSON array of strings")
 
-    # dataset_config_json reserved for future shaping (filters, dedupe policy, etc.)
-    _ = json.loads(dataset_config_json or "{}")
+    dataset_config_raw = json.loads(dataset_config_json or "{}")
+    if not isinstance(dataset_config_raw, dict):
+        raise ValueError("--dataset-config-json must be a JSON object")
+    risk_dataset_config = RiskDatasetConfig.model_validate(dataset_config_raw.get("risk_dataset", dataset_config_raw))
 
     out_dir = Path(artifact_dir) / "dataset"
     out_dir.mkdir(parents=True, exist_ok=True)
     dataset_path = out_dir / "dataset.parquet"
-    manifest_path = out_dir / "manifest.json"
 
     session_factory = get_session_factory()
     report_paths: list[Path] = []
@@ -91,14 +94,17 @@ def main(
                 raise ValueError(f"Backtest '{backtest_id}' missing report JSON path")
             report_paths.append(Path(row.report_json_path))
 
-    dataset_manifest = build_risk_dataset(report_paths, output_path=dataset_path)
-    joined = pd.read_parquet(dataset_path)
+    dataset_manifest = build_risk_dataset(report_paths, output_path=dataset_path, config=risk_dataset_config)
+    manifest_path = dataset_path.with_suffix(".manifest.json")
+    reader = RiskDatasetReader.from_manifest_path(manifest_path)
+    joined = reader.load()
 
     feature_cols, skipped_feature_cols = select_risk_feature_columns(joined)
     if skipped_feature_cols:
-        typer.echo(
+        emit_warning(
+            "risk-feature-filter",
             "Skipping non-feature columns from risk model inputs: " + ", ".join(skipped_feature_cols),
-            err=True,
+            script="risk_build_dataset_argo",
         )
 
     manifest = DatasetManifest(
@@ -109,12 +115,12 @@ def main(
         joined_rows=int(dataset_manifest.joined_rows),
         labels_rows=int(dataset_manifest.labeled_rows),
         features_rows=int(dataset_manifest.feature_rows),
-        dataset_path=str(dataset_path),
+        dataset_path=str(reader.output_path),
         feature_columns=feature_cols,
     )
     manifest_path.write_text(json.dumps(asdict(manifest), indent=2), encoding="utf-8")
 
-    _write_text(dataset_path_out, str(dataset_path))
+    _write_text(dataset_path_out, str(reader.output_path))
     _write_text(manifest_path_out, str(manifest_path))
     _write_text(feature_cols_out, json.dumps(feature_cols))
 

@@ -6,6 +6,8 @@ import {
   Checkbox,
   CircularProgress,
   IconButton,
+  Menu,
+  MenuItem,
   Paper,
   Tab,
   Tabs,
@@ -19,7 +21,7 @@ import {
   Typography,
   LinearProgress,
 } from '@mui/material'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 
 import { deleteDataset, fetchDatasets } from '../api/datasets'
@@ -41,6 +43,7 @@ export function DatasetsListPage() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [trainMenuAnchorEl, setTrainMenuAnchorEl] = useState<HTMLElement | null>(null)
 
   const selectedOnPageCount = useMemo(
     () => items.filter((item) => selectedIds.has(item.id)).length,
@@ -51,8 +54,6 @@ export function DatasetsListPage() {
 
   useEffect(() => {
     let cancelled = false
-    setSelectedIds(new Set())
-    setLoading(true)
     fetchDatasets()
       .then((response) => {
         if (!cancelled) {
@@ -189,6 +190,15 @@ export function DatasetsListPage() {
     })
   }
 
+  function openTrainWizard(family: 'risk' | 'return_forecast' | 'daily_index_forecast') {
+    setTrainMenuAnchorEl(null)
+    launchModel(family)
+  }
+
+  function handleTrainModelClick(event: MouseEvent<HTMLButtonElement>) {
+    setTrainMenuAnchorEl(event.currentTarget)
+  }
+
   return (
     <Stack spacing={3}>
       <Tabs value="datasets" onChange={(_, value) => navigate(value === 'datasets' ? '/backtests/datasets' : '/backtests')} aria-label="Backtests sections">
@@ -204,25 +214,13 @@ export function DatasetsListPage() {
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
           <Button
-            variant="outlined"
+            variant="contained"
             disabled={selectedOnPageCount === 0 || bulkDeleting}
-            onClick={() => launchModel('risk')}
+            onClick={handleTrainModelClick}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(trainMenuAnchorEl)}
           >
-            Train risk model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
-          </Button>
-          <Button
-            variant="outlined"
-            disabled={selectedOnPageCount === 0 || bulkDeleting}
-            onClick={() => launchModel('return_forecast')}
-          >
-            Train return forecast{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
-          </Button>
-          <Button
-            variant="outlined"
-            disabled={selectedOnPageCount !== 1 || bulkDeleting}
-            onClick={() => launchModel('daily_index_forecast')}
-          >
-            Train daily index forecast{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
+            Train model{selectedOnPageCount > 0 ? ` (${selectedOnPageCount})` : ''}
           </Button>
           <Button
             color="error"
@@ -237,6 +235,21 @@ export function DatasetsListPage() {
           </Button>
         </Stack>
       </Stack>
+
+      <Menu
+        anchorEl={trainMenuAnchorEl}
+        open={Boolean(trainMenuAnchorEl)}
+        onClose={() => setTrainMenuAnchorEl(null)}
+      >
+        <MenuItem onClick={() => openTrainWizard('risk')}>Risk model</MenuItem>
+        <MenuItem onClick={() => openTrainWizard('return_forecast')}>Return forecast model</MenuItem>
+        <MenuItem
+          disabled={selectedOnPageCount !== 1 || bulkDeleting}
+          onClick={() => openTrainWizard('daily_index_forecast')}
+        >
+          Daily index forecast model
+        </MenuItem>
+      </Menu>
 
       {error && <Alert severity="error">{error}</Alert>}
 

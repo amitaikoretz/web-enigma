@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from app.strategies.candidates import EntryIntent
 
 
-DecisionAction = Literal["hold", "buy", "close"]
+DecisionAction = Literal["hold", "buy", "close", "trim"]
 ExecutionEventType = Literal["order_filled", "trade_closed", "order_rejected"]
 
 
@@ -52,6 +52,7 @@ class StrategyContext:
 class StrategyDecision:
     action: DecisionAction = "hold"
     size: float | None = None
+    portion: float | None = None
     reason: str | None = None
     auditor_rejection: bool = False
     entry_intent: EntryIntent | None = None
@@ -84,6 +85,12 @@ class StrategyDecision:
     @classmethod
     def close(cls, reason: str | None = None) -> "StrategyDecision":
         return cls(action="close", reason=reason)
+
+    @classmethod
+    def trim(cls, portion: float, reason: str | None = None) -> "StrategyDecision":
+        if not 0.0 < float(portion) <= 1.0:
+            raise ValueError("trim portion must be in the range (0, 1]")
+        return cls(action="trim", portion=float(portion), reason=reason)
 
 
 @dataclass(frozen=True)
@@ -121,6 +128,12 @@ class StrategyCore(ABC):
 
     def dump_state(self) -> dict[str, Any]:
         return {}
+
+    def vectorbt_supported(self) -> bool:
+        return False
+
+    def vectorbt_spec(self, context: Any) -> Any | None:
+        return None
 
     @abstractmethod
     def on_bar(self, context: StrategyContext) -> StrategyDecision:

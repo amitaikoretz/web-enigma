@@ -2,6 +2,7 @@
 __pycache__/*
 **/__pycache__/
 .cache/
+.env
 data/backtest-results/*
 !data/backtest-results/.gitkeep
 data/backtest-cache/*

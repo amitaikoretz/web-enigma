@@ -1,6 +1,8 @@
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import TuneIcon from '@mui/icons-material/Tune'
 import {
   Alert,
@@ -23,6 +25,7 @@ import {
   Slider,
   Stack,
   Switch,
+  Tooltip,
   TextField,
   Typography,
 } from '@mui/material'
@@ -33,6 +36,7 @@ import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-d
 
 import { createBacktest, fetchBacktestInputConfig } from '../api/backtests'
 import { fetchDatasets } from '../api/datasets'
+import { fetchUniverses, fetchUniverseConstituents } from '../api/universes'
 import { BacktestModelPolicyForm } from '../components/BacktestModelPolicyForm'
 import { fetchExitRules, fetchStrategies } from '../api/strategies'
 import { useSettings } from '../settings/useSettings'
@@ -40,6 +44,7 @@ import type { BacktestFeed, BacktestModelPolicyInput } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
 import type { StrategyMetadata, StrategyParameterMetadata } from '../types/strategies'
 import type { DatasetListItem } from '../types/datasets'
+import type { SymbolUniverse } from '../types/universes'
 import {
   buildOverrideParams,
   normalizeParamValue,
@@ -52,6 +57,26 @@ import {
 
 const RESOLUTIONS: Resolution[] = ['1m', '5m', '15m', '1h', '1d']
 const FEEDS: BacktestFeed[] = ['iex', 'sip', 'otc']
+
+function normalizeSymbols(values: string[]): string[] {
+  return values
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean)
+    .filter((item, index, allValues) => allValues.indexOf(item) === index)
+}
+
+function sampleSymbols(symbols: string[], sampleSize: number): string[] {
+  if (sampleSize <= 0 || symbols.length <= sampleSize) {
+    return [...symbols]
+  }
+
+  const shuffled = [...symbols]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+  }
+  return shuffled.slice(0, sampleSize)
+}
 
 function resolveStartDatePreset(value: '30D' | '90D' | '1Y'): Dayjs {
   if (value === '90D') return dayjs().subtract(90, 'day')
@@ -250,6 +275,11 @@ export function BacktestWizardPage() {
   const [availableDatasets, setAvailableDatasets] = useState<DatasetListItem[]>([])
   const [loadingDatasets, setLoadingDatasets] = useState(false)
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null)
+  const [availableUniverses, setAvailableUniverses] = useState<SymbolUniverse[]>([])
+  const [loadingUniverses, setLoadingUniverses] = useState(false)
+  const [selectedUniverseKey, setSelectedUniverseKey] = useState<string | null>(null)
+  const [sampleSize, setSampleSize] = useState(20)
+  const [samplingUniverse, setSamplingUniverse] = useState(false)
   const [selectedTriggerNames, setSelectedTriggerNames] = useState<string[]>([])
   const [triggerOverrides, setTriggerOverrides] = useState<Record<string, Record<string, unknown>>>({})
   const [selectedExitRuleNames, setSelectedExitRuleNames] = useState<string[]>([])
@@ -257,6 +287,7 @@ export function BacktestWizardPage() {
   const [modelPolicy, setModelPolicy] = useState<BacktestModelPolicyInput | null>(null)
   const [prefillModelPolicy, setPrefillModelPolicy] = useState<BacktestModelPolicyInput | null>(null)
   const [pendingExitRuleToAdd, setPendingExitRuleToAdd] = useState<StrategyMetadata | null>(null)
+  const [documentationStrategy, setDocumentationStrategy] = useState<StrategyMetadata | null>(null)
   const [submitBroker, setSubmitBroker] = useState(platformSettings.backtest_defaults.broker)
   const [submitAnalyzers, setSubmitAnalyzers] = useState(platformSettings.backtest_defaults.analyzers)
   const [submitExecution, setSubmitExecution] = useState(platformSettings.backtest_defaults.execution)
@@ -264,6 +295,17 @@ export function BacktestWizardPage() {
     () => availableDatasets.find((item) => item.id === selectedDatasetId) ?? null,
     [availableDatasets, selectedDatasetId],
   )
+  const selectedUniverse = useMemo(
+    () => availableUniverses.find((item) => item.key === selectedUniverseKey) ?? null,
+    [availableUniverses, selectedUniverseKey],
+  )
+
+  useEffect(() => {
+    if (selectedUniverseKey === null && availableUniverses.length === 1) {
+      setSelectedUniverseKey(availableUniverses[0].key)
+    }
+  }, [availableUniverses, selectedUniverseKey])
+
   const totalRuns = launchMode === 'dataset' ? selectedTriggerNames.length : symbols.length * selectedTriggerNames.length
 
   useEffect(() => {
@@ -381,6 +423,33 @@ export function BacktestWizardPage() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    setLoadingUniverses(true)
+    void fetchUniverses(false)
+      .then((items) => {
+        if (cancelled) {
+          return
+        }
+        setAvailableUniverses(items)
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to load universes')
+          setAvailableUniverses([])
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingUniverses(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!prefillFromId || loadingTriggers || loadingExitRules || triggers.length === 0 || exitRules.length === 0) {
       return undefined
     }
@@ -478,6 +547,19 @@ export function BacktestWizardPage() {
     [selectedTriggerNames, triggers],
   )
 
+  const formatDefaultValue = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return '—'
+    }
+    if (typeof value === 'string') {
+      return value
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value)
+    }
+    return JSON.stringify(value)
+  }
+
   const selectedExitRules = useMemo(
     () =>
       selectedExitRuleNames
@@ -523,6 +605,29 @@ export function BacktestWizardPage() {
       }
       return nextOverrides
     })
+  }
+
+  const handleSampleFromUniverse = async () => {
+    if (!selectedUniverse) {
+      setError('Choose a universe before sampling symbols.')
+      return
+    }
+
+    setSamplingUniverse(true)
+    setError(null)
+    try {
+      const asOf = startDate?.format('YYYY-MM-DD') ?? dayjs().format('YYYY-MM-DD')
+      const constituents = await fetchUniverseConstituents(selectedUniverse.key, asOf)
+      const nextSymbols = sampleSymbols(normalizeSymbols(constituents.symbols), sampleSize)
+      if (nextSymbols.length === 0) {
+        throw new Error(`Universe ${selectedUniverse.key} does not have any symbols to sample.`)
+      }
+      setSymbols(nextSymbols)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sample universe symbols')
+    } finally {
+      setSamplingUniverse(false)
+    }
   }
 
   const handleResolutionChange = (nextResolution: Resolution) => {
@@ -697,6 +802,10 @@ export function BacktestWizardPage() {
 
   return (
     <Stack spacing={3}>
+      <Button component={RouterLink} to="/backtests" startIcon={<ArrowBackIcon />} sx={{ width: 'fit-content' }}>
+        Back to results
+      </Button>
+
       <Stack spacing={0.5}>
         <Typography variant="h4">Backtest Wizard</Typography>
         <Typography color="text.secondary">
@@ -860,17 +969,75 @@ export function BacktestWizardPage() {
           <Paper sx={{ p: 3 }}>
             <Stack spacing={2}>
               <Typography variant="h6">Legacy selection</Typography>
+              <Stack spacing={1.5}>
+                <Autocomplete
+                  options={availableUniverses}
+                  getOptionLabel={(option) => `${option.name} (${option.key})`}
+                  value={selectedUniverse}
+                  isOptionEqualToValue={(option, value) => option.key === value.key}
+                  onChange={(_event, value) => setSelectedUniverseKey(value?.key ?? null)}
+                  loading={loadingUniverses}
+                  noOptionsText={
+                    loadingUniverses
+                      ? 'Loading universes…'
+                      : 'No universes are available yet.'
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Universe"
+                      placeholder="Choose a universe"
+                      helperText="Select a registry or user universe, then sample from its constituents."
+                    />
+                  )}
+                />
+                <Stack spacing={1.5}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                      Sample size
+                    </Typography>
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={sampleSize}
+                      onChange={(event) => {
+                        const next = Number.parseInt(event.target.value, 10)
+                        setSampleSize(Number.isFinite(next) && next > 0 ? next : 1)
+                      }}
+                      slotProps={{ htmlInput: { min: 1, max: 100, step: 1 } }}
+                      sx={{ width: 140 }}
+                    />
+                  </Stack>
+                  <Slider
+                    value={sampleSize}
+                    onChange={(_event, nextValue) => {
+                      setSampleSize(Array.isArray(nextValue) ? nextValue[0] : nextValue)
+                    }}
+                    min={1}
+                    max={100}
+                    step={1}
+                    valueLabelDisplay="auto"
+                  />
+                  <Typography variant="caption" color="text.secondary">
+                    How many symbols to pull from the selected universe.
+                  </Typography>
+                </Stack>
+                <Button
+                  variant="outlined"
+                  onClick={() => void handleSampleFromUniverse()}
+                  disabled={loadingUniverses || samplingUniverse || selectedUniverse === null}
+                  sx={{ alignSelf: 'flex-start' }}
+                >
+                  {samplingUniverse ? 'Sampling…' : 'Sample from universe'}
+                </Button>
+              </Stack>
               <Autocomplete
                 multiple
                 freeSolo
                 options={[]}
                 value={symbols}
                 onChange={(_event, value) => {
-                  const nextSymbols = value
-                    .map((item) => item.trim().toUpperCase())
-                    .filter(Boolean)
-                    .filter((item, index, values) => values.indexOf(item) === index)
-                  setSymbols(nextSymbols)
+                  setSymbols(normalizeSymbols(value))
                 }}
                 renderInput={(params) => (
                   <TextField
@@ -986,7 +1153,23 @@ export function BacktestWizardPage() {
                           sx={{ justifyContent: 'space-between' }}
                         >
                           <Box>
-                            <Typography variant="subtitle1">{strategy.name}</Typography>
+                            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                              <Typography variant="subtitle1">{strategy.name}</Typography>
+                              <Tooltip title="Open strategy documentation">
+                                <span>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<InfoOutlinedIcon fontSize="small" />}
+                                    aria-label={`Open documentation for ${strategy.name}`}
+                                    onClick={() => setDocumentationStrategy(strategy)}
+                                    sx={{ textTransform: 'none' }}
+                                  >
+                                    Strategy docs
+                                  </Button>
+                                </span>
+                              </Tooltip>
+                            </Stack>
                             <Typography variant="body2" color="text.secondary">
                               {strategy.description}
                             </Typography>
@@ -1078,11 +1261,23 @@ export function BacktestWizardPage() {
                     return (
                       <Paper key={rule.name} variant="outlined" sx={{ p: 2, bgcolor: 'background.default' }}>
                         <Stack spacing={2}>
-                          <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                            <Box sx={{ pr: 1 }}>
-                              <Typography variant="subtitle1">
-                                {index + 1}. {rule.name}
-                              </Typography>
+                        <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ pr: 1 }}>
+                              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+                                <Typography variant="subtitle1">
+                                  {index + 1}. {rule.name}
+                                </Typography>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  startIcon={<InfoOutlinedIcon fontSize="small" />}
+                                  aria-label={`Open documentation for ${rule.name}`}
+                                  onClick={() => setDocumentationStrategy(rule)}
+                                  sx={{ textTransform: 'none' }}
+                                >
+                                  Rule docs
+                                </Button>
+                              </Stack>
                               <Typography variant="body2" color="text.secondary">
                                 {rule.description}
                               </Typography>
@@ -1331,6 +1526,137 @@ export function BacktestWizardPage() {
             </Box>
           </Stack>
         </Paper>
+
+        <Dialog
+          open={documentationStrategy !== null}
+          onClose={() => setDocumentationStrategy(null)}
+          fullWidth
+          maxWidth="md"
+        >
+          <DialogTitle sx={{ pb: 1 }}>
+            {documentationStrategy?.name} documentation
+          </DialogTitle>
+          <DialogContent dividers>
+            {documentationStrategy && (
+              <Stack spacing={3}>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    Overview
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                    {documentationStrategy.description}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="overline" color="text.secondary">
+                    How it works
+                  </Typography>
+                  <Stack spacing={1.5} sx={{ mt: 0.75 }}>
+                    {documentationStrategy.documentation.split('\n\n').map((paragraph) => (
+                      <Typography key={paragraph} variant="body2" sx={{ whiteSpace: 'pre-line' }}>
+                        {paragraph}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </Box>
+                {Object.keys(documentationStrategy.parameters).length > 0 && (
+                  <Box>
+                    <Typography variant="overline" color="text.secondary">
+                      Parameters
+                    </Typography>
+                    <Box
+                      sx={{
+                        mt: 1,
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', md: '180px 1fr 120px 110px' },
+                          bgcolor: 'background.default',
+                          borderBottom: 1,
+                          borderColor: 'divider',
+                          px: 2,
+                          py: 1,
+                          gap: 1,
+                        }}
+                      >
+                        <Typography variant="caption" color="text.secondary">
+                          Parameter
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          Details
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ textAlign: { xs: 'left', md: 'right' } }}
+                        >
+                          Default
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ textAlign: { xs: 'left', md: 'center' } }}
+                        >
+                          Required
+                        </Typography>
+                      </Box>
+                      {Object.entries(documentationStrategy.parameters).map(([name, meta]) => (
+                        <Box
+                          key={name}
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: '180px 1fr 120px 110px' },
+                            px: 2,
+                            py: 1.25,
+                            gap: 1,
+                            borderBottom: 1,
+                            borderColor: 'divider',
+                            '&:last-of-type': { borderBottom: 0 },
+                          }}
+                        >
+                          <Box>
+                            <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                              {name}
+                            </Typography>
+                            {meta.title && (
+                              <Typography variant="caption" color="text.secondary">
+                                {meta.title}
+                              </Typography>
+                            )}
+                          </Box>
+                          <Typography variant="body2" color="text.secondary">
+                            {meta.description ?? 'No additional description provided.'}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ textAlign: { xs: 'left', md: 'right' } }}
+                          >
+                            {formatDefaultValue(meta.default)}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ textAlign: { xs: 'left', md: 'center' } }}
+                          >
+                            {meta.required ? 'Yes' : 'No'}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                )}
+              </Stack>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDocumentationStrategy(null)}>Close</Button>
+          </DialogActions>
+        </Dialog>
       </Stack>
     </Stack>
   )

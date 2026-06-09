@@ -1,0 +1,29 @@
+global_config:
+  timezone: "UTC"
+  default_broker:
+    cash: 100000
+    commission: 0.0
+    slippage_perc: 0.0005
+    sizer: fixed
+  data_cache:
+    enabled: true
+    directory: ".cache/backtest-data"
+    refresh_policy: "ttl"
+    ttl_by_interval:
+      "1m": 315360000
+      "5m": 315360000
+      "15m": 315360000
+      "1h": 315360000
+      "1d": 315360000
+
+runs:
+  - run_id: "vwap_pullback_tqqq_single"
+    name: "TQQQ VWAP pullback single-run"
+    start_date: "2025-01-01"
+    end_date: "2025-05-21"
+    data:
+      type: alpaca
+      symbol: TQQQ
+      interval: 5m
+    trigger_path: "examples/triggers/vwap_pullback.yaml"
+    exit_rules_path: "examples/exit_rules/vwap_pullback_manage.yaml"

@@ -10,7 +10,7 @@ from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.config.models import DataCacheConfig
 from app.daily_index_forecast.models import DailyIndexCostConfig, DailyIndexFeatureConfig, DailyIndexUniverseConfig
 from app.daily_index_forecast.pipeline import build_dataset_frames, save_dataset_artifacts
-from app.standalone.daily_index_common import terminal_command, write_text
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -30,7 +30,7 @@ def main(
     manifest_path_out: str = typer.Option(..., "--manifest-path-out"),
     terminal_command_out: str | None = typer.Option(None, "--terminal-command-out"),
 ) -> None:
-    write_text(terminal_command_out, terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="daily_index_extract_features_argo")
     for path in [dataset_path_out, features_path_out, labels_path_out, manifest_path_out]:
         write_text(path, "")
 
@@ -60,4 +60,3 @@ def main(
 
 if __name__ == "__main__":
     run_typer_app_with_argo_error_outputs(app)
-

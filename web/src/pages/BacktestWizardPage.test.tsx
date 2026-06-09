@@ -5,14 +5,34 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
+import dayjs from 'dayjs'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { defaultPlatformSettings } from '../settings/defaults'
 
 const createBacktestMock = vi.hoisted(() => vi.fn())
+const fetchUniverseConstituentsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/backtests', () => ({
   createBacktest: createBacktestMock,
   fetchBacktestInputConfig: vi.fn(),
+}))
+
+vi.mock('../api/universes', () => ({
+  fetchUniverses: vi.fn().mockResolvedValue([
+    {
+      key: 'sp500',
+      kind: 'registry',
+      name: 'S&P 500',
+      description: 'Large cap US equities',
+      provider: 'static',
+      provider_ref: { symbols: ['AAPL', 'MSFT', 'NVDA'] },
+      is_active: true,
+      latest_refresh_status: 'completed',
+      latest_refresh_started_at: null,
+      latest_refresh_as_of: null,
+    },
+  ]),
+  fetchUniverseConstituents: fetchUniverseConstituentsMock,
 }))
 
 vi.mock('../api/datasets', () => ({
@@ -48,10 +68,20 @@ vi.mock('../api/datasets', () => ({
 
 vi.mock('../api/strategies', () => ({
   fetchStrategies: vi.fn().mockResolvedValue([
-    { name: 'buy_and_hold', description: 'demo', parameters: {} },
+    {
+      name: 'buy_and_hold',
+      description: 'demo',
+      documentation: 'This trigger enters long on the first bar it sees.',
+      parameters: {},
+    },
   ]),
   fetchExitRules: vi.fn().mockResolvedValue([
-    { name: 'fixed_pct_oco', description: 'demo', parameters: {} },
+    {
+      name: 'fixed_pct_oco',
+      description: 'demo',
+      documentation: 'Exit rule docs',
+      parameters: {},
+    },
   ]),
 }))
 
@@ -92,6 +122,12 @@ describe('BacktestWizardPage', () => {
   })
 
   it('toggles between legacy selection and dataset-backed launch modes', async () => {
+    fetchUniverseConstituentsMock.mockResolvedValue({
+      key: 'sp500',
+      as_of: '2026-06-08',
+      symbols: ['MSFT', 'NVDA'],
+    })
+
     render(
       <MemoryRouter initialEntries={['/backtests/new']}>
         <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -102,10 +138,28 @@ describe('BacktestWizardPage', () => {
       </MemoryRouter>,
     )
 
+    expect(screen.getByRole('link', { name: 'Back to results' })).toHaveAttribute('href', '/backtests')
     expect(await screen.findByText('Legacy selection')).toBeInTheDocument()
+    expect(screen.getByLabelText('Universe')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sample from universe' })).toBeInTheDocument()
     expect(screen.getByLabelText('Symbols')).toBeInTheDocument()
     expect(screen.getAllByText('Start date').length).toBeGreaterThan(0)
     expect(screen.queryByLabelText('Existing dataset')).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByLabelText('Universe'))
+    fireEvent.click(await screen.findByText('S&P 500 (sp500)'))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Sample from universe' })).not.toBeDisabled())
+    fireEvent.click(screen.getByRole('button', { name: 'Sample from universe' }))
+
+    await waitFor(() =>
+      expect(fetchUniverseConstituentsMock).toHaveBeenCalledWith(
+        'sp500',
+        dayjs().subtract(30, 'day').format('YYYY-MM-DD'),
+      ),
+    )
+    await waitFor(() => expect(screen.getByText('MSFT')).toBeInTheDocument())
+    expect(screen.getByText('NVDA')).toBeInTheDocument()
+    expect(screen.queryByText('AAPL')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('switch', { name: 'Use legacy selection' }))
 
@@ -127,10 +181,35 @@ describe('BacktestWizardPage', () => {
       </MemoryRouter>,
     )
 
-    await screen.findByText('Legacy selection')
+    expect(screen.getAllByRole('heading', { name: 'Legacy selection' }).length).toBeGreaterThan(0)
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('button', { name: 'Launch backtest' }).some((button) => !button.hasAttribute('disabled')),
+      ).toBe(true),
+    )
     fireEvent.click(screen.getAllByRole('button', { name: 'Launch backtest' }).find((button) => !button.hasAttribute('disabled'))!)
 
     expect(await screen.findByRole('alert')).toBeVisible()
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+  })
+
+  it('opens trigger documentation from the wizard', async () => {
+    render(
+      <MemoryRouter initialEntries={['/backtests/new']}>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          <Routes>
+            <Route path="/backtests/new" element={<BacktestWizardPage />} />
+          </Routes>
+        </LocalizationProvider>
+      </MemoryRouter>,
+    )
+
+    const docsButton = await screen.findByRole('button', {
+      name: 'Open documentation for buy_and_hold',
+    })
+    fireEvent.click(docsButton)
+
+    expect(await screen.findByText('buy_and_hold documentation')).toBeInTheDocument()
+    expect(screen.getByText(/enters long on the first bar/i)).toBeInTheDocument()
   })
 })

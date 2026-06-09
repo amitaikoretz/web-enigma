@@ -1,0 +1,23 @@
+name: vwap_pullback
+params:
+  stake: 10
+  benchmark_symbol: QQQ
+  benchmark_resolution_minutes: 15
+  trend_ema_fast: 9
+  trend_ema_mid: 20
+  trend_ema_slow: 50
+  benchmark_ema_fast: 20
+  benchmark_ema_slow: 50
+  volume_window: 20
+  volume_spike_mult: 1.2
+  pullback_distance_pct: 0.003
+  min_closes_above_vwap: 2
+  recent_close_window: 3
+  max_entry_gap_pct: 0.0025
+  stop_buffer_pct: 0.0015
+  max_stop_distance_pct: 0.0075
+  max_stop_atr_mult: 1.5
+  session_morning_start_minutes: 15
+  session_morning_end_minutes: 105
+  session_afternoon_start_minutes: 240
+  session_afternoon_end_minutes: 345

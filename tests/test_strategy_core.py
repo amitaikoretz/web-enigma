@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import numpy as np
+import pytest
 
 from app.strategies.core import Bar, PositionState, StrategyContext, StrategyDecision
 from app.strategies.implementations import (
@@ -24,7 +25,8 @@ from app.strategies.implementations import (
     _volume_rally_entry_signal,
     _benchmark_regime_ok,
 )
-from app.strategies.triggers import FastUpswingTrigger
+from app.strategies.triggers import FastUpswingTrigger, VwapPullbackTrigger
+from app.strategies.triggers import validate_trigger_params
 from app.strategies.registry import validate_strategy_params
 
 
@@ -191,6 +193,89 @@ def _fast_upswing_bars(
         )
         for idx, close in enumerate(closes)
     ]
+
+
+def _vwap_pullback_params(**overrides: float | int | str | bool) -> dict[str, float | int | str | bool]:
+    params: dict[str, float | int | str | bool] = {
+        "stake": 1.0,
+        "benchmark_symbol": "QQQ",
+        "benchmark_resolution_minutes": 15,
+        "trend_ema_fast": 2,
+        "trend_ema_mid": 3,
+        "trend_ema_slow": 4,
+        "benchmark_ema_fast": 2,
+        "benchmark_ema_slow": 3,
+        "volume_window": 3,
+        "volume_spike_mult": 1.1,
+        "pullback_distance_pct": 0.01,
+        "min_closes_above_vwap": 1,
+        "recent_close_window": 3,
+        "max_entry_gap_pct": 0.01,
+        "stop_buffer_pct": 0.001,
+        "max_stop_distance_pct": 0.05,
+        "max_stop_atr_mult": 10.0,
+        "session_morning_start_minutes": 0,
+        "session_morning_end_minutes": 390,
+        "session_afternoon_start_minutes": 0,
+        "session_afternoon_end_minutes": 390,
+    }
+    params.update(overrides)
+    return validate_trigger_params("vwap_pullback", params)
+
+
+def _vwap_pullback_bars(
+    *,
+    bars: int = 24,
+    entry_index: int = 23,
+    entry_close: float = 102.4,
+    entry_low: float = 100.95,
+    entry_volume: float = 3000.0,
+    step: float = 0.1,
+) -> list[Bar]:
+    history: list[Bar] = []
+    start = datetime(2024, 1, 2, 9, 30, tzinfo=US_EASTERN)
+    for idx in range(bars):
+        close = 100.0 + idx * step
+        if idx == entry_index:
+            close = entry_close
+        open_price = close - 0.04
+        high = close + 0.05
+        low = close - 0.08
+        volume = 1000.0
+        if idx == entry_index:
+            open_price = history[-1].close + 0.01 if history else close - 0.04
+            high = close + 0.04
+            low = entry_low
+            volume = entry_volume
+        history.append(
+            Bar(
+                timestamp=start + timedelta(minutes=5 * idx),
+                open=open_price,
+                high=high,
+                low=low,
+                close=close,
+                volume=volume,
+            )
+        )
+    return history
+
+
+def _vwap_pullback_benchmark_bars(*, bars: int = 24, step: float = 0.1) -> list[Bar]:
+    history: list[Bar] = []
+    start = datetime(2024, 1, 2, 9, 30, tzinfo=US_EASTERN)
+    for idx in range(bars):
+        close = 200.0 + idx * step
+        history.append(
+            Bar(
+                timestamp=start + timedelta(minutes=5 * idx),
+                open=close - 0.03,
+                high=close + 0.05,
+                low=close - 0.05,
+                close=close,
+                volume=2000.0,
+            )
+        )
+    return history
 
 
 def test_volume_rally_core_warmup():
@@ -416,6 +501,90 @@ def test_volume_rally_core_requires_rising_macd_histogram():
     )
     decision = core.on_bar(_context(bars))
     assert decision.action == "hold"
+
+
+def test_vwap_pullback_trigger_buys_on_confirmed_pullback():
+    core = VwapPullbackTrigger(_vwap_pullback_params())
+    bars = _vwap_pullback_bars()
+    benchmark_bars = _vwap_pullback_benchmark_bars()
+    decision = core.on_bar(_context(bars, benchmark_bars=benchmark_bars))
+    assert decision.action == "buy"
+    assert decision.reason == "vwap_pullback"
+    assert decision.entry_intent is not None
+    assert decision.entry_intent.metadata["benchmark_ok"] is True
+    assert decision.entry_intent.metadata["trend_ok"] is True
+
+
+def test_vwap_pullback_trigger_blocks_without_benchmark_confirmation():
+    core = VwapPullbackTrigger(_vwap_pullback_params())
+    bars = _vwap_pullback_bars()
+    benchmark_bars = _vwap_pullback_benchmark_bars(step=-0.1)
+    decision = core.on_bar(_context(bars, benchmark_bars=benchmark_bars))
+    assert decision.action == "hold"
+    assert decision.reason == "benchmark_filter"
+
+
+def test_vwap_pullback_trigger_uses_configured_benchmark_resolution(monkeypatch: pytest.MonkeyPatch):
+    params = _vwap_pullback_params(benchmark_resolution_minutes=30)
+    core = VwapPullbackTrigger(params)
+    bars = _vwap_pullback_bars()
+    benchmark_bars = _vwap_pullback_benchmark_bars(bars=78)
+    observed: list[int] = []
+
+    from app.strategies import triggers as trigger_module
+
+    original_resample = trigger_module._resample_session_bars
+
+    def spy_resample(session_bars, interval_minutes):
+        observed.append(int(interval_minutes))
+        return original_resample(session_bars, interval_minutes)
+
+    monkeypatch.setattr(trigger_module, "_resample_session_bars", spy_resample)
+
+    decision = core.on_bar(_context(bars, benchmark_bars=benchmark_bars))
+    assert decision.action in {"buy", "hold"}
+    assert observed == [30]
+
+
+def test_vwap_pullback_trigger_blocks_on_entry_gap_and_daily_cap():
+    core = VwapPullbackTrigger(_vwap_pullback_params())
+    bars = _vwap_pullback_bars()
+    benchmark_bars = _vwap_pullback_benchmark_bars()
+
+    wide_gap_bars = list(bars)
+    prev_close = wide_gap_bars[-2].close
+    wide_gap_bars[-1] = Bar(
+        timestamp=wide_gap_bars[-1].timestamp,
+        open=prev_close * 1.03,
+        high=wide_gap_bars[-1].high,
+        low=wide_gap_bars[-1].low,
+        close=wide_gap_bars[-1].close,
+        volume=wide_gap_bars[-1].volume,
+    )
+    gap_decision = core.on_bar(_context(wide_gap_bars, benchmark_bars=benchmark_bars))
+    assert gap_decision.action == "hold"
+    assert gap_decision.reason == "entry_gap"
+
+    capped_core = VwapPullbackTrigger(_vwap_pullback_params())
+    capped_core._session_trade_date = bars[-1].timestamp.date()
+    capped_core._session_trades_count = 1
+    cap_decision = capped_core.on_bar(_context(bars, benchmark_bars=benchmark_bars))
+    assert cap_decision.action == "hold"
+    assert cap_decision.reason == "session_trade_cap"
+
+
+def test_vwap_pullback_trigger_blocks_outside_session_window():
+    core = VwapPullbackTrigger(
+        _vwap_pullback_params(
+            session_morning_end_minutes=105,
+            session_afternoon_start_minutes=240,
+        )
+    )
+    bars = _vwap_pullback_bars()
+    benchmark_bars = _vwap_pullback_benchmark_bars()
+    decision = core.on_bar(_context(bars, benchmark_bars=benchmark_bars))
+    assert decision.action == "hold"
+    assert decision.reason == "session_window"
 
 
 def test_volume_rally_core_requires_adx_threshold():

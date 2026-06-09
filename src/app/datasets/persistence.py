@@ -16,6 +16,19 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _normalize_symbols_from_item(item: DatasetListItem) -> list[str]:
+    symbols = [value.strip().upper() for value in item.symbols if value.strip()]
+    if not symbols and item.symbol.strip():
+        symbols = [item.symbol.strip().upper()]
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for symbol in symbols:
+        if symbol not in seen:
+            seen.add(symbol)
+            normalized.append(symbol)
+    return normalized
+
+
 @dataclass(frozen=True)
 class DatasetArtifactPaths:
     dataset_parquet_path: str | None = None
@@ -77,10 +90,17 @@ class SqlAlchemyDatasetRepository:
             row = session.get(DatasetJob, dataset_id)
             if row is None:
                 return None
+            params_symbols = row.params_json.get("symbols") if isinstance(row.params_json, dict) else None
+            symbols = []
+            if isinstance(params_symbols, list):
+                symbols = [value.strip().upper() for value in params_symbols if isinstance(value, str) and value.strip()]
+            if not symbols and row.symbol.strip():
+                symbols = [row.symbol.strip().upper()]
             return DatasetListItem(
                 id=row.id,
                 name=row.name,
                 symbol=row.symbol,
+                symbols=symbols,
                 provider=row.provider,
                 resolution=row.resolution,
                 start_date=row.start_date,
@@ -106,6 +126,12 @@ class SqlAlchemyDatasetRepository:
                     id=row.id,
                     name=row.name,
                     symbol=row.symbol,
+                    symbols=(
+                        [value.strip().upper() for value in row.params_json.get("symbols", []) if isinstance(value, str) and value.strip()]
+                        if isinstance(row.params_json, dict)
+                        else []
+                    )
+                    or [row.symbol.strip().upper()],
                     provider=row.provider,
                     resolution=row.resolution,
                     start_date=row.start_date,
@@ -134,10 +160,17 @@ class SqlAlchemyDatasetRepository:
             row = session.get(DatasetJob, dataset_id)
             if row is None:
                 return None
+            params_symbols = row.params_json.get("symbols") if isinstance(row.params_json, dict) else None
+            symbols = []
+            if isinstance(params_symbols, list):
+                symbols = [value.strip().upper() for value in params_symbols if isinstance(value, str) and value.strip()]
+            if not symbols and row.symbol.strip():
+                symbols = [row.symbol.strip().upper()]
             item = DatasetListItem(
                 id=row.id,
                 name=row.name,
                 symbol=row.symbol,
+                symbols=symbols,
                 provider=row.provider,
                 resolution=row.resolution,
                 start_date=row.start_date,

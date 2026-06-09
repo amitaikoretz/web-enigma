@@ -25,4 +25,5 @@ class StrategyParameterMetadata(BaseModel):
 class StrategyMetadataResponse(BaseModel):
     name: str
     description: str
+    documentation: str
     parameters: dict[str, StrategyParameterMetadata]

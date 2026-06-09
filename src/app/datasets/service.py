@@ -11,6 +11,7 @@ import pandas as pd
 from app.backtests.argo import ArgoWorkflowSubmitter, load_argo_workflow_config
 from app.backtests.argo_workflow import workflow_results_mount
 from app.datasets.argo_workflow import build_dataset_workflow_spec
+from app.datasets.argo_progress_status import compute_dataset_progress_pct
 from app.datasets.models import (
     DatasetCreateRequest,
     DatasetCreateResponse,
@@ -27,6 +28,25 @@ from app.settings.service import PlatformSettingsService
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _normalize_symbols(symbols: list[str], fallback_symbol: str | None = None) -> list[str]:
+    normalized: list[str] = []
+    for value in symbols:
+        symbol = value.strip().upper()
+        if symbol and symbol not in normalized:
+            normalized.append(symbol)
+    if not normalized and fallback_symbol:
+        fallback = fallback_symbol.strip().upper()
+        if fallback:
+            normalized.append(fallback)
+    return normalized
+
+
+def _artifact_slug(item: DatasetListItem) -> str:
+    symbols = item.symbols or ([item.symbol] if item.symbol.strip() else [])
+    normalized = _normalize_symbols(symbols, item.symbol)
+    return "-".join(normalized) if normalized else (item.symbol.strip().upper() or item.id)
 
 
 class DatasetService:
@@ -96,10 +116,13 @@ class DatasetService:
 
         dataset_id = uuid.uuid4().hex
         created_at = _utc_now()
+        symbols = _normalize_symbols(payload.symbols, payload.symbol)
+        primary_symbol = symbols[0]
         item = DatasetListItem(
             id=dataset_id,
             name=payload.name,
-            symbol=payload.symbol,
+            symbol=primary_symbol,
+            symbols=symbols,
             provider=payload.provider,
             resolution=payload.resolution,
             start_date=payload.start_date,
@@ -115,6 +138,7 @@ class DatasetService:
             workflow_name, namespace = self._submit_workflow(
                 dataset_id=dataset_id,
                 payload=payload,
+                symbols=symbols,
                 output_dir=workflow_output_dir / dataset_id,
             )
             self.repository.update(
@@ -147,7 +171,14 @@ class DatasetService:
         payload = DatasetCreateRequest.model_validate(item.params_json)
         return self.submit(payload)
 
-    def _submit_workflow(self, *, dataset_id: str, payload: DatasetCreateRequest, output_dir: Path) -> tuple[str, str]:
+    def _submit_workflow(
+        self,
+        *,
+        dataset_id: str,
+        payload: DatasetCreateRequest,
+        symbols: list[str],
+        output_dir: Path,
+    ) -> tuple[str, str]:
         resource = {
             "apiVersion": "argoproj.io/v1alpha1",
             "kind": "Workflow",
@@ -161,7 +192,7 @@ class DatasetService:
             },
             "spec": {
                 **build_dataset_workflow_spec(
-                    symbol=payload.symbol,
+                    symbols=symbols,
                     provider=payload.provider,
                     resolution=payload.resolution,
                     start_date=payload.start_date.isoformat(),
@@ -173,7 +204,7 @@ class DatasetService:
                 ),
                 "arguments": {
                     "parameters": [
-                        {"name": "symbol", "value": payload.symbol},
+                        {"name": "symbols", "value": ",".join(symbols)},
                         {"name": "provider", "value": payload.provider},
                         {"name": "resolution", "value": payload.resolution},
                         {"name": "start-date", "value": payload.start_date.isoformat()},
@@ -229,11 +260,12 @@ class DatasetService:
         if item is None:
             return None
         phase = self.get_argo_phase(dataset_id)
+        payload = item.model_dump()
+        payload["progress_pct"] = 100.0 if item.status in {"completed", "failed"} else 0.0
         return DatasetStatusResponse(
-            **item.model_dump(),
+            **payload,
             is_terminal=item.status in {"completed", "failed"},
             argo_phase=phase,
-            progress_pct=100.0 if item.status in {"completed", "failed"} else 0.0,
         )
 
     def get_workflow_errors(self, dataset_id: str) -> DatasetWorkflowErrorResponse | None:
@@ -292,12 +324,14 @@ class DatasetService:
         manifest_path = self._workflow_output_parameter(workflow, "manifest-path")
         options_dataset_path = self._workflow_output_parameter(workflow, "options-dataset-path")
         options_manifest_path = self._workflow_output_parameter(workflow, "options-manifest-path")
+        progress_pct = compute_dataset_progress_pct(item, workflow)
         if (
             new_status is None
             and dataset_parquet_path is None
             and manifest_path is None
             and options_dataset_path is None
             and options_manifest_path is None
+            and progress_pct is None
         ):
             return
 
@@ -307,6 +341,11 @@ class DatasetService:
             updates["status"] = new_status
             updates["progress_pct"] = 100.0 if new_status in {"completed", "failed"} else 0.0
             should_update = True
+        elif progress_pct is not None:
+            clamped = max(item.progress_pct, min(progress_pct, 99.0))
+            if clamped > item.progress_pct:
+                updates["progress_pct"] = clamped
+                should_update = True
         if dataset_parquet_path and dataset_parquet_path != item.dataset_parquet_path:
             updates["dataset_parquet_path"] = dataset_parquet_path
             should_update = True
@@ -395,10 +434,10 @@ class DatasetService:
         return None
 
     def _resolve_dataset_parquet_path(self, item: DatasetListItem) -> Path | None:
-        return self._resolve_artifact_path(item, item.dataset_parquet_path, f"{item.symbol}-{item.provider}-{item.resolution}.parquet")
+        return self._resolve_artifact_path(item, item.dataset_parquet_path, f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.parquet")
 
     def _resolve_dataset_manifest_path(self, item: DatasetListItem) -> Path | None:
-        manifest_name = f"{item.symbol}-{item.provider}-{item.resolution}.manifest.json"
+        manifest_name = f"{_artifact_slug(item)}-{item.provider}-{item.resolution}.manifest.json"
         if item.dataset_parquet_path:
             parquet_path = self._resolve_dataset_path(item, Path(item.dataset_parquet_path))
             if parquet_path.is_file():

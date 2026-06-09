@@ -6,7 +6,7 @@ from pathlib import Path
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
-from app.terminal_command import format_terminal_command
+from app.script_logging import emit_info, emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -27,8 +27,8 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, format_terminal_command(sys.argv))
-    typer.echo(command_line)
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="print_argo_command")
+    emit_info("launch-command", command_line, script="print_argo_command")
 
 
 if __name__ == "__main__":

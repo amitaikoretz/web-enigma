@@ -10,6 +10,7 @@ import typer
 from app.backtests.argo_workflow import workflow_results_mount
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.cli import _cmd_plan_shards
+from app.script_logging import emit_error, emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -75,7 +76,7 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="plan_shards_argo")
 
     resolved_backtest_id = backtest_id.strip() or None
     work_dir = _resolve_work_dir(resolved_backtest_id)
@@ -94,14 +95,18 @@ def main(
             raw_b64 = _maybe_read_at_file(resolved_config_b64)
             config_yaml = base64.b64decode(raw_b64, validate=True).decode("utf-8")
         except (ValueError, UnicodeDecodeError, OSError) as exc:
-            typer.echo(f"Invalid --config-b64: {exc}", err=True)
+            emit_error("invalid-config-b64", f"Invalid --config-b64: {exc}", script="plan_shards_argo")
             raise typer.Exit(code=2) from exc
         config_file = work_dir / "config.yaml"
         config_file.write_text(config_yaml, encoding="utf-8")
     else:
         resolved_config_path = config_path.strip()
         if not resolved_config_path:
-            typer.echo("Provide --config-path when --config-b64 is empty", err=True)
+            emit_error(
+                "missing-config-path",
+                "Provide --config-path when --config-b64 is empty",
+                script="plan_shards_argo",
+            )
             raise typer.Exit(code=2)
         config_file = Path(resolved_config_path)
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.strategies.components import ExitRuleCore
@@ -16,14 +17,18 @@ from app.strategies.implementations import (
     _bars_held,
     _closes,
     _entry_bars,
+    _ema,
     _highs,
     _lows,
     _macd,
+    _minutes_since_rth_open,
     _rsi,
+    _session_vwap,
     _sma,
     _volumes,
 )
 from app.strategies.regime import RegimeClassifier, regime_params_from_strategy
+from app.strategies.vectorbt_support import VectorbtBuildContext, VectorbtSpec, frame_to_bars, mask_like
 
 
 class ExitRuleSelection(BaseModel):
@@ -85,12 +90,12 @@ class FixedPctOcoParams(BaseModel):
 
 
 class MaxHoldBarsParams(BaseModel):
-    max_hold_bars: int = Field(default=24, ge=1)
+    max_hold_bars: int = Field(default=24, ge=1, description="Maximum bars to hold before forcing an exit.")
 
 
 class SmaCrossDownParams(BaseModel):
-    fast: int = Field(default=8, ge=2)
-    slow: int = Field(default=21, ge=3)
+    fast: int = Field(default=8, ge=2, description="Fast SMA lookback window in bars.")
+    slow: int = Field(default=21, ge=3, description="Slow SMA lookback window in bars.")
 
     @model_validator(mode="after")
     def _validate_windows(self) -> "SmaCrossDownParams":
@@ -100,34 +105,34 @@ class SmaCrossDownParams(BaseModel):
 
 
 class RsiOverboughtParams(BaseModel):
-    period: int = Field(default=14, ge=2)
-    overbought: float = Field(default=60.0, ge=40, le=99)
+    period: int = Field(default=14, ge=2, description="RSI lookback window in bars.")
+    overbought: float = Field(default=60.0, ge=40, le=99, description="RSI threshold that triggers an exit.")
 
 
 class ChannelBreakParams(BaseModel):
-    lookback: int = Field(default=20, ge=2)
+    lookback: int = Field(default=20, ge=2, description="Lookback window used to define the channel low.")
 
 
 class AtrOcoExitParams(BaseModel):
-    atr_period: int = Field(default=14, ge=2)
-    sl_atr_mult: float = Field(default=1.5, gt=0)
-    tp_atr_mult: float = Field(default=3.0, gt=0)
+    atr_period: int = Field(default=14, ge=2, description="ATR lookback used to size the stop and target.")
+    sl_atr_mult: float = Field(default=1.5, gt=0, description="Stop-loss distance measured in ATR multiples.")
+    tp_atr_mult: float = Field(default=3.0, gt=0, description="Take-profit distance measured in ATR multiples.")
 
 
 class AtrTrailingExitParams(BaseModel):
-    atr_period: int = Field(default=14, ge=2)
-    trail_atr_mult: float = Field(default=1.0, gt=0)
-    tp_atr_mult: float = Field(default=2.5, gt=0)
+    atr_period: int = Field(default=14, ge=2, description="ATR lookback used to size the trailing stop and target.")
+    trail_atr_mult: float = Field(default=1.0, gt=0, description="Trailing stop distance measured in ATR multiples.")
+    tp_atr_mult: float = Field(default=2.5, gt=0, description="Take-profit distance measured in ATR multiples.")
 
 
 class AtrTakeProfitExitParams(BaseModel):
-    atr_period: int = Field(default=14, ge=2)
-    tp_atr_mult: float = Field(default=2.5, gt=0)
+    atr_period: int = Field(default=14, ge=2, description="ATR lookback used to size the take-profit level.")
+    tp_atr_mult: float = Field(default=2.5, gt=0, description="Take-profit distance measured in ATR multiples.")
 
 
 class AtrTrailingStopExitParams(BaseModel):
-    atr_period: int = Field(default=14, ge=2)
-    trail_atr_mult: float = Field(default=1.0, gt=0)
+    atr_period: int = Field(default=14, ge=2, description="ATR lookback used to size the trailing stop.")
+    trail_atr_mult: float = Field(default=1.0, gt=0, description="Trailing stop distance measured in ATR multiples.")
 
 
 class AtrProfitProtectStopExitParams(BaseModel):
@@ -157,23 +162,31 @@ class AtrProfitProtectStopExitParams(BaseModel):
     )
 
 
+class VwapPullbackManageExitParams(BaseModel):
+    stop_buffer_pct: float = Field(default=0.0015, gt=0.0, lt=0.1, description="Buffer below the VWAP pullback reference for the initial stop.")
+    breakeven_buffer_pct: float = Field(default=0.0005, ge=0.0, lt=0.1, description="Profit buffer used before moving the stop to breakeven.")
+    partial_trim_portion: float = Field(default=0.5, gt=0.0, le=1.0, description="Fraction of the position to trim on the partial exit.")
+    time_stop_bars: int = Field(default=12, ge=1, description="Maximum bars to hold before the time stop triggers.")
+    eod_flatten_minutes: int = Field(default=385, ge=0, description="Minutes after the session open to force a flatten.")
+
+
 class VolumeRallyExitParams(BaseModel):
-    atr_period: int = Field(default=14, ge=2)
-    trail_atr_mult: float = Field(default=1.5, gt=0)
-    tp_atr_mult: float = Field(default=3.0, gt=0)
-    sl_atr_mult: float = Field(default=1.5, gt=0)
-    initial_sl_atr_mult: float = Field(default=0.0, ge=0.0)
-    breakeven_atr_mult: float = Field(default=0.0, ge=0.0)
-    max_hold_bars: int = Field(default=48, ge=1)
-    stale_bars: int = Field(default=0, ge=0)
-    min_progress_atr: float = Field(default=0.5, ge=0.0)
+    atr_period: int = Field(default=14, ge=2, description="ATR lookback used to size the dynamic exits.")
+    trail_atr_mult: float = Field(default=1.5, gt=0, description="Trailing stop distance measured in ATR multiples.")
+    tp_atr_mult: float = Field(default=3.0, gt=0, description="Take-profit distance measured in ATR multiples.")
+    sl_atr_mult: float = Field(default=1.5, gt=0, description="Primary stop-loss distance measured in ATR multiples.")
+    initial_sl_atr_mult: float = Field(default=0.0, ge=0.0, description="Optional initial stop-loss floor before the trade progresses.")
+    breakeven_atr_mult: float = Field(default=0.0, ge=0.0, description="Progress threshold before the stop can move to breakeven.")
+    max_hold_bars: int = Field(default=48, ge=1, description="Maximum bars to hold before forcing an exit.")
+    stale_bars: int = Field(default=0, ge=0, description="Bars without progress before the trade is considered stale.")
+    min_progress_atr: float = Field(default=0.5, ge=0.0, description="Minimum progress in ATR units required to keep the trade alive.")
     regime_enabled: bool = False
-    volatility_regime_window: int = Field(default=0, ge=0)
-    volatility_regime_max_mult: float = Field(default=2.0, gt=0)
-    volatility_regime_min_mult: float = Field(default=0.5, gt=0)
-    regime_adx_min: float = Field(default=25.0, ge=0.0)
-    regime_slope_lookback: int = Field(default=20, ge=2)
-    regime_slope_min: float = Field(default=0.0)
+    volatility_regime_window: int = Field(default=0, ge=0, description="Volatility regime lookback used to activate regime gating.")
+    volatility_regime_max_mult: float = Field(default=2.0, gt=0, description="Upper bound on the allowed volatility regime expansion.")
+    volatility_regime_min_mult: float = Field(default=0.5, gt=0, description="Lower bound on the allowed volatility regime contraction.")
+    regime_adx_min: float = Field(default=25.0, ge=0.0, description="Minimum ADX required for the current regime to remain tradeable.")
+    regime_slope_lookback: int = Field(default=20, ge=2, description="Lookback used to estimate the regime slope.")
+    regime_slope_min: float = Field(default=0.0, description="Minimum slope required for regime tradeability.")
 
     @model_validator(mode="after")
     def _normalize_regime_flags(self) -> "VolumeRallyExitParams":
@@ -219,10 +232,33 @@ class MaxHoldBarsExit(ExitRuleCore):
     def __init__(self, params: dict[str, Any]):
         self.params = params
 
+    def vectorbt_supported(self) -> bool:
+        return True
+
     def on_bar(self, context: StrategyContext) -> StrategyDecision:
         if context.position.is_open and _bars_held(context) >= int(self.params["max_hold_bars"]):
             return StrategyDecision.close("time_exit")
         return StrategyDecision.hold()
+
+    def vectorbt_spec(self, context: VectorbtBuildContext) -> VectorbtSpec | None:
+        entries = context.shared.get("entries")
+        if entries is None:
+            return None
+        entry_mask = mask_like(entries, context.index).to_numpy(dtype=bool)
+        exits = np.zeros(len(context.index), dtype=bool)
+        in_trade = False
+        entry_index = -1
+        max_hold_bars = int(self.params["max_hold_bars"])
+        for idx, is_entry in enumerate(entry_mask):
+            if not in_trade and is_entry:
+                in_trade = True
+                entry_index = idx
+                continue
+            if in_trade and idx - entry_index >= max_hold_bars:
+                exits[idx] = True
+                in_trade = False
+                entry_index = -1
+        return VectorbtSpec(exits=exits, warmup_bars=max_hold_bars)
 
 
 class SmaCrossDownExit(ExitRuleCore):
@@ -439,6 +475,268 @@ class AtrProfitProtectStopExit(ExitRuleCore):
         return StrategyDecision.hold()
 
 
+class VwapPullbackManageExit(ExitRuleCore):
+    def __init__(self, params: dict[str, Any]):
+        self.params = params
+        self._signal_low: float | None = None
+        self._signal_vwap: float | None = None
+        self._initial_stop_price: float | None = None
+        self._trimmed = False
+        self._breakeven_armed = False
+
+    def load_state(self, state: dict[str, Any] | None) -> None:
+        state = state or {}
+        raw_signal_low = state.get("signal_low")
+        self._signal_low = float(raw_signal_low) if raw_signal_low is not None else None
+        raw_signal_vwap = state.get("signal_vwap")
+        self._signal_vwap = float(raw_signal_vwap) if raw_signal_vwap is not None else None
+        raw_stop = state.get("initial_stop_price")
+        self._initial_stop_price = float(raw_stop) if raw_stop is not None else None
+        self._trimmed = bool(state.get("trimmed", False))
+        self._breakeven_armed = bool(state.get("breakeven_armed", False))
+
+    def dump_state(self) -> dict[str, Any]:
+        return {
+            "signal_low": self._signal_low,
+            "signal_vwap": self._signal_vwap,
+            "initial_stop_price": self._initial_stop_price,
+            "trimmed": self._trimmed,
+            "breakeven_armed": self._breakeven_armed,
+        }
+
+    def on_trade_opened(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        vwap = _session_vwap(context.bars)
+        self._signal_low = float(context.bar.low)
+        self._signal_vwap = float(vwap[-1]) if len(vwap) > 0 and not np.isnan(vwap[-1]) else float(context.bar.close)
+        self._initial_stop_price = None
+        self._trimmed = False
+        self._breakeven_armed = False
+
+    def on_trade_trimmed(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        self._trimmed = True
+        self._breakeven_armed = True
+
+    def on_trade_closed(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        self._signal_low = None
+        self._signal_vwap = None
+        self._initial_stop_price = None
+        self._trimmed = False
+        self._breakeven_armed = False
+
+    def _initial_stop(self, context: StrategyContext) -> float | None:
+        if self._initial_stop_price is not None:
+            return self._initial_stop_price
+        if context.position.entry_price is None:
+            return None
+        signal_low = self._signal_low if self._signal_low is not None else float(context.bar.low)
+        signal_vwap = self._signal_vwap if self._signal_vwap is not None else float(context.bar.close)
+        stop_price = min(signal_low, signal_vwap * (1.0 - float(self.params["stop_buffer_pct"])))
+        self._initial_stop_price = stop_price
+        return stop_price
+
+    def vectorbt_supported(self) -> bool:
+        return True
+
+    def vectorbt_spec(self, context: VectorbtBuildContext) -> VectorbtSpec | None:
+        entries = context.shared.get("entries")
+        if entries is None or context.data.empty:
+            return None
+
+        bars = frame_to_bars(context.data)
+        if not bars:
+            return None
+
+        index = context.index
+        entry_mask = mask_like(entries, index).to_numpy(dtype=bool)
+        closes = _closes(bars)
+        highs = _highs(bars)
+        lows = _lows(bars)
+        opens = np.asarray([bar.open for bar in bars], dtype=float)
+        vwap = _session_vwap(bars)
+        ema9 = _ema(closes, 9)
+
+        trim_mask = np.zeros(len(bars), dtype=bool)
+        exit_mask = np.zeros(len(bars), dtype=bool)
+        entry_price: float | None = None
+        initial_stop: float | None = None
+        signal_low: float | None = None
+        signal_vwap: float | None = None
+        entry_exec_idx: int | None = None
+        trimmed = False
+        breakeven_armed = False
+        pending_entry_idx: int | None = None
+
+        for idx, bar in enumerate(bars):
+            if pending_entry_idx is not None and idx == pending_entry_idx:
+                entry_price = float(opens[idx])
+                if signal_low is None:
+                    signal_low = float(lows[idx])
+                if signal_vwap is None or np.isnan(signal_vwap):
+                    signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
+                initial_stop = min(
+                    signal_low,
+                    signal_vwap * (1.0 - float(self.params["stop_buffer_pct"])),
+                )
+                entry_exec_idx = idx
+                trimmed = False
+                breakeven_armed = False
+                pending_entry_idx = None
+
+            position_open = entry_price is not None and initial_stop is not None and entry_exec_idx is not None
+            if not position_open:
+                if entry_mask[idx]:
+                    signal_low = float(lows[idx])
+                    signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
+                    pending_entry_idx = idx + 1
+                continue
+
+            close = float(closes[idx])
+            if close <= float(initial_stop):
+                exit_mask[idx] = True
+                entry_price = None
+                initial_stop = None
+                signal_low = None
+                signal_vwap = None
+                entry_exec_idx = None
+                trimmed = False
+                breakeven_armed = False
+                pending_entry_idx = None
+                continue
+
+            if not trimmed:
+                one_r = float(entry_price) + (float(entry_price) - float(initial_stop))
+                if close >= one_r:
+                    trim_mask[idx] = True
+                    trimmed = True
+                    breakeven_armed = True
+                    continue
+
+            if breakeven_armed:
+                breakeven_stop = float(entry_price) * (1.0 + float(self.params["breakeven_buffer_pct"]))
+                if close <= breakeven_stop:
+                    exit_mask[idx] = True
+                    entry_price = None
+                    initial_stop = None
+                    signal_low = None
+                    signal_vwap = None
+                    entry_exec_idx = None
+                    trimmed = False
+                    breakeven_armed = False
+                    pending_entry_idx = None
+                    continue
+
+            if close < float(ema9[idx]):
+                exit_mask[idx] = True
+                entry_price = None
+                initial_stop = None
+                signal_low = None
+                signal_vwap = None
+                entry_exec_idx = None
+                trimmed = False
+                breakeven_armed = False
+                pending_entry_idx = None
+                continue
+            if close < float(vwap[idx]):
+                exit_mask[idx] = True
+                entry_price = None
+                initial_stop = None
+                signal_low = None
+                signal_vwap = None
+                entry_exec_idx = None
+                trimmed = False
+                breakeven_armed = False
+                pending_entry_idx = None
+                continue
+            if idx - int(entry_exec_idx) + 1 >= int(self.params["time_stop_bars"]):
+                exit_mask[idx] = True
+                entry_price = None
+                initial_stop = None
+                signal_low = None
+                signal_vwap = None
+                entry_exec_idx = None
+                trimmed = False
+                breakeven_armed = False
+                pending_entry_idx = None
+                continue
+            minutes_since_open = _minutes_since_rth_open(bar)
+            if minutes_since_open is not None and minutes_since_open >= int(self.params["eod_flatten_minutes"]):
+                exit_mask[idx] = True
+                entry_price = None
+                initial_stop = None
+                signal_low = None
+                signal_vwap = None
+                entry_exec_idx = None
+                trimmed = False
+                breakeven_armed = False
+                pending_entry_idx = None
+                continue
+
+            if entry_mask[idx]:
+                signal_low = float(lows[idx])
+                signal_vwap = float(vwap[idx]) if not np.isnan(vwap[idx]) else float(closes[idx])
+                pending_entry_idx = idx + 1
+
+        if isinstance(context.shared, dict):
+            context.shared["trim_exits"] = pd.Series(trim_mask, index=index)
+            context.shared["exits"] = pd.Series(exit_mask, index=index)
+
+        return VectorbtSpec(
+            exits=pd.Series(exit_mask, index=index),
+            trim_exits=pd.Series(trim_mask, index=index),
+            trim_portion=float(self.params["partial_trim_portion"]),
+            warmup_bars=10,
+            metadata={
+                "trim_count": int(trim_mask.sum()),
+                "exit_count": int(exit_mask.sum()),
+            },
+        )
+
+    def on_bar(self, context: StrategyContext) -> StrategyDecision:
+        if not context.position.is_open or context.position.entry_price is None:
+            return StrategyDecision.hold()
+
+        closes = _closes(context.bars)
+        if len(closes) < 2:
+            return StrategyDecision.hold("warmup")
+        ema9 = _ema(closes, 9)
+        vwap = _session_vwap(context.bars)
+        if np.isnan(ema9[-1]) or np.isnan(vwap[-1]):
+            return StrategyDecision.hold("warmup")
+
+        entry_price = float(context.position.entry_price)
+        close = float(context.bar.close)
+        initial_stop = self._initial_stop(context)
+        if initial_stop is None:
+            return StrategyDecision.hold("warmup")
+
+        if close <= initial_stop:
+            return StrategyDecision.close("risk_exit")
+
+        if not self._trimmed:
+            one_r = entry_price + (entry_price - initial_stop)
+            if close >= one_r:
+                return StrategyDecision.trim(float(self.params["partial_trim_portion"]), "one_r_trim")
+
+        if self._breakeven_armed:
+            breakeven_stop = entry_price * (1.0 + float(self.params["breakeven_buffer_pct"]))
+            if close <= breakeven_stop:
+                return StrategyDecision.close("breakeven_exit")
+
+        if close < float(ema9[-1]):
+            return StrategyDecision.close("ema9_exit")
+        if close < float(vwap[-1]):
+            return StrategyDecision.close("vwap_exit")
+
+        if _bars_held(context) >= int(self.params["time_stop_bars"]):
+            return StrategyDecision.close("time_exit")
+
+        minutes_since_open = _minutes_since_rth_open(context.bar)
+        if minutes_since_open is not None and minutes_since_open >= int(self.params["eod_flatten_minutes"]):
+            return StrategyDecision.close("eod_exit")
+
+        return StrategyDecision.hold()
+
+
 class VolumeRallyExit(ExitRuleCore):
     def __init__(self, params: dict[str, Any]):
         self.params = params
@@ -625,6 +923,13 @@ EXIT_RULE_REGISTRY: dict[str, ExitRuleSpec] = {
         params_model=AtrProfitProtectStopExitParams,
         factory=AtrProfitProtectStopExit,
         warmup_bars=lambda params: int(params["atr_period"]) + 1,
+    ),
+    "vwap_pullback_manage": ExitRuleSpec(
+        name="vwap_pullback_manage",
+        description="VWAP pullback trade management with 1R trim, breakeven stop, and time-based exit.",
+        params_model=VwapPullbackManageExitParams,
+        factory=VwapPullbackManageExit,
+        warmup_bars=lambda params: 10,
     ),
     "volume_rally_atr": ExitRuleSpec(
         name="volume_rally_atr",

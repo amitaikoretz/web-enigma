@@ -6,14 +6,16 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from pydantic import ValidationError
 
 from app.config.models import BacktestConfig
 from app.engine.runner import run_backtests
-from app.output.models import BacktestReport, CandidateRecord, RunResult, RunSummary
+from app.output.models import BacktestReport, CandidateRecord, FeatureSnapshotRecord, OutcomeLabelRecord, RunResult, RunSummary
 from app.risk.data.report_loader import CandidateLoadError, load_candidates_from_reports
+from app.risk.dataset import RiskDatasetReader
 from app.risk.dataset.feature_columns import select_risk_feature_columns
 from app.risk.dataset.builder import build_risk_dataset
-from app.risk.models import RiskDatasetConfig
+from app.risk.models import RiskDatasetConfig, RiskDatasetManifest
 
 
 def _write_candidate_report(path: Path, candidates: list[CandidateRecord]) -> None:
@@ -49,7 +51,7 @@ def _write_candidate_report(path: Path, candidates: list[CandidateRecord]) -> No
                 run_id="csv_candidates",
                 status="success",
                 strategy="breakout_channel",
-                symbol=None,
+                symbol="TEST",
                 data_source="csv",
                 summary=RunSummary(
                     start_value=10_000.0,
@@ -65,6 +67,79 @@ def _write_candidate_report(path: Path, candidates: list[CandidateRecord]) -> No
         ],
     )
     path.write_text(report.model_dump_json(), encoding="utf-8")
+
+
+def _make_split_sidecar_rows(
+    *,
+    run_id: str,
+    row_count: int,
+    blob_size: int,
+) -> tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]:
+    labels: list[OutcomeLabelRecord] = []
+    features: list[FeatureSnapshotRecord] = []
+    for idx in range(row_count):
+        candidate_id = f"{run_id}-{idx}"
+        blob = "|".join(f"{run_id}-{idx}-{i:04d}" for i in range(blob_size))
+        labels.append(
+            OutcomeLabelRecord(
+                candidate_id=candidate_id,
+                label_version="labels_v1",
+                entry_price=100.0 + idx,
+                horizon_bars=5,
+                stop_pct=0.03,
+                target_pct=0.06,
+                mae_pct=0.01,
+                mae_abs_pct=0.01,
+                mae_atr=None,
+                mfe_pct=0.02,
+                final_return_pct=0.01,
+                realized_R=0.33,
+                hit_stop=False,
+                hit_target=False,
+                hit_stop_before_target=True,
+                bars_to_stop=None,
+                bars_to_target=None,
+                bars_held=5,
+                exit_reason="TIME",
+                label_quality_flag="OK",
+            )
+        )
+        features.append(
+            FeatureSnapshotRecord(
+                candidate_id=candidate_id,
+                feature_version="features_v1",
+                feature_timestamp="2024-01-10T00:00:00+00:00",
+                feature_quality_flag="OK",
+                return_20=0.01,
+                atr_14_pct=0.02,
+                metadata_features={"blob": blob},
+            )
+        )
+    return labels, features
+
+
+def _write_sidecar_report(
+    tmp_path: Path,
+    *,
+    results: list[RunResult],
+    risk_auxiliary_by_run: dict[str, tuple[list[OutcomeLabelRecord], list[FeatureSnapshotRecord]]],
+) -> Path:
+    from app.backtests.artifacts import persist_backtest_report
+
+    report = BacktestReport(
+        generated_at=datetime.now(UTC),
+        app_version="0.1.0",
+        config_sha256="test",
+        input_config={"runs": []},
+        total_runs=len(results),
+        successful_runs=len(results),
+        failed_runs=0,
+        status="success",
+        results=results,
+    )
+    report_path = tmp_path / "report.json"
+    persist_backtest_report(report, report_path, risk_auxiliary_by_run=risk_auxiliary_by_run)
+    return report_path
 
 
 def test_load_candidates_fails_when_empty(tmp_path: Path):
@@ -226,6 +301,14 @@ def test_end_to_end_backtest_with_risk_auxiliary_sidecars(tmp_path: Path, monkey
 
     monkeypatch.setattr("app.risk.data.bars.BarStore.prepare", _forbidden_prepare)
 
+    report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+    report_payload["results"][0]["symbol"] = "TEST"
+    report_payload["results"][0]["candidates"] = []
+    report_path.write_text(json.dumps(report_payload), encoding="utf-8")
+    candidates_parquet_path = Path(written.candidates_parquet_path)
+    if candidates_parquet_path.exists():
+        candidates_parquet_path.unlink()
+
     output_path = tmp_path / "dataset.parquet"
     manifest = build_risk_dataset(
         [report_path],
@@ -234,6 +317,11 @@ def test_end_to_end_backtest_with_risk_auxiliary_sidecars(tmp_path: Path, monkey
     )
     assert manifest.joined_rows >= 1
     df = pd.read_parquet(output_path)
+    assert "run_id" in df.columns
+    assert "symbol" in df.columns
+    assert df["run_id"].iloc[0] == "csv_candidates"
+    assert df["symbol"].iloc[0] == "TEST"
+    assert isinstance(df["symbol"].dtype, pd.CategoricalDtype)
     assert "hit_stop_before_target" in df.columns
     assert "return_20" in df.columns
 
@@ -256,7 +344,7 @@ def test_build_risk_dataset_from_sidecars_without_candidates(tmp_path: Path):
                 run_id="csv_candidates",
                 status="success",
                 strategy="breakout_channel",
-                symbol=None,
+                symbol="TEST",
                 data_source="csv",
                 summary=RunSummary(
                     start_value=10_000.0,
@@ -281,6 +369,7 @@ def test_build_risk_dataset_from_sidecars_without_candidates(tmp_path: Path):
     labels_df = pd.DataFrame(
         [
             {
+                "run_id": "csv_candidates",
                 "candidate_id": "abc123",
                 "label_version": "labels_v1",
                 "entry_price": 100.0,
@@ -307,6 +396,7 @@ def test_build_risk_dataset_from_sidecars_without_candidates(tmp_path: Path):
     features_df = pd.DataFrame(
         [
             {
+                "run_id": "csv_candidates",
                 "candidate_id": "abc123",
                 "feature_version": "features_v1",
                 "feature_timestamp": "2024-01-10T00:00:00+00:00",
@@ -331,8 +421,215 @@ def test_build_risk_dataset_from_sidecars_without_candidates(tmp_path: Path):
     df = pd.read_parquet(output_path)
     assert df.iloc[0]["candidate_id"] == "abc123"
     assert df.iloc[0]["timestamp"] == "2024-01-10T00:00:00+00:00"
+    assert df.iloc[0]["run_id"] == "csv_candidates"
+    assert df.iloc[0]["symbol"] == "TEST"
+    assert isinstance(df["symbol"].dtype, pd.CategoricalDtype)
     assert "hit_stop_before_target" in df.columns
     assert "return_20" in df.columns
+
+
+def test_risk_dataset_reader_loads_symbol_split_chunks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    results = [
+        RunResult(
+            run_id="run-a",
+            status="success",
+            strategy="breakout_channel",
+            symbol="AAPL",
+            data_source="csv",
+            summary=RunSummary(
+                start_value=10_000.0,
+                end_value=10_100.0,
+                return_pct=1.0,
+                total_trades=0,
+                won_trades=0,
+                lost_trades=0,
+            ),
+            analyzers={"resolution": "1d"},
+            candidates=[],
+        ),
+        RunResult(
+            run_id="run-b",
+            status="success",
+            strategy="breakout_channel",
+            symbol="MSFT",
+            data_source="csv",
+            summary=RunSummary(
+                start_value=10_000.0,
+                end_value=10_100.0,
+                return_pct=1.0,
+                total_trades=0,
+                won_trades=0,
+                lost_trades=0,
+            ),
+            analyzers={"resolution": "1d"},
+            candidates=[],
+        ),
+    ]
+    risk_auxiliary_by_run = {
+        "run-a": _make_split_sidecar_rows(run_id="run-a", row_count=12, blob_size=1800),
+        "run-b": _make_split_sidecar_rows(run_id="run-b", row_count=12, blob_size=1800),
+    }
+    report_path = _write_sidecar_report(tmp_path, results=results, risk_auxiliary_by_run=risk_auxiliary_by_run)
+    monkeypatch.setattr(
+        "app.risk.dataset.builder._probe_parquet_size",
+        lambda frame, temp_dir: len(frame) * 1_000,
+    )
+
+    output_path = tmp_path / "dataset.parquet"
+    manifest = build_risk_dataset(
+        [report_path],
+        output_path=output_path,
+        config=RiskDatasetConfig(
+            min_history_bars=5,
+            lookback_bars=5,
+            include_index_features=False,
+            max_parquet_file_size_bytes=15_000,
+            parquet_split_primary_keys=["symbol"],
+            parquet_split_fallback_keys=["run_id", "candidate_id"],
+        ),
+    )
+    manifest_path = output_path.with_suffix(".manifest.json")
+    reader = RiskDatasetReader.from_manifest_path(manifest_path)
+
+    assert manifest.chunk_count == 2
+    assert reader.chunk_count == 2
+    assert [entry.split_key_values["symbol"] for entry in manifest.files] == ["AAPL", "MSFT"]
+    assert all(Path(entry.path).exists() for entry in manifest.files)
+    assert isinstance(manifest, RiskDatasetManifest)
+
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert RiskDatasetManifest.model_validate(payload)
+    payload["unexpected"] = True
+    with pytest.raises(ValidationError):
+        RiskDatasetManifest.model_validate(payload)
+
+    full_df = reader.load()
+    assert len(full_df) == manifest.joined_rows
+    assert set(full_df["symbol"].astype(str)) == {"AAPL", "MSFT"}
+    aapl_df = reader.load_for_split(symbol="AAPL")
+    assert len(aapl_df) == 12
+    assert set(aapl_df["symbol"].astype(str)) == {"AAPL"}
+
+
+def test_risk_dataset_reader_falls_back_to_run_split(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    results = [
+        RunResult(
+            run_id="run-a",
+            status="success",
+            strategy="breakout_channel",
+            symbol="AAPL",
+            data_source="csv",
+            summary=RunSummary(
+                start_value=10_000.0,
+                end_value=10_100.0,
+                return_pct=1.0,
+                total_trades=0,
+                won_trades=0,
+                lost_trades=0,
+            ),
+            analyzers={"resolution": "1d"},
+            candidates=[],
+        ),
+        RunResult(
+            run_id="run-b",
+            status="success",
+            strategy="breakout_channel",
+            symbol="AAPL",
+            data_source="csv",
+            summary=RunSummary(
+                start_value=10_000.0,
+                end_value=10_100.0,
+                return_pct=1.0,
+                total_trades=0,
+                won_trades=0,
+                lost_trades=0,
+            ),
+            analyzers={"resolution": "1d"},
+            candidates=[],
+        ),
+    ]
+    risk_auxiliary_by_run = {
+        "run-a": _make_split_sidecar_rows(run_id="run-a", row_count=10, blob_size=1800),
+        "run-b": _make_split_sidecar_rows(run_id="run-b", row_count=10, blob_size=1800),
+    }
+    report_path = _write_sidecar_report(tmp_path, results=results, risk_auxiliary_by_run=risk_auxiliary_by_run)
+    monkeypatch.setattr(
+        "app.risk.dataset.builder._probe_parquet_size",
+        lambda frame, temp_dir: len(frame) * 1_000,
+    )
+
+    output_path = tmp_path / "dataset.parquet"
+    manifest = build_risk_dataset(
+        [report_path],
+        output_path=output_path,
+        config=RiskDatasetConfig(
+            min_history_bars=5,
+            lookback_bars=5,
+            include_index_features=False,
+            max_parquet_file_size_bytes=15_000,
+            parquet_split_primary_keys=["symbol"],
+            parquet_split_fallback_keys=["run_id"],
+        ),
+    )
+    reader = RiskDatasetReader.from_manifest_path(output_path.with_suffix(".manifest.json"))
+
+    assert manifest.chunk_count == 2
+    assert {entry.split_key_values["run_id"] for entry in manifest.files} == {"run-a", "run-b"}
+    assert all(entry.split_key_values["symbol"] == "AAPL" for entry in manifest.files)
+    assert len(reader.load_for_split(symbol="AAPL")) == 20
+
+
+def test_risk_dataset_reader_row_splits_when_single_value_is_too_large(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = [
+        RunResult(
+            run_id="run-a",
+            status="success",
+            strategy="breakout_channel",
+            symbol="AAPL",
+            data_source="csv",
+            summary=RunSummary(
+                start_value=10_000.0,
+                end_value=10_100.0,
+                return_pct=1.0,
+                total_trades=0,
+                won_trades=0,
+                lost_trades=0,
+            ),
+            analyzers={"resolution": "1d"},
+            candidates=[],
+        )
+    ]
+    risk_auxiliary_by_run = {
+        "run-a": _make_split_sidecar_rows(run_id="run-a", row_count=2, blob_size=10_000),
+    }
+    report_path = _write_sidecar_report(tmp_path, results=results, risk_auxiliary_by_run=risk_auxiliary_by_run)
+    monkeypatch.setattr(
+        "app.risk.dataset.builder._probe_parquet_size",
+        lambda frame, temp_dir: 2_000 if len(frame) == 1 else 4_000,
+    )
+
+    output_path = tmp_path / "dataset.parquet"
+    manifest = build_risk_dataset(
+        [report_path],
+        output_path=output_path,
+        config=RiskDatasetConfig(
+            min_history_bars=5,
+            lookback_bars=5,
+            include_index_features=False,
+            max_parquet_file_size_bytes=1_000,
+            parquet_split_primary_keys=["symbol"],
+            parquet_split_fallback_keys=[],
+        ),
+    )
+    reader = RiskDatasetReader.from_manifest_path(output_path.with_suffix(".manifest.json"))
+
+    assert manifest.chunk_count == 2
+    assert all(entry.split_key_values == {"symbol": "AAPL"} for entry in manifest.files)
+    assert all(entry.size_bytes > manifest.max_parquet_file_size_bytes for entry in manifest.files)
+    assert len(reader.load_for_split(symbol="AAPL")) == 2
 
 
 def test_risk_build_dataset_argo_falls_back_to_reports_without_sidecars(tmp_path: Path, monkeypatch):

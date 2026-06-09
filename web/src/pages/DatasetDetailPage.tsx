@@ -67,6 +67,7 @@ export function DatasetDetailPage() {
   const metadata = detail?.metadata ?? status
   const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
   const canRetry = metadata?.status === 'failed'
+  const symbols = metadata?.symbols ?? (metadata?.symbol ? [metadata.symbol] : [])
 
   async function confirmDelete() {
     if (!metadata) {
@@ -236,6 +237,12 @@ export function DatasetDetailPage() {
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
             <Typography color="text.secondary">Resolution</Typography>
             <Typography sx={{ fontFamily: 'monospace' }}>{metadata?.resolution ?? 'Loading…'}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <Typography color="text.secondary">Symbols</Typography>
+            <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-word' }}>
+              {symbols.length > 0 ? symbols.join(', ') : 'Loading…'}
+            </Typography>
           </Stack>
           {metadata?.argo_workflow_name && (
             <Alert

@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import random
-import socket
 import time
 from datetime import UTC
 from datetime import date
@@ -20,22 +19,11 @@ import pandas as pd
 
 from app.config.models import AlpacaDataSource, AlpacaOptionsDataSource, CsvDataSource, DataCacheConfig, ParquetDataSource, YahooDataSource
 from app.data.cache import CacheKey, ParquetDataCache
+from app.alpaca_transport import alpaca_transport_failure_label
+from app.alpaca_transport import format_alpaca_transport_failure_message
+from app.alpaca_transport import is_temporary_alpaca_transport_failure
 
 logger = logging.getLogger(__name__)
-
-
-def _is_temporary_dns_failure(exc: URLError) -> bool:
-    """
-    Best-effort detection for transient DNS failures inside containers/K8s.
-    Common forms:
-      - socket.gaierror: [Errno -3] Temporary failure in name resolution
-      - OSError-like objects with errno -3
-    """
-    reason = getattr(exc, "reason", None)
-    if isinstance(reason, socket.gaierror):
-        return reason.errno == -3
-    errno = getattr(reason, "errno", None)
-    return errno == -3
 
 
 def _sleep_backoff(attempt_index: int, *, base_s: float = 1.0, cap_s: float = 30.0) -> float:
@@ -329,11 +317,12 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
                 raise RuntimeError(f"Alpaca request failed ({exc.code}): {body or exc.reason}") from exc
             except URLError as exc:
                 last_exc = exc
-                if not _is_temporary_dns_failure(exc) or attempt == 5:
-                    raise RuntimeError(f"Failed to reach Alpaca data API: {exc.reason}") from exc
+                if not is_temporary_alpaca_transport_failure(exc) or attempt == 5:
+                    raise RuntimeError(format_alpaca_transport_failure_message(service="data API", exc=exc)) from exc
                 delay_s = _sleep_backoff(attempt)
                 logger.warning(
-                    "Alpaca DNS lookup failed (temporary). Retrying in %.2fs (attempt %d/%d). Error=%r",
+                    "Alpaca transport failure (%s). Retrying in %.2fs (attempt %d/%d). Error=%r",
+                    alpaca_transport_failure_label(exc),
                     delay_s,
                     attempt + 1,
                     6,
@@ -341,7 +330,7 @@ def _download_alpaca(config: AlpacaDataSource, start_date: date, end_date: date)
                 )
         if last_exc is not None:
             # Defensive: should only happen if the loop exits unexpectedly.
-            raise RuntimeError(f"Failed to reach Alpaca data API: {last_exc.reason}") from last_exc
+            raise RuntimeError(format_alpaca_transport_failure_message(service="data API", exc=last_exc)) from last_exc
 
         bars.extend(payload.get("bars") or [])
         page_token = payload.get("next_page_token")

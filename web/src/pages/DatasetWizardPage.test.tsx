@@ -8,9 +8,16 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 
 const createDatasetMock = vi.hoisted(() => vi.fn())
 const navigateMock = vi.hoisted(() => vi.fn())
+const fetchUniversesMock = vi.hoisted(() => vi.fn())
+const fetchUniverseConstituentsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/datasets', () => ({
   createDataset: createDatasetMock,
+}))
+
+vi.mock('../api/universes', () => ({
+  fetchUniverses: fetchUniversesMock,
+  fetchUniverseConstituents: fetchUniverseConstituentsMock,
 }))
 
 vi.mock('react-router-dom', async () => {
@@ -38,9 +45,28 @@ describe('DatasetWizardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     navigateMock.mockReset()
+    fetchUniversesMock.mockResolvedValue([
+      {
+        key: 'sp500',
+        kind: 'registry',
+        name: 'S&P 500',
+        description: 'Large cap US equities',
+        provider: 'static',
+        provider_ref: { symbols: ['AAPL', 'MSFT', 'NVDA'] },
+        is_active: true,
+        latest_refresh_status: 'completed',
+        latest_refresh_started_at: null,
+        latest_refresh_as_of: null,
+      },
+    ])
+    fetchUniverseConstituentsMock.mockResolvedValue({
+      key: 'sp500',
+      as_of: '2026-05-09',
+      symbols: ['MSFT', 'NVDA'],
+    })
   })
 
-  it('asks for confirmation before submitting the dataset workflow', async () => {
+  it('lets users pick a symbol from a selected universe before submitting the dataset workflow', async () => {
     createDatasetMock.mockResolvedValue({
       dataset_id: 'ds-1',
       status: 'pending',
@@ -58,6 +84,23 @@ describe('DatasetWizardPage', () => {
       </MemoryRouter>,
     )
 
+    expect(screen.getByRole('link', { name: 'Back to datasets' })).toHaveAttribute('href', '/backtests/datasets')
+    fireEvent.click(screen.getByRole('button', { name: /sample from universe/i }))
+
+    fireEvent.mouseDown(screen.getByLabelText('Universe'))
+    fireEvent.click(await screen.findByText('S&P 500 (sp500)'))
+    await waitFor(() => expect(fetchUniverseConstituentsMock).toHaveBeenCalledWith('sp500', expect.any(String)))
+    await waitFor(() => expect(screen.getByRole('button', { name: /^sample symbols$/i })).not.toBeDisabled())
+    fireEvent.change(screen.getByRole('slider'), { target: { value: 2 } })
+    fireEvent.click(screen.getByRole('button', { name: /^sample symbols$/i }))
+
+    await waitFor(() => expect(screen.getAllByText('MSFT').length).toBeGreaterThan(0))
+    expect(screen.getAllByText('NVDA').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: /^close$/i }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Sample from universe' })).not.toBeInTheDocument())
+
+    await waitFor(() => expect(screen.getAllByText('MSFT').length).toBeGreaterThan(0))
     fireEvent.click(screen.getByRole('button', { name: /launch dataset/i }))
 
     expect(screen.getByText('Launch dataset?')).toBeInTheDocument()
@@ -71,6 +114,7 @@ describe('DatasetWizardPage', () => {
     await waitFor(() =>
       expect(createDatasetMock).toHaveBeenCalledWith({
         symbol: 'AAPL',
+        symbols: ['AAPL', 'MSFT', 'NVDA'],
         provider: 'alpaca',
         resolution: '1d',
         start_date: expect.any(String),

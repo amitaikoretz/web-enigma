@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import tempfile
 
 import pandas as pd
 import yaml
@@ -15,12 +17,12 @@ from app.backtests.artifacts import (
     resolve_results_root,
 )
 from app.config.models import DataCacheConfig
-from app.output.models import FeatureSnapshotRecord, OutcomeLabelRecord
+from app.output.models import BacktestReport, FeatureSnapshotRecord, OutcomeLabelRecord
 from app.risk.data.bars import BarStore, bar_index_at_or_before
 from app.risk.data.report_loader import load_candidates_from_reports
 from app.risk.features.assemble import build_feature_snapshot
 from app.risk.labels.path_labels import label_long_candidate
-from app.risk.models import EnrichedCandidate, RiskDatasetConfig, RiskDatasetManifest
+from app.risk.models import EnrichedCandidate, RiskDatasetChunkRecord, RiskDatasetConfig, RiskDatasetManifest
 
 
 def load_risk_dataset_config(path: Path | None) -> RiskDatasetConfig:
@@ -44,6 +46,13 @@ def load_risk_dataset_config(path: Path | None) -> RiskDatasetConfig:
         default_benchmark_symbol=str(features.get("default_benchmark_symbol", "SPY")),
         cache_directory=str(data_cache.get("directory", ".cache/backtest-data")),
         cache_enabled=bool(data_cache.get("enabled", True)),
+        max_parquet_file_size_bytes=int(
+            risk_dataset.get("max_parquet_file_size_bytes", 10 * 1024 * 1024)
+        ),
+        parquet_split_primary_keys=list(risk_dataset.get("parquet_split_primary_keys", ["symbol"])),
+        parquet_split_fallback_keys=list(
+            risk_dataset.get("parquet_split_fallback_keys", ["run_id", "candidate_id"])
+        ),
     )
 
 
@@ -73,6 +82,265 @@ def _feature_row(snapshot: FeatureSnapshotRecord) -> dict[str, Any]:
     for key, value in metadata_features.items():
         base[key] = value
     return base
+
+
+@dataclass(frozen=True)
+class _DatasetChunkPlan:
+    frame: pd.DataFrame
+    split_key_values: dict[str, str | None]
+
+
+def _config_split_key_groups(config: RiskDatasetConfig) -> list[tuple[str, ...]]:
+    groups: list[tuple[str, ...]] = [tuple(config.parquet_split_primary_keys)]
+    groups.extend((key,) for key in config.parquet_split_fallback_keys)
+    return groups
+
+
+def _split_value_to_json(value: object) -> str | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    return str(value)
+
+
+def _group_split_key_values(keys: tuple[str, ...], group_value: object) -> dict[str, str | None]:
+    if len(keys) == 1:
+        if isinstance(group_value, tuple):
+            values = (group_value[0] if group_value else None,)
+        elif isinstance(group_value, list):
+            values = (group_value[0] if group_value else None,)
+        else:
+            values = (group_value,)
+    else:
+        values = group_value if isinstance(group_value, tuple) else (group_value,)
+    return {key: _split_value_to_json(value) for key, value in zip(keys, values, strict=False)}
+
+
+def _probe_parquet_size(frame: pd.DataFrame, temp_dir: Path) -> int:
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(suffix=".parquet", dir=temp_dir, delete=False) as handle:
+        temp_path = Path(handle.name)
+    try:
+        frame.to_parquet(temp_path, index=False)
+        return temp_path.stat().st_size
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def _split_frame_to_plans(
+    frame: pd.DataFrame,
+    *,
+    key_groups: list[tuple[str, ...]],
+    split_key_values: dict[str, str | None] | None = None,
+    max_bytes: int,
+    temp_dir: Path,
+) -> list[_DatasetChunkPlan]:
+    effective_split_values = split_key_values or {}
+    if frame.empty:
+        return [_DatasetChunkPlan(frame=frame.reset_index(drop=True), split_key_values=effective_split_values)]
+
+    size_bytes = _probe_parquet_size(frame, temp_dir)
+    if size_bytes <= max_bytes or (len(frame) == 1 and not key_groups):
+        return [_DatasetChunkPlan(frame=frame.reset_index(drop=True), split_key_values=effective_split_values)]
+
+    if key_groups:
+        current_keys = tuple(key for key in key_groups[0] if key in frame.columns)
+        if current_keys:
+            grouped = list(frame.groupby(list(current_keys), sort=True, dropna=False, observed=False))
+            if grouped:
+                plans: list[_DatasetChunkPlan] = []
+                for group_value, group_frame in grouped:
+                    plans.extend(
+                        _split_frame_to_plans(
+                            group_frame.reset_index(drop=True),
+                            key_groups=key_groups[1:],
+                            split_key_values={**effective_split_values, **_group_split_key_values(current_keys, group_value)},
+                            max_bytes=max_bytes,
+                            temp_dir=temp_dir,
+                        )
+                    )
+                return plans
+        return _split_frame_to_plans(
+            frame.reset_index(drop=True),
+            key_groups=key_groups[1:],
+            split_key_values=effective_split_values,
+            max_bytes=max_bytes,
+            temp_dir=temp_dir,
+        )
+
+    if len(frame) == 1:
+        return [_DatasetChunkPlan(frame=frame.reset_index(drop=True), split_key_values=effective_split_values)]
+
+    midpoint = max(1, len(frame) // 2)
+    left = frame.iloc[:midpoint].reset_index(drop=True)
+    right = frame.iloc[midpoint:].reset_index(drop=True)
+    return _split_frame_to_plans(
+        left,
+        key_groups=[],
+        split_key_values=effective_split_values,
+        max_bytes=max_bytes,
+        temp_dir=temp_dir,
+    ) + _split_frame_to_plans(
+        right,
+        key_groups=[],
+        split_key_values=effective_split_values,
+        max_bytes=max_bytes,
+        temp_dir=temp_dir,
+    )
+
+
+def _write_chunk_frame(frame: pd.DataFrame, path: Path) -> int:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path, index=False)
+    return path.stat().st_size
+
+
+def _build_manifest(
+    *,
+    output_path: Path,
+    config: RiskDatasetConfig,
+    generated_at: datetime,
+    source_report_paths: list[Path],
+    total_candidates: int,
+    joined: pd.DataFrame,
+    labeled_rows: int,
+    feature_rows: int,
+    duplicates: int,
+) -> tuple[RiskDatasetManifest, list[RiskDatasetChunkRecord]]:
+    chunk_groups = _config_split_key_groups(config)
+    with tempfile.TemporaryDirectory(dir=output_path.parent, prefix=f".{output_path.stem}.risk-dataset-probe.") as probe_dir_name:
+        chunk_plans = _split_frame_to_plans(
+            joined,
+            key_groups=chunk_groups,
+            max_bytes=config.max_parquet_file_size_bytes,
+            temp_dir=Path(probe_dir_name),
+        )
+
+    if len(chunk_plans) == 1:
+        chunk_paths = [output_path.resolve()]
+    else:
+        chunk_paths = [output_path.with_name(f"{output_path.stem}.part-{index:03d}{output_path.suffix}").resolve() for index in range(len(chunk_plans))]
+
+    files: list[RiskDatasetChunkRecord] = []
+    total_bytes = 0
+    for index, (plan, chunk_path) in enumerate(zip(chunk_plans, chunk_paths, strict=False)):
+        size_bytes = _write_chunk_frame(plan.frame, chunk_path)
+        total_bytes += size_bytes
+        files.append(
+            RiskDatasetChunkRecord(
+                path=str(chunk_path),
+                row_count=len(plan.frame),
+                size_bytes=size_bytes,
+                chunk_index=index,
+                split_key_values=plan.split_key_values,
+            )
+        )
+
+    manifest = RiskDatasetManifest(
+        generated_at=generated_at,
+        dataset_version=config.dataset_version,
+        label_version=config.label_version,
+        feature_version=config.feature_version,
+        config_hash=_config_hash(config),
+        source_report_paths=[str(path.resolve()) for path in source_report_paths],
+        total_candidates=total_candidates,
+        labeled_rows=labeled_rows,
+        feature_rows=feature_rows,
+        joined_rows=len(joined),
+        dropped_label_rows=max(0, total_candidates - labeled_rows),
+        dropped_feature_rows=max(0, total_candidates - feature_rows),
+        duplicate_candidate_ids=duplicates,
+        output_path=str(chunk_paths[0]),
+        max_parquet_file_size_bytes=config.max_parquet_file_size_bytes,
+        primary_split_keys=list(config.parquet_split_primary_keys),
+        fallback_split_keys=list(config.parquet_split_fallback_keys),
+        chunk_count=len(files),
+        total_parquet_bytes=total_bytes,
+        files=files,
+    )
+    return manifest, files
+
+
+def _write_partitioned_dataset(
+    *,
+    joined: pd.DataFrame,
+    output_path: Path,
+    config: RiskDatasetConfig,
+    source_report_paths: list[Path],
+    total_candidates: int,
+    labeled_rows: int,
+    feature_rows: int,
+    duplicates: int,
+) -> RiskDatasetManifest:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest, _ = _build_manifest(
+        output_path=output_path,
+        config=config,
+        generated_at=datetime.now(UTC),
+        source_report_paths=source_report_paths,
+        total_candidates=total_candidates,
+        joined=joined,
+        labeled_rows=labeled_rows,
+        feature_rows=feature_rows,
+        duplicates=duplicates,
+    )
+    manifest_path = output_path.with_suffix(".manifest.json")
+    manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+    return manifest
+
+
+def _run_symbol_map(report_paths: list[Path]) -> dict[str, str]:
+    symbols: dict[str, str] = {}
+    for report_path in report_paths:
+        report = BacktestReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        for result in report.results:
+            if result.symbol:
+                symbols[result.run_id] = result.symbol
+    return symbols
+
+
+def _candidate_run_map(label_df: pd.DataFrame, feature_df: pd.DataFrame) -> dict[str, str]:
+    if "run_id" not in label_df.columns and "run_id" not in feature_df.columns:
+        return {}
+    frames: list[pd.DataFrame] = []
+    if "run_id" in label_df.columns:
+        frames.append(label_df[["candidate_id", "run_id"]])
+    if "run_id" in feature_df.columns:
+        frames.append(feature_df[["candidate_id", "run_id"]])
+    if not frames:
+        return {}
+    mapping = pd.concat(frames, ignore_index=True)
+    mapping = mapping.dropna(subset=["candidate_id", "run_id"]).drop_duplicates("candidate_id", keep="last")
+    return dict(zip(mapping["candidate_id"], mapping["run_id"]))
+
+
+def _ensure_symbol_column(
+    frame: pd.DataFrame,
+    *,
+    run_symbol_map: dict[str, str],
+    candidate_run_map: dict[str, str],
+) -> pd.DataFrame:
+    symbol = (
+        frame["symbol"].astype("object")
+        if "symbol" in frame.columns
+        else pd.Series(pd.NA, index=frame.index, dtype="object")
+    )
+    if "run_id" not in frame.columns and candidate_run_map:
+        frame["run_id"] = frame["candidate_id"].map(candidate_run_map)
+    if run_symbol_map and "run_id" in frame.columns:
+        symbol = symbol.where(pd.notna(symbol), frame["run_id"].map(run_symbol_map))
+    frame["symbol"] = symbol.astype("category")
+    return frame
 
 
 def build_labels_from_frame(
@@ -222,6 +490,7 @@ def _load_joined_dataset_from_sidecars(
 ) -> pd.DataFrame | None:
     frames: list[pd.DataFrame] = []
     for report_path in report_paths:
+        run_symbol_map = _run_symbol_map([report_path])
         sidecars = _load_sidecar_frames(report_path)
         if sidecars is None:
             return None
@@ -241,13 +510,20 @@ def _load_joined_dataset_from_sidecars(
         if candidates:
             candidate_df = pd.DataFrame([_candidate_row(c) for c in candidates])
         else:
-            candidate_df = pd.DataFrame({"candidate_id": pd.concat([label_df["candidate_id"], feature_df["candidate_id"]]).dropna().unique()})
+            candidate_df = pd.DataFrame(
+                {
+                    "candidate_id": pd.concat([label_df["candidate_id"], feature_df["candidate_id"]])
+                    .dropna()
+                    .unique()
+                }
+            )
             if "feature_timestamp" in feature_df.columns and "timestamp" not in candidate_df.columns:
                 # Provide a reasonable time column for downstream sorting/splitting.
                 # This is best-effort and may not exactly equal the candidate timestamp.
                 ts = feature_df[["candidate_id", "feature_timestamp"]].dropna().drop_duplicates("candidate_id", keep="last")
                 candidate_df = candidate_df.merge(ts, on="candidate_id", how="left")
                 candidate_df = candidate_df.rename(columns={"feature_timestamp": "timestamp"})
+        candidate_run_map = _candidate_run_map(label_df, feature_df)
 
         label_join_cols = [
             col
@@ -275,6 +551,7 @@ def _load_joined_dataset_from_sidecars(
             joined["planned_horizon_bars"] = joined["horizon_bars"]
         if "side" not in joined.columns:
             joined["side"] = "LONG"
+        joined = _ensure_symbol_column(joined, run_symbol_map=run_symbol_map, candidate_run_map=candidate_run_map)
 
         frames.append(joined)
 
@@ -315,27 +592,16 @@ def build_risk_dataset(
         joined.insert(0, "dataset_version", effective_config.dataset_version)
         joined.insert(1, "label_version", effective_config.label_version)
         joined.insert(2, "feature_version", effective_config.feature_version)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        joined.to_parquet(output_path, index=False)
-        manifest_path = output_path.with_suffix(".manifest.json")
-        manifest = RiskDatasetManifest(
-            generated_at=datetime.now(UTC),
-            dataset_version=effective_config.dataset_version,
-            label_version=effective_config.label_version,
-            feature_version=effective_config.feature_version,
-            config_hash=_config_hash(effective_config),
-            source_report_paths=[str(path.resolve()) for path in report_paths],
+        return _write_partitioned_dataset(
+            joined=joined,
+            output_path=output_path,
+            config=effective_config,
+            source_report_paths=report_paths,
             total_candidates=total_candidates,
             labeled_rows=len(joined),
             feature_rows=len(joined),
-            joined_rows=len(joined),
-            dropped_label_rows=0,
-            dropped_feature_rows=0,
-            duplicate_candidate_ids=duplicates,
-            output_path=str(output_path.resolve()),
+            duplicates=duplicates,
         )
-        manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
-        return manifest
 
     candidates, duplicates = load_candidates_from_reports(
         report_paths,
@@ -388,26 +654,13 @@ def build_risk_dataset(
     joined.insert(0, "dataset_version", effective_config.dataset_version)
     joined.insert(1, "label_version", effective_config.label_version)
     joined.insert(2, "feature_version", effective_config.feature_version)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    joined.to_parquet(output_path, index=False)
-
-    manifest_path = output_path.with_suffix(".manifest.json")
-    manifest = RiskDatasetManifest(
-        generated_at=datetime.now(UTC),
-        dataset_version=effective_config.dataset_version,
-        label_version=effective_config.label_version,
-        feature_version=effective_config.feature_version,
-        config_hash=_config_hash(effective_config),
-        source_report_paths=[str(path.resolve()) for path in report_paths],
+    return _write_partitioned_dataset(
+        joined=joined,
+        output_path=output_path,
+        config=effective_config,
+        source_report_paths=report_paths,
         total_candidates=len(candidates),
         labeled_rows=len(labels),
         feature_rows=len(features),
-        joined_rows=len(joined),
-        dropped_label_rows=len(candidates) - len(labels),
-        dropped_feature_rows=len(candidates) - len(features),
-        duplicate_candidate_ids=duplicates,
-        output_path=str(output_path.resolve()),
+        duplicates=duplicates,
     )
-    manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
-    return manifest

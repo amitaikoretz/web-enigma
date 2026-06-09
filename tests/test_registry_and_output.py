@@ -16,6 +16,7 @@ def test_registry_has_demo_triggers_and_exit_rules():
         "buy_and_hold",
         "breakout_channel",
         "buy_oco_atr",
+        "vwap_pullback",
         "volume_rally",
         "fast_upswing",
     } <= trigger_names
@@ -29,6 +30,7 @@ def test_registry_has_demo_triggers_and_exit_rules():
         "atr_take_profit",
         "atr_trailing_stop",
         "atr_profit_protect_stop",
+        "vwap_pullback_manage",
         "volume_rally_atr",
     } <= exit_rule_names
 
@@ -50,6 +52,12 @@ def test_registry_param_validation():
     upswing = validate_trigger_params("fast_upswing", {"return_lookback": 5, "volume_window": 20})
     assert upswing["min_consecutive_up_bars"] == 3
     assert upswing["require_vwap"] is True
+    vwap_pullback = validate_trigger_params("vwap_pullback", {"benchmark_symbol": "QQQ"})
+    assert vwap_pullback["benchmark_symbol"] == "QQQ"
+    assert vwap_pullback["benchmark_resolution_minutes"] == 15
+    assert vwap_pullback["min_closes_above_vwap"] == 2
+    vwap_manage = validate_exit_rule_params("vwap_pullback_manage", {"partial_trim_portion": 0.5})
+    assert vwap_manage["partial_trim_portion"] == 0.5
     with pytest.raises(ValueError):
         validate_trigger_params("sma_cross", {"fast": 0, "slow": 8})
     with pytest.raises(ValueError):

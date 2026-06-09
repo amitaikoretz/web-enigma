@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.script_logging import emit_terminal_command
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 
@@ -29,7 +30,7 @@ def main(
     output_path: str = typer.Option(..., "--output-path"),
     terminal_command_out: str = typer.Option("/tmp/terminal-command.txt", "--terminal-command-out"),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="market_overview_argo")
     now = datetime.now(UTC)
     payload = {
         "snapshot_id": snapshot_id,

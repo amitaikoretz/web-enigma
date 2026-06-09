@@ -1,0 +1,8 @@
+rules:
+  - name: vwap_pullback_manage
+    params:
+      stop_buffer_pct: 0.0015
+      breakeven_buffer_pct: 0.0005
+      partial_trim_portion: 0.5
+      time_stop_bars: 12
+      eod_flatten_minutes: 385

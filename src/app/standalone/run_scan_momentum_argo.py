@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
+from app.script_logging import emit_terminal_command
 from app.scans.momentum_scanner import run_momentum_scan
 from app.scans.params import MomentumScanParams
 
@@ -35,7 +36,7 @@ def main(
         help="Write the invoked command line to this path (for Argo output parameters)",
     ),
 ) -> None:
-    _write_text(terminal_command_out, _terminal_command(sys.argv))
+    emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="run_scan_momentum_argo")
 
     raw_params = json.loads(params_json or "{}")
     params_model = MomentumScanParams.model_validate(raw_params)

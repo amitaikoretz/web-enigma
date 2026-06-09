@@ -14,6 +14,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
   InputAdornment,
   LinearProgress,
@@ -535,6 +536,10 @@ export function ModelsLandingPage() {
   )
   const allVisibleSelected = filteredRows.length > 0 && selectedVisibleCount === filteredRows.length
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected
+  const selectionSummaryLabel =
+    filteredRows.length === 0
+      ? '0 visible'
+      : `${selectedVisibleCount} selected / ${filteredRows.length} visible`
 
   async function confirmDelete() {
     if (!deleteTarget || !deleteTarget.deleteModel) return
@@ -717,32 +722,82 @@ export function ModelsLandingPage() {
         </Dialog>
       )}
 
-      <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 } }}>
-        <Stack spacing={2}>
-          <Stack spacing={1.5}>
-            <Tabs
-              value={familyTabValue}
-              onChange={(_, nextValue: string) => updateSearchParam('family', nextValue === 'all' ? null : nextValue)}
-              variant="scrollable"
-              allowScrollButtonsMobile
-            >
-              {familyCounts.map((tab) => (
-                <Tab key={tab.value} value={tab.value === 'all' ? 'all' : familyListSearchParam(tab.value)} label={`${tab.label} (${tab.count})`} />
-              ))}
-            </Tabs>
+      <Paper
+        variant="outlined"
+        sx={(theme) => ({
+          p: { xs: 1.5, md: 2 },
+          overflow: 'hidden',
+          borderRadius: 4,
+          borderColor: theme.palette.divider,
+          bgcolor:
+            theme.palette.mode === 'dark'
+              ? 'rgba(17, 24, 39, 0.62)'
+              : 'rgba(255, 255, 255, 0.8)',
+          backdropFilter: 'blur(18px)',
+          boxShadow:
+            theme.palette.mode === 'dark'
+              ? '0 20px 50px rgba(15, 23, 42, 0.28)'
+              : '0 20px 50px rgba(15, 23, 42, 0.08)',
+        })}
+      >
+        <Stack spacing={1.5}>
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 1.5,
+              alignItems: 'start',
+              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.6fr) minmax(280px, 1fr)' },
+            }}
+          >
+            <Stack spacing={1.25}>
+              <Tabs
+                value={familyTabValue}
+                onChange={(_, nextValue: string) => updateSearchParam('family', nextValue === 'all' ? null : nextValue)}
+                variant="scrollable"
+                allowScrollButtonsMobile
+                sx={{
+                  minHeight: 44,
+                  '& .MuiTabs-indicator': {
+                    display: 'none',
+                  },
+                  '& .MuiTabs-flexContainer': {
+                    gap: 1,
+                  },
+                }}
+              >
+                {familyCounts.map((tab) => (
+                  <Tab
+                    key={tab.value}
+                    value={tab.value === 'all' ? 'all' : familyListSearchParam(tab.value)}
+                    label={`${tab.label} (${tab.count})`}
+                    sx={{
+                      minHeight: 40,
+                      minWidth: 'auto',
+                      px: 1.5,
+                      py: 0.75,
+                      borderRadius: 999,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      bgcolor: 'background.paper',
+                      color: 'text.secondary',
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      '&.Mui-selected': {
+                        color: 'primary.main',
+                        borderColor: 'primary.main',
+                        bgcolor: 'action.selected',
+                      },
+                    }}
+                  />
+                ))}
+              </Tabs>
 
-            <Box
-              sx={{
-                display: 'grid',
-                gap: 1.5,
-                gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 2fr) minmax(0, 1fr)' },
-              }}
-            >
               <TextField
                 value={searchParams.get('q') ?? ''}
                 onChange={(event) => updateSearchParam('q', event.target.value)}
-                label="Search"
+                label="Search models"
                 placeholder="Model name, ID, source, or metric"
+                size="small"
                 slotProps={{
                   input: {
                     startAdornment: (
@@ -752,41 +807,92 @@ export function ModelsLandingPage() {
                     ),
                   },
                 }}
+                sx={{
+                  maxWidth: 860,
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                  },
+                }}
               />
-
-              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', alignItems: 'center', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
-                {statusCounts.map(({ status, count }) => (
-                  <Chip
-                    key={status}
-                    clickable
-                    color={statusFilter === status ? 'primary' : 'default'}
-                    variant={statusFilter === status ? 'filled' : 'outlined'}
-                    label={status === 'all' ? `All statuses (${count})` : `${status} (${count})`}
-                    onClick={() => updateSearchParam('status', status === 'all' ? null : status)}
-                  />
-                ))}
-              </Stack>
-            </Box>
-
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <Button
-                variant="contained"
-                onClick={handleTrainModelClick}
-                aria-haspopup={familyFilter === 'all' ? 'menu' : undefined}
-                aria-expanded={familyFilter === 'all' ? trainMenuOpen : undefined}
-              >
-                Train model
-              </Button>
-              <Button
-                color="error"
-                variant="outlined"
-                disabled={selectedVisibleCount === 0 || bulkDeleting}
-                onClick={() => setBulkDeleteOpen(true)}
-              >
-                Delete selected{selectedVisibleCount > 0 ? ` (${selectedVisibleCount})` : ''}
-              </Button>
             </Stack>
-          </Stack>
+
+            <Stack spacing={1} sx={{ alignItems: { xs: 'stretch', lg: 'flex-end' } }}>
+              <Chip
+                size="small"
+                variant="outlined"
+                label={selectionSummaryLabel}
+                sx={{
+                  alignSelf: { xs: 'flex-start', lg: 'flex-end' },
+                  maxWidth: 'fit-content',
+                  fontWeight: 600,
+                }}
+              />
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                sx={{
+                  width: '100%',
+                  justifyContent: { xs: 'flex-start', lg: 'flex-end' },
+                }}
+              >
+                <Button
+                  variant="contained"
+                  onClick={handleTrainModelClick}
+                  aria-haspopup={familyFilter === 'all' ? 'menu' : undefined}
+                  aria-expanded={familyFilter === 'all' ? trainMenuOpen : undefined}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
+                >
+                  Train model
+                </Button>
+                <Button
+                  color="error"
+                  variant="outlined"
+                  disabled={selectedVisibleCount === 0 || bulkDeleting}
+                  onClick={() => setBulkDeleteOpen(true)}
+                  sx={{ width: { xs: '100%', sm: 'auto' } }}
+                >
+                  Delete selected{selectedVisibleCount > 0 ? ` (${selectedVisibleCount})` : ''}
+                </Button>
+              </Stack>
+            </Stack>
+          </Box>
+
+          <Divider />
+
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              flexWrap: 'wrap',
+              alignItems: 'center',
+            }}
+          >
+            <Typography
+              variant="overline"
+              sx={{
+                letterSpacing: '0.16em',
+                color: 'text.secondary',
+                lineHeight: 1,
+              }}
+            >
+              Status
+            </Typography>
+            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+              {statusCounts.map(({ status, count }) => (
+                <Chip
+                  key={status}
+                  clickable
+                  color={statusFilter === status ? 'primary' : 'default'}
+                  variant={statusFilter === status ? 'filled' : 'outlined'}
+                  label={status === 'all' ? `All statuses (${count})` : `${status} (${count})`}
+                  onClick={() => updateSearchParam('status', status === 'all' ? null : status)}
+                  sx={{
+                    fontWeight: 600,
+                  }}
+                />
+              ))}
+            </Stack>
+          </Box>
         </Stack>
       </Paper>
 
@@ -824,7 +930,7 @@ export function ModelsLandingPage() {
                       checked={allVisibleSelected}
                       indeterminate={someVisibleSelected}
                       aria-label="Select all models on this page"
-                      onChange={(_event, checked) => toggleSelectAllVisible(checked)}
+                      onChange={(event) => toggleSelectAllVisible(event.target.checked)}
                     />
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Family</TableCell>
@@ -853,7 +959,7 @@ export function ModelsLandingPage() {
                           checked={isSelected}
                           aria-label={`Select model ${row.groupId}`}
                           onClick={(event) => event.stopPropagation()}
-                          onChange={(_event, checked) => toggleRowSelection(row.groupId, checked)}
+                          onChange={(event) => toggleRowSelection(row.groupId, event.target.checked)}
                         />
                       </TableCell>
                       <TableCell>

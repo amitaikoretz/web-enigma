@@ -5,6 +5,7 @@ from typing import Any, Sequence
 
 from app.replay_debug import maybe_break_for_trade_replay
 from app.strategies.core import StrategyContext, StrategyCore, StrategyDecision
+from app.strategies.vectorbt_support import VectorbtSpec
 
 
 class TriggerCore(ABC):
@@ -18,6 +19,15 @@ class TriggerCore(ABC):
         return None
 
     def on_trade_closed(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        return None
+
+    def on_trade_trimmed(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        return None
+
+    def vectorbt_supported(self) -> bool:
+        return False
+
+    def vectorbt_spec(self, context: Any) -> Any | None:
         return None
 
     @abstractmethod
@@ -36,6 +46,15 @@ class ExitRuleCore(ABC):
         return None
 
     def on_trade_closed(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        return None
+
+    def on_trade_trimmed(self, context: StrategyContext, decision: StrategyDecision) -> None:
+        return None
+
+    def vectorbt_supported(self) -> bool:
+        return False
+
+    def vectorbt_spec(self, context: Any) -> Any | None:
         return None
 
     @abstractmethod
@@ -94,6 +113,80 @@ class ComposableStrategyCore(StrategyCore):
             "exit_rules": {name: rule.dump_state() for name, rule in self._exit_rules},
         }
 
+    def vectorbt_supported(self) -> bool:
+        if self._entry_policy is not None:
+            return False
+        if not self._trigger.vectorbt_supported():
+            return False
+        return all(rule.vectorbt_supported() for _, rule in self._exit_rules)
+
+    def vectorbt_spec(self, context: Any) -> Any | None:
+        if not self.vectorbt_supported():
+            return None
+
+        trigger_spec = self._trigger.vectorbt_spec(context)
+        if trigger_spec is None:
+            return None
+        entries = getattr(trigger_spec, "entries", None)
+        if entries is None:
+            return None
+
+        shared = getattr(context, "shared", None)
+        if isinstance(shared, dict):
+            shared["entries"] = entries
+            shared["size"] = getattr(trigger_spec, "size", None)
+
+        exit_specs: list[Any] = []
+        for _, rule in self._exit_rules:
+            rule_spec = rule.vectorbt_spec(context)
+            if rule_spec is None:
+                return None
+            exit_specs.append(rule_spec)
+
+        combined_exits = None
+        combined_trim_exits = None
+        combined_trim_portion = None
+        for rule_spec in exit_specs:
+            exits = getattr(rule_spec, "exits", None)
+            if exits is None:
+                pass
+            elif combined_exits is None:
+                combined_exits = exits
+            else:
+                combined_exits = combined_exits | exits
+            trim_exits = getattr(rule_spec, "trim_exits", None)
+            if trim_exits is not None:
+                if combined_trim_exits is None:
+                    combined_trim_exits = trim_exits
+                else:
+                    combined_trim_exits = combined_trim_exits | trim_exits
+            trim_portion = getattr(rule_spec, "trim_portion", None)
+            if trim_portion is not None:
+                combined_trim_portion = trim_portion
+
+        merged_metadata: dict[str, Any] = {}
+        merged_metadata.update(getattr(trigger_spec, "metadata", {}) or {})
+        for rule_spec in exit_specs:
+            merged_metadata.update(getattr(rule_spec, "metadata", {}) or {})
+
+        warmup_bars = max(
+            [int(getattr(trigger_spec, "warmup_bars", 0) or 0)]
+            + [int(getattr(rule_spec, "warmup_bars", 0) or 0) for rule_spec in exit_specs]
+        )
+
+        return VectorbtSpec(
+            entries=entries,
+            exits=combined_exits,
+            trim_exits=combined_trim_exits,
+            trim_portion=combined_trim_portion,
+            size=getattr(trigger_spec, "size", None),
+            sl_stop=getattr(trigger_spec, "sl_stop", None),
+            tp_stop=getattr(trigger_spec, "tp_stop", None),
+            trail_stop=getattr(trigger_spec, "trail_stop", None),
+            warmup_bars=warmup_bars,
+            metadata=merged_metadata,
+        )
+
     def on_bar(self, context: StrategyContext) -> StrategyDecision:
         maybe_break_for_trade_replay(
             "app.strategies.components.ComposableStrategyCore.on_bar",
@@ -109,6 +202,16 @@ class ComposableStrategyCore(StrategyCore):
                     self._trigger.on_trade_closed(context, wrapped)
                     for _, other in self._exit_rules:
                         other.on_trade_closed(context, wrapped)
+                    return wrapped
+                if decision.action == "trim":
+                    reason = decision.reason or "trim"
+                    wrapped = StrategyDecision.trim(
+                        float(decision.portion or 0.0),
+                        f"exit:{rule_name}:{reason}",
+                    )
+                    self._trigger.on_trade_trimmed(context, wrapped)
+                    for _, other in self._exit_rules:
+                        other.on_trade_trimmed(context, wrapped)
                     return wrapped
             return StrategyDecision.hold()
 
