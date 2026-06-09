@@ -32,6 +32,17 @@ import type { DatasetListItem } from '../types/datasets'
 import { formatInTimezone } from '../utils/datetime'
 import { familyWizardPath } from './modelLaunchRoutes'
 
+function formatDatasetSymbolSummary(item: DatasetListItem): string {
+  const symbols = item.symbols?.map((symbol) => symbol.trim()).filter(Boolean) ?? []
+  if (symbols.length === 1) {
+    return symbols[0]
+  }
+  if (symbols.length > 1) {
+    return `${symbols.length} symbols`
+  }
+  return item.symbol
+}
+
 export function DatasetsListPage() {
   const navigate = useNavigate()
   const { platformSettings, appearance } = useSettings()
@@ -323,7 +334,7 @@ export function DatasetsListPage() {
                     <TableCell>
                       <DatasetStatusChip status={item.status} />
                     </TableCell>
-                    <TableCell>{item.symbol}</TableCell>
+                    <TableCell>{formatDatasetSymbolSummary(item)}</TableCell>
                     <TableCell>{item.provider}</TableCell>
                     <TableCell>
                       {item.start_date} to {item.end_date}

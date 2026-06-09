@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
@@ -103,6 +103,10 @@ describe('DatasetWizardPage', () => {
       as_of: '2026-05-09',
       symbols: ['MSFT', 'NVDA'],
     })
+  })
+
+  afterEach(() => {
+    cleanup()
   })
 
   it('lets users pick a symbol from a selected universe before submitting the dataset workflow', async () => {
@@ -214,7 +218,11 @@ describe('DatasetWizardPage', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByText(/prefilled from dataset source-ds-1/i)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Prefilled from dataset source-ds-1. Edit any field before launching.',
+      ),
+    )
 
     fireEvent.change(screen.getByLabelText(/dataset name/i), { target: { value: 'Edited dataset' } })
     fireEvent.click(screen.getByRole('button', { name: /launch dataset/i }))

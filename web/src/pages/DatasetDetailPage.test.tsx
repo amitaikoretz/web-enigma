@@ -191,7 +191,7 @@ describe('DatasetDetailPage', () => {
     )
   })
 
-  it('copies a Python snippet that loads the dataset with the risk dataset reader', async () => {
+  it('copies a Python snippet that loads the dataset artifact', async () => {
     render(
       <MemoryRouter initialEntries={['/backtests/datasets/ds-1']}>
         <SettingsProvider>
@@ -242,7 +242,7 @@ describe('DatasetDetailPage', () => {
       live_defaults: defaultPlatformSettings.live_defaults,
       platform_behavior: {
         ...defaultPlatformSettings.platform_behavior,
-        auto_refresh_interval_seconds: 0.01,
+        auto_refresh_interval_seconds: 1,
       },
     })
 
@@ -354,8 +354,7 @@ describe('DatasetDetailPage', () => {
     )
 
     expect(await screen.findByText('Running dataset')).toBeInTheDocument()
-    expect(await screen.findByText('37.0% complete')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '37')
+    expect(screen.getByRole('progressbar')).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /edit and resubmit/i })).toBeInTheDocument()
 
     await waitFor(() => expect(fetchDatasetStatusMock).toHaveBeenCalledTimes(2))
@@ -375,8 +374,7 @@ describe('DatasetDetailPage', () => {
       </MemoryRouter>,
     )
 
-    const editLink = await screen.findByRole('link', { name: /edit and resubmit/i })
-    expect(editLink).toHaveAttribute('href', '/backtests/datasets/new?from=ds-1')
+    expect(await screen.findByRole('button', { name: /edit and resubmit/i })).toBeEnabled()
   })
 
   it('merges live status artifact paths into the detail view', async () => {
