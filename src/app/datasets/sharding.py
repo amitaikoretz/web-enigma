@@ -15,6 +15,7 @@ _DATASET_MANIFEST_VERSION = "dataset-artifact-manifest-v1"
 _DEFAULT_TARGET_WORK_UNITS = 5_000
 _DEFAULT_MAX_SHARDS = 8
 _DEFAULT_MAX_PODS = 4
+_DEFAULT_MAX_SYMBOLS_PER_SHARD = 10
 
 _RESOLUTION_WEIGHT = {
     "1m": 60,
@@ -136,6 +137,7 @@ class DatasetShardPlan(BaseModel):
     combine_weight_units: int = Field(ge=1)
     max_shards: int = Field(ge=1)
     max_pods: int = Field(ge=1)
+    max_symbols_per_shard: int = Field(default=_DEFAULT_MAX_SYMBOLS_PER_SHARD, ge=1)
     shard_count: int = Field(ge=1)
     parallelism: int = Field(ge=1)
     shards: list[DatasetShardSpec] = Field(default_factory=list)
@@ -215,9 +217,12 @@ def estimate_dataset_shard_count(
     options_enabled: bool,
     max_shards: int = _DEFAULT_MAX_SHARDS,
     target_work_units: int = _DEFAULT_TARGET_WORK_UNITS,
+    max_symbols_per_shard: int = _DEFAULT_MAX_SYMBOLS_PER_SHARD,
 ) -> int:
     if symbol_count <= 0:
         return 1
+    per_shard_limit = max(1, max_symbols_per_shard)
+    min_shards_for_symbol_cap = math.ceil(symbol_count / per_shard_limit)
     total_work_units = estimate_symbol_work_units(
         symbol_count=symbol_count,
         resolution=resolution,
@@ -226,8 +231,9 @@ def estimate_dataset_shard_count(
         options_enabled=options_enabled,
     )
     if total_work_units <= 0:
-        return 1
+        return max(1, min(symbol_count, max_shards, min_shards_for_symbol_cap))
     estimated = math.ceil(total_work_units / max(1, target_work_units))
+    estimated = max(estimated, min_shards_for_symbol_cap)
     return max(1, min(symbol_count, max_shards, estimated))
 
 
@@ -240,6 +246,21 @@ def _build_symbol_groups(symbols: list[str], shard_count: int) -> list[list[str]
         groups[index].append(symbol)
         loads[index] += 1
     return [group for group in groups if group]
+
+
+def _split_groups_to_symbol_limit(
+    groups: list[list[str]],
+    *,
+    max_symbols_per_shard: int,
+) -> list[list[str]]:
+    limit = max(1, max_symbols_per_shard)
+    limited_groups: list[list[str]] = []
+    for group in groups:
+        for start in range(0, len(group), limit):
+            chunk = group[start : start + limit]
+            if chunk:
+                limited_groups.append(chunk)
+    return limited_groups
 
 
 def _shard_work_units(
@@ -272,6 +293,7 @@ def build_dataset_shard_plan(
     max_shards: int = _DEFAULT_MAX_SHARDS,
     max_pods: int = _DEFAULT_MAX_PODS,
     target_work_units: int = _DEFAULT_TARGET_WORK_UNITS,
+    max_symbols_per_shard: int = _DEFAULT_MAX_SYMBOLS_PER_SHARD,
 ) -> DatasetShardPlan:
     normalized_symbols = normalize_dataset_symbols(symbols)
     if not normalized_symbols:
@@ -304,8 +326,17 @@ def build_dataset_shard_plan(
         options_enabled=options_enabled,
         max_shards=max_shards,
         target_work_units=target_work_units,
+        max_symbols_per_shard=max_symbols_per_shard,
     )
-    shard_groups = _build_symbol_groups(normalized_symbols, shard_count)
+    shard_groups = _split_groups_to_symbol_limit(
+        _build_symbol_groups(normalized_symbols, shard_count),
+        max_symbols_per_shard=max_symbols_per_shard,
+    )
+    if len(shard_groups) > max_shards:
+        raise ValueError(
+            f"Cannot satisfy max_symbols_per_shard={max_symbols_per_shard} with max_shards={max_shards} "
+            f"for {len(normalized_symbols)} symbols"
+        )
     parallelism = max(1, min(max_pods, len(shard_groups)))
     base_symbol_work_units, estimated_total_work_units = _shard_work_units(
         symbol_count=len(normalized_symbols),
@@ -368,6 +399,7 @@ def build_dataset_shard_plan(
         combine_weight_units=max(1, len(shards)),
         max_shards=max_shards,
         max_pods=max_pods,
+        max_symbols_per_shard=max_symbols_per_shard,
         shard_count=len(shards),
         parallelism=parallelism,
         shards=shards,

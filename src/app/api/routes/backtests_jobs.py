@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse, Response
 from pydantic import ValidationError
 
@@ -18,6 +19,9 @@ from app.backtests import (
     BacktestTradeReplayResponse,
     BacktestStatusResponse,
     BacktestUpdateRequest,
+    ClassicBacktestCreateRequest,
+    VectorbtBacktestCreateRequest,
+    validate_backtest_create_request,
 )
 from app.backtests.service import (
     ArgoNotConfiguredError,
@@ -30,19 +34,23 @@ router = APIRouter(prefix="/backtests", tags=["backtests"])
 
 @router.post("", response_model=BacktestCreateResponse, status_code=status.HTTP_202_ACCEPTED)
 def create_backtest(
-    payload: BacktestCreateRequest,
+    payload: dict[str, Any] = Body(...),
     deps: ApiDependencies = Depends(get_deps),
 ) -> BacktestCreateResponse:
-    settings = deps.settings_service.load()
-    payload = payload.model_copy(
-        update={
-            "broker": payload.broker or settings.backtest_defaults.broker,
-            "analyzers": payload.analyzers or settings.backtest_defaults.analyzers,
-            "execution": payload.execution or settings.backtest_defaults.execution,
-        }
-    )
     try:
+        payload = validate_backtest_create_request(payload)
+        settings = deps.settings_service.load()
+        if isinstance(payload, ClassicBacktestCreateRequest):
+            payload = payload.model_copy(
+                update={
+                    "broker": payload.broker or settings.backtest_defaults.broker,
+                    "analyzers": payload.analyzers or settings.backtest_defaults.analyzers,
+                    "execution": payload.execution or settings.backtest_defaults.execution,
+                }
+            )
         return deps.backtest_jobs.submit(payload)
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ArgoNotConfiguredError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ArgoResultsNotSharedError as exc:

@@ -4,6 +4,7 @@ metadata:
   name: datasets-download-template
 spec:
   entrypoint: main
+  parallelism: 5   # Max 5 pods/workflow nodes running at once
   serviceAccountName: __SERVICE_ACCOUNT__
   arguments:
     parameters:
@@ -16,6 +17,7 @@ spec:
       - name: options-feed
       - name: output-dir
       - name: options-enabled-flag
+      - name: max-symbols-per-shard
   volumes:
     - name: datasets-results
       persistentVolumeClaim:
@@ -37,6 +39,8 @@ spec:
                   value: "{{workflow.parameters.symbols}}"
                 - name: provider
                   value: "{{workflow.parameters.provider}}"
+                - name: max-symbols-per-shard
+                  value: "{{workflow.parameters.max-symbols-per-shard}}"
                 - name: resolution
                   value: "{{workflow.parameters.resolution}}"
                 - name: start-date
@@ -145,6 +149,7 @@ spec:
       inputs:
         parameters:
           - name: symbols
+          - name: max-symbols-per-shard
           - name: provider
           - name: resolution
           - name: start-date
@@ -164,6 +169,8 @@ spec:
           - "{{inputs.parameters.symbols}}"
           - "--provider"
           - "{{inputs.parameters.provider}}"
+          - "--max-symbols-per-shard"
+          - "{{inputs.parameters.max-symbols-per-shard}}"
           - "--resolution"
           - "{{inputs.parameters.resolution}}"
           - "--start-date"

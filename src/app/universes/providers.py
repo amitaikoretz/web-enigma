@@ -159,9 +159,8 @@ class WikipediaUniverseProvider:
                     candidate = raw.strip()
                     candidate = re.sub(r"\[.*?\]", "", candidate).strip()
                     candidate = candidate.split()[0].strip()
-                    candidate = candidate.replace(".", "-")
                     candidate = candidate.upper()
-                    if re.fullmatch(r"[A-Z0-9][A-Z0-9-]{0,14}", candidate):
+                    if re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,14}", candidate):
                         best_symbols.add(candidate)
                 if best_symbols:
                     break

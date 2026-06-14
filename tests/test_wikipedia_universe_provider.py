@@ -56,7 +56,7 @@ def test_wikipedia_provider_parses_symbol_column_and_normalizes(monkeypatch) -> 
     universe = SimpleNamespace(provider_ref={"kind": "dow30"}, key="dow30")
     members = provider.fetch_membership(universe, as_of=None)  # type: ignore[arg-type]
 
-    assert members == {"AAPL", "BRK-B"}
+    assert members == {"AAPL", "BRK.B"}
     assert fake_client.urls == ["https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average"]
     assert fake_client.headers and fake_client.headers[0] and fake_client.headers[0].get("User-Agent")
 

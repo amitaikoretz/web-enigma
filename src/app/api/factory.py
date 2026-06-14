@@ -54,14 +54,12 @@ def create_app(
 
     def _is_writable_dir(candidate: Path) -> bool:
         try:
-            if candidate.exists():
-                if not candidate.is_dir():
-                    return False
-                return os.access(candidate, os.W_OK | os.X_OK)
-            parent = candidate.parent
-            if not parent.exists() or not parent.is_dir():
-                return False
-            return os.access(parent, os.W_OK | os.X_OK)
+            target_dir = candidate if candidate.exists() else candidate
+            target_dir.mkdir(parents=True, exist_ok=True)
+            probe_path = target_dir / f".write-probe-{os.getpid()}-{int(time.time() * 1000)}"
+            probe_path.write_text("ok", encoding="utf-8")
+            probe_path.unlink()
+            return True
         except OSError:
             return False
 

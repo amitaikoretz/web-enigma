@@ -20,6 +20,7 @@ class DatasetOptionsRequest(BaseModel):
 class DatasetCreateRequest(BaseModel):
     symbol: str | None = None
     symbols: list[str] = Field(default_factory=list)
+    max_symbols_per_shard: int = Field(default=10, ge=1)
     provider: Literal["alpaca", "yahoo"]
     resolution: str
     start_date: date

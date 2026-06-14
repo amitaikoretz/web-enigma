@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, DatasetJob
 from app.datasets.argo_workflow import build_dataset_workflow_spec
-from app.datasets.models import DatasetListItem
+from app.datasets.models import DatasetCreateRequest, DatasetListItem
 from app.datasets.persistence import SqlAlchemyDatasetRepository
 from app.datasets.service import DatasetService
 from app.datasets.sharding import DatasetArtifactManifest, DatasetChunkRecord, build_dataset_shard_plan, write_json_file
@@ -453,6 +453,7 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
 
     spec = build_dataset_workflow_spec(
         symbols=["AAPL", "MSFT"],
+        max_symbols_per_shard=None,
         provider="alpaca",
         resolution="5m",
         start_date="2026-01-01",
@@ -599,6 +600,35 @@ def test_submit_uses_workflow_mount_in_argo_payload(tmp_path: Path, monkeypatch)
     assert params["output-dir"] == str((workflow_root / "2026-06-07" / repo.item.id).resolve())
     assert params["options-enabled-flag"] == "--no-options-enabled"
     assert params["symbols"] == "AAPL,MSFT"
+
+
+def test_submit_passes_max_symbols_per_shard_to_workflow(tmp_path: Path, monkeypatch) -> None:
+    repo = FakeDatasetRepository(_dataset_item())
+    service = DatasetService(repo, FakeSettingsService(dataset_storage_root=str(tmp_path)), argo_submitter=CaptureArgoSubmitter())
+    workflow_root = tmp_path / "workflow-results"
+    workflow_root.mkdir()
+    monkeypatch.setenv("BACKTEST_WORKFLOW_RESULTS_MOUNT", str(workflow_root))
+
+    response = service.submit(
+        DatasetCreateRequest.model_validate(
+            {
+                "symbols": ["AAPL", "MSFT", "QQQ", "SPY"],
+                "max_symbols_per_shard": 2,
+                "provider": "alpaca",
+                "resolution": "1d",
+                "start_date": date(2026, 5, 1),
+                "end_date": date(2026, 6, 1),
+                "name": "My dataset",
+            }
+        )
+    )
+
+    assert response.status == "pending"
+    submitted = service.argo.submitted  # type: ignore[attr-defined]
+    assert submitted is not None
+    workflow = submitted["json"]["workflow"]  # type: ignore[index]
+    params = {item["name"]: item["value"] for item in workflow["spec"]["arguments"]["parameters"]}  # type: ignore[index]
+    assert params["max-symbols-per-shard"] == "2"
 
 
 def test_refresh_from_argo_uses_weighted_shard_progress(tmp_path: Path) -> None:

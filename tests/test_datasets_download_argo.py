@@ -91,6 +91,95 @@ def test_download_shard_skips_missing_alpaca_symbol_and_continues(
     assert (tmp_path / "market.manifest.json").exists()
 
 
+def test_download_shard_skips_invalid_alpaca_symbol_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_market_feed(config, *args, **kwargs):
+        calls.append(config.symbol)
+        if config.symbol == "BF.B":
+            raise RuntimeError('Alpaca request failed (400): {"message":"invalid symbol: BF.B"}')
+        return (
+            pd.DataFrame(
+                {
+                    "Open": [100.0, 101.0],
+                    "High": [101.0, 102.0],
+                    "Low": [99.0, 100.0],
+                    "Close": [100.5, 101.5],
+                    "Volume": [1_000.0, 1_100.0],
+                },
+                index=pd.to_datetime(["2026-06-01T14:30:00Z", "2026-06-01T14:35:00Z"], utc=True),
+            ),
+            "miss",
+        )
+
+    monkeypatch.setattr(module, "build_alpaca_data_feed_with_cache", fake_market_feed)
+
+    module.download_shard_command(
+        shard_id="shard-001",
+        symbols="AAPL,BF.B,MSFT",
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 8).isoformat(),
+        end_date=date(2026, 6, 7).isoformat(),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=str(tmp_path),
+        progress_total_units=300,
+        progress_symbol_units=100,
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+    )
+
+    dataset = pd.read_parquet(tmp_path / "market.parquet")
+    assert dataset["symbol"].tolist() == ["AAPL", "AAPL", "MSFT", "MSFT"]
+    assert calls == ["AAPL", "BF.B", "MSFT"]
+    assert (tmp_path / "market.manifest.json").exists()
+
+
+def test_download_shard_preserves_dotted_symbols_for_alpaca(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen_symbols: list[str] = []
+
+    def fake_market_feed(config, *args, **kwargs):
+        seen_symbols.append(config.symbol)
+        return (
+            pd.DataFrame(
+                {
+                    "Open": [100.0],
+                    "High": [101.0],
+                    "Low": [99.0],
+                    "Close": [100.5],
+                    "Volume": [1_000.0],
+                },
+                index=pd.to_datetime(["2026-06-01T14:30:00Z"], utc=True),
+            ),
+            "miss",
+        )
+
+    monkeypatch.setattr(module, "build_alpaca_data_feed_with_cache", fake_market_feed)
+
+    module.download_shard_command(
+        shard_id="shard-001",
+        symbols="BF.B",
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 8).isoformat(),
+        end_date=date(2026, 6, 7).isoformat(),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=str(tmp_path),
+        progress_total_units=100,
+        progress_symbol_units=100,
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+    )
+
+    assert seen_symbols == ["BF.B"]
+    dataset = pd.read_parquet(tmp_path / "market.parquet")
+    assert dataset["symbol"].tolist() == ["BF.B"]
+
+
 def test_main_writes_blank_options_outputs_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         module,
@@ -577,3 +666,31 @@ def test_aggregate_progress_pct_treats_missing_shards_as_complete_after_finalize
     Path(plan.dataset_manifest_path).write_text("{}", encoding="utf-8")
 
     assert module._aggregate_progress_pct(plan) == 100
+
+
+def test_plan_shards_command_honors_max_symbols_per_shard(tmp_path: Path) -> None:
+    plan_path_out = tmp_path / "plan-path.txt"
+    work_dir_out = tmp_path / "work-dir.txt"
+    shards_param_out = tmp_path / "shards-param.json"
+    terminal_command_out = tmp_path / "terminal-command.txt"
+
+    module.plan_shards_command(
+        symbol="AAPL,MSFT,QQQ,SPY,TSLA",
+        max_symbols_per_shard="2",
+        provider="alpaca",
+        resolution="1m",
+        start_date="2026-05-01",
+        end_date="2026-05-02",
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=str(tmp_path / "dataset"),
+        plan_path_out=str(plan_path_out),
+        work_dir_out=str(work_dir_out),
+        shards_param_out=str(shards_param_out),
+        terminal_command_out=str(terminal_command_out),
+    )
+
+    plan_path = Path(plan_path_out.read_text(encoding="utf-8").strip())
+    plan = module.DatasetShardPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    assert plan.max_symbols_per_shard == 2
+    assert all(shard.symbol_count <= 2 for shard in plan.shards)

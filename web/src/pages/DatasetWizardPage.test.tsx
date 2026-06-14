@@ -65,6 +65,7 @@ describe('DatasetWizardPage', () => {
         params_json: {
           symbol: 'AAPL',
           symbols: ['AAPL', 'MSFT'],
+          max_symbols_per_shard: 7,
           provider: 'alpaca',
           resolution: '1d',
           start_date: '2026-04-01',
@@ -158,6 +159,7 @@ describe('DatasetWizardPage', () => {
       expect(createDatasetMock).toHaveBeenCalledWith({
         symbol: 'AAPL',
         symbols: ['AAPL', 'MSFT', 'NVDA'],
+        max_symbols_per_shard: 10,
         provider: 'alpaca',
         resolution: '1d',
         start_date: expect.any(String),
@@ -232,6 +234,7 @@ describe('DatasetWizardPage', () => {
       expect(createDatasetMock).toHaveBeenCalledWith({
         symbol: 'AAPL',
         symbols: ['AAPL', 'MSFT'],
+        max_symbols_per_shard: 7,
         provider: 'alpaca',
         resolution: '1d',
         start_date: '2026-04-01',
@@ -244,5 +247,37 @@ describe('DatasetWizardPage', () => {
       }),
     )
     expect(await screen.findByText('Dataset launched')).toBeInTheDocument()
+  })
+
+  it('shows a default shard cap of 10 for new launches', async () => {
+    createDatasetMock.mockResolvedValue({
+      dataset_id: 'ds-3',
+      status: 'pending',
+      status_url: '/api/datasets/ds-3/status',
+      detail_url: '/backtests/datasets/ds-3',
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/new']}>
+        <LocalizationProvider dateAdapter={AdapterDayjs}>
+          <Routes>
+            <Route path="/backtests/datasets/new" element={<DatasetWizardPage />} />
+          </Routes>
+        </LocalizationProvider>
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByLabelText(/max symbols per shard/i)).toHaveValue(10)
+
+    fireEvent.click(screen.getAllByRole('button', { name: /launch dataset/i })[0])
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Launch dataset?' })).getByRole('button', { name: /^launch dataset$/i }))
+
+    await waitFor(() =>
+      expect(createDatasetMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_symbols_per_shard: 10,
+        }),
+      ),
+    )
   })
 })

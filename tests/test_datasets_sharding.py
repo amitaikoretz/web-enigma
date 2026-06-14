@@ -83,3 +83,47 @@ def test_build_dataset_shard_plan_is_deterministic(tmp_path: Path) -> None:
     assert plan.shards[0].symbols_csv
     assert all(shard.shard_id.startswith("shard-") for shard in plan.shards)
 
+
+def test_build_dataset_shard_plan_caps_symbols_per_shard(tmp_path: Path) -> None:
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-3",
+        symbols=["AAPL", "MSFT", "QQQ", "SPY", "TSLA"],
+        provider="alpaca",
+        resolution="1m",
+        start_date=date(2026, 1, 1),
+        end_date=date(2026, 1, 2),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=tmp_path,
+        max_shards=5,
+        max_pods=4,
+        target_work_units=10_000,
+        max_symbols_per_shard=2,
+    )
+
+    assert plan.shard_count == 3
+    assert plan.max_symbols_per_shard == 2
+    assert all(shard.symbol_count <= 2 for shard in plan.shards)
+
+
+def test_build_dataset_shard_plan_errors_when_symbol_cap_needs_more_shards_than_allowed(tmp_path: Path) -> None:
+    try:
+        build_dataset_shard_plan(
+            dataset_id="ds-4",
+            symbols=["AAPL", "MSFT", "QQQ", "SPY", "TSLA"],
+            provider="alpaca",
+            resolution="1m",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 1, 2),
+            options_enabled=False,
+            options_feed="indicative",
+            output_dir=tmp_path,
+            max_shards=2,
+            max_pods=2,
+            target_work_units=10_000,
+            max_symbols_per_shard=2,
+        )
+    except ValueError as exc:
+        assert "Cannot satisfy max_symbols_per_shard" in str(exc)
+    else:
+        raise AssertionError("expected build_dataset_shard_plan to reject impossible symbol cap")

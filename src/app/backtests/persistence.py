@@ -58,6 +58,7 @@ def _paths_from_row(row: BacktestJob) -> BacktestArtifactPaths:
 def _row_to_list_item(row: BacktestJob) -> BacktestListItem:
     return BacktestListItem(
         id=row.id,
+        backtest_type=row.backtest_type,  # type: ignore[arg-type]
         name=row.name,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -78,6 +79,7 @@ def _row_to_list_item(row: BacktestJob) -> BacktestListItem:
 
 
 def _apply_list_item(row: BacktestJob, item: BacktestListItem) -> None:
+    row.backtest_type = item.backtest_type
     row.name = item.name
     row.updated_at = item.updated_at
     row.status = item.status
@@ -105,11 +107,18 @@ class SqlAlchemyBacktestJobRepository:
     def __init__(self, session_factory: sessionmaker[Session]):
         self._session_factory = session_factory
 
-    def create(self, item: BacktestListItem, *, paths: BacktestArtifactPaths | None = None) -> None:
+    def create(
+        self,
+        item: BacktestListItem,
+        *,
+        paths: BacktestArtifactPaths | None = None,
+        request_payload: dict | None = None,
+    ) -> None:
         resolved_paths = paths or BacktestArtifactPaths()
         with self._session_factory() as session:
             row = BacktestJob(
                 id=item.id,
+                backtest_type=item.backtest_type,
                 name=item.name,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
@@ -138,6 +147,7 @@ class SqlAlchemyBacktestJobRepository:
                 labels_parquet_path=resolved_paths.labels_parquet_path,
                 features_parquet_path=resolved_paths.features_parquet_path,
                 manifest_path=resolved_paths.manifest_path,
+                request_payload_json=request_payload,
             )
             session.add(row)
             session.commit()
@@ -182,6 +192,13 @@ class SqlAlchemyBacktestJobRepository:
             if row is None:
                 return None
             return _paths_from_row(row)
+
+    def get_request_payload(self, backtest_id: str) -> dict | None:
+        with self._session_factory() as session:
+            row = session.get(BacktestJob, backtest_id)
+            if row is None or row.request_payload_json is None:
+                return None
+            return dict(row.request_payload_json)
 
     def list_recent(self) -> list[BacktestListItem]:
         with self._session_factory() as session:

@@ -1,7 +1,7 @@
 import type {
-  BacktestCreateRequest,
   BacktestFeed,
   BacktestModelPolicyInput,
+  ClassicBacktestCreateRequest,
 } from '../types/backtests'
 import type { BacktestListItem } from '../types/backtests'
 import type { Resolution } from '../types/marketData'
@@ -15,9 +15,9 @@ export interface BacktestWizardPrefill {
   triggers: Array<{ name: string; params: Record<string, unknown> }>
   exitRules: Array<{ name: string; params: Record<string, unknown> }>
   modelPolicy?: BacktestModelPolicyInput | null
-  broker?: BacktestCreateRequest['broker']
-  analyzers?: BacktestCreateRequest['analyzers']
-  execution?: BacktestCreateRequest['execution']
+  broker?: ClassicBacktestCreateRequest['broker']
+  analyzers?: ClassicBacktestCreateRequest['analyzers']
+  execution?: ClassicBacktestCreateRequest['execution']
 }
 
 const VALID_RESOLUTIONS = new Set<Resolution>(['1m', '5m', '15m', '1h', '1d'])
@@ -27,7 +27,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function parseBroker(value: unknown): BacktestCreateRequest['broker'] | undefined {
+function parseBroker(value: unknown): ClassicBacktestCreateRequest['broker'] | undefined {
   if (!isRecord(value)) {
     return undefined
   }
@@ -43,7 +43,7 @@ function parseBroker(value: unknown): BacktestCreateRequest['broker'] | undefine
   return { cash, commission, slippage_perc, sizer }
 }
 
-function parseAnalyzers(value: unknown): BacktestCreateRequest['analyzers'] | undefined {
+function parseAnalyzers(value: unknown): ClassicBacktestCreateRequest['analyzers'] | undefined {
   if (!isRecord(value)) {
     return undefined
   }
@@ -66,7 +66,7 @@ function parseAnalyzers(value: unknown): BacktestCreateRequest['analyzers'] | un
   }
 }
 
-function parseExecution(value: unknown): BacktestCreateRequest['execution'] | undefined {
+function parseExecution(value: unknown): ClassicBacktestCreateRequest['execution'] | undefined {
   if (!isRecord(value)) {
     return undefined
   }
@@ -156,9 +156,9 @@ export function parseInputConfigToPrefill(
   let endDate: string | null = null
   let resolution: Resolution | null = null
   let feed: BacktestFeed | null = null
-  let broker: BacktestCreateRequest['broker'] | undefined
-  let analyzers: BacktestCreateRequest['analyzers'] | undefined
-  let execution: BacktestCreateRequest['execution'] | undefined
+  let broker: ClassicBacktestCreateRequest['broker'] | undefined
+  let analyzers: ClassicBacktestCreateRequest['analyzers'] | undefined
+  let execution: ClassicBacktestCreateRequest['execution'] | undefined
   let modelPolicy: BacktestModelPolicyInput | undefined
 
   for (const runRaw of runsRaw) {

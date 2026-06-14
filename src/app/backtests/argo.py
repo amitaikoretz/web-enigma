@@ -5,11 +5,13 @@ import os
 import uuid
 from dataclasses import dataclass
 from typing import Any
+import base64
 
 import httpx
 
 from app.argo_submission_logging import log_argo_workflow_submission
 from app.backtests.argo_workflow import build_backtest_workflow_spec
+from app.backtests.vectorbt_workflow import build_vectorbt_workflow_spec
 
 _DEFAULT_SHARD_PARALLELISM = 8
 logger = logging.getLogger(__name__)
@@ -104,6 +106,31 @@ class ArgoWorkflowSubmitter:
                 config_yaml=config_yaml,
                 api_base_url=os.environ.get("BACKTEST_API_BASE_URL", "").strip() or None,
                 shard_parallelism=shard_parallelism,
+                ),
+        }
+
+    def _build_vectorbt_workflow_resource(
+        self,
+        *,
+        workflow_name: str,
+        backtest_id: str,
+        request_json: str,
+    ) -> dict[str, Any]:
+        request_json_b64 = base64.b64encode(request_json.encode("utf-8")).decode("utf-8")
+        return {
+            "apiVersion": "argoproj.io/v1alpha1",
+            "kind": "Workflow",
+            "metadata": {
+                "name": workflow_name,
+                "namespace": self.config.namespace,
+                "labels": {
+                    "backtest-id": backtest_id,
+                    "app.kubernetes.io/component": "backtest-vectorbt",
+                },
+            },
+            "spec": build_vectorbt_workflow_spec(
+                backtest_id=backtest_id,
+                request_json_b64=request_json_b64,
             ),
         }
 
@@ -186,6 +213,32 @@ class ArgoWorkflowSubmitter:
             "POST",
             f"/api/v1/workflows/{self.config.namespace}",
             endpoint_name=endpoint_name,
+            json=body,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"Failed to submit Argo workflow: {response.status_code} {response.text}")
+        return workflow_name, self.config.namespace
+
+    def submit_vectorbt(
+        self,
+        *,
+        backtest_id: str,
+        request_json: str,
+    ) -> tuple[str, str]:
+        workflow_name = f"vectorbt-{backtest_id[:12]}-{uuid.uuid4().hex[:6]}"
+        body = {
+            "namespace": self.config.namespace,
+            "serverDryRun": False,
+            "workflow": self._build_vectorbt_workflow_resource(
+                workflow_name=workflow_name,
+                backtest_id=backtest_id,
+                request_json=request_json,
+            ),
+        }
+        response = self._http_request(
+            "POST",
+            f"/api/v1/workflows/{self.config.namespace}",
+            endpoint_name="backtests.vectorbt.submit",
             json=body,
         )
         if response.status_code >= 400:

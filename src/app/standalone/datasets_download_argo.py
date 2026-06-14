@@ -73,6 +73,17 @@ def _env_int(name: str, default: int) -> int:
     return max(1, value)
 
 
+def _env_optional_int(name: str) -> int | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return max(1, value)
+
+
 def _frame_with_timestamp_column(frame: pd.DataFrame) -> pd.DataFrame:
     if "timestamp" in frame.columns:
         return frame
@@ -110,6 +121,16 @@ def _is_missing_alpaca_symbol_data_error(exc: RuntimeError) -> bool:
     message = str(exc)
     return message.startswith("No Alpaca data found for symbol ") or message.startswith(
         "No Alpaca options data found for symbol "
+    )
+
+
+def _is_skippable_alpaca_symbol_error(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    return (
+        _is_missing_alpaca_symbol_data_error(exc)
+        or "invalid symbol" in message
+        or "could not resolve symbol" in message
+        or "unresolved symbol" in message
     )
 
 
@@ -312,11 +333,11 @@ def _write_shard_parquets(
             try:
                 market_frame = market_frame_loader(symbol)
             except RuntimeError as exc:
-                if not _is_missing_alpaca_symbol_data_error(exc):
+                if not _is_skippable_alpaca_symbol_error(exc):
                     raise
                 emit_warning(
                     "dataset-download",
-                    f"Skipping {shard_label}:{symbol} after missing Alpaca market data",
+                    f"Skipping {shard_label}:{symbol} after unresolved Alpaca market symbol",
                     script="datasets_download_argo",
                     error=str(exc),
                 )
@@ -342,11 +363,11 @@ def _write_shard_parquets(
             try:
                 options_frame = options_frame_loader(symbol)
             except RuntimeError as exc:
-                if not _is_missing_alpaca_symbol_data_error(exc):
+                if not _is_skippable_alpaca_symbol_error(exc):
                     raise
                 emit_warning(
                     "dataset-download",
-                    f"Skipping options for {shard_label}:{symbol} after missing Alpaca options data",
+                    f"Skipping options for {shard_label}:{symbol} after unresolved Alpaca options symbol",
                     script="datasets_download_argo",
                     error=str(exc),
                 )
@@ -634,6 +655,11 @@ def _combine_dataset_kind(
                     size_bytes=active_chunk_final_path.stat().st_size,
                     chunk_index=chunk_index,
                     symbols=sorted(active_chunk_symbols),
+                    split_key_values=(
+                        {"symbol": next(iter(active_chunk_symbols))}
+                        if len(active_chunk_symbols) == 1
+                        else {}
+                    ),
                 )
             )
             chunk_index += 1
@@ -673,14 +699,14 @@ def _combine_dataset_kind(
                 frame = batch.to_pandas()
                 if "symbol" not in frame.columns:
                     raise ValueError(f"Shard parquet missing symbol column: {source_path}")
-                
+
                 if active_chunk_writer is None:
                     active_chunk_final_path = chunk_root / f"part_{chunk_index:03d}.parquet"
                     active_chunk_temp_path = active_chunk_final_path.with_suffix(".tmp")
                     if active_chunk_temp_path.exists():
                         active_chunk_temp_path.unlink()
                     active_chunk_writer = pq.ParquetWriter(active_chunk_temp_path, table.schema)
-                
+
                 active_chunk_writer.write_table(table)
                 active_chunk_row_count += table.num_rows
                 active_chunk_symbols.update(str(s).strip().upper() for s in frame["symbol"].unique() if pd.notna(s))
@@ -690,6 +716,7 @@ def _combine_dataset_kind(
                     _close_active_chunk()
 
             completed_shards += 1
+            _close_active_chunk()
             if progress_writer is not None:
                 progress_writer.write(completed_shards)
 
@@ -787,6 +814,7 @@ def main(
 @app.command("plan-shards", help="Plan dataset download shards and write the shard manifest.")
 def plan_shards_command(
     symbol: str = typer.Option(..., "--symbol", "--symbols"),
+    max_symbols_per_shard: str = typer.Option("10", "--max-symbols-per-shard"),
     provider: str = typer.Option(..., "--provider"),
     resolution: str = typer.Option(..., "--resolution"),
     start_date: str = typer.Option(..., "--start-date"),
@@ -804,6 +832,7 @@ def plan_shards_command(
     symbols = normalize_dataset_symbols(symbol.split(","))
     if not symbols:
         raise ValueError("At least one symbol must be provided")
+    max_symbols_per_shard_value = max(1, int(max_symbols_per_shard.strip() or "10"))
 
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -818,9 +847,10 @@ def plan_shards_command(
         options_enabled=options_enabled,
         options_feed=options_feed,
         output_dir=out_dir,
-        max_shards=_env_int("DATASET_MAX_SHARDS", 8),
+        max_shards=_env_int("DATASET_MAX_SHARDS", 100),
         max_pods=_env_int("DATASET_MAX_PODS", 4),
         target_work_units=_env_int("DATASET_TARGET_WORK_UNITS", 5_000),
+        max_symbols_per_shard=_env_optional_int("DATASET_MAX_SYMBOLS_PER_SHARD") or max_symbols_per_shard_value,
     )
     plan_path = Path(plan.plan_path)
     write_json_file(plan_path, plan)
@@ -965,6 +995,8 @@ def combine_shards_command(
     terminal_command_out: str = typer.Option("/tmp/terminal-command.txt", "--terminal-command-out"),
 ) -> None:
     emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="datasets_download_argo")
+    if not isinstance(max_chunk_size_bytes, int):
+        max_chunk_size_bytes = 20 * 1024 * 1024
     _write_text(dataset_path_out, "")
     _write_text(manifest_path_out, "")
     _write_text(options_dataset_path_out, "")

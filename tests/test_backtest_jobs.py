@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -10,11 +11,16 @@ import yaml
 from fastapi.testclient import TestClient
 
 from app.datasets.models import DatasetListItem
-from app.backtests.models import BacktestCreateRequest, BacktestDetailResponse, BacktestTradeReplayCapsule
+from app.backtests.models import (
+    BacktestDetailResponse,
+    BacktestTradeReplayCapsule,
+    validate_backtest_create_request,
+)
 from app.backtests.replay import build_trade_replay_capsule, build_trade_replay_launch_config
 from app.backtests.service import BacktestArtifactStore, build_backtest_config, build_backtest_config_raw
 from app.engine.runner import BacktestExecutionResult
 from app.output.models import BacktestReport, CandidateRecord, OrderRecord, RunResult, RunSummary, TradeRecord
+from app.backtests.argo import ArgoWorkflowConfig
 from tests.conftest import build_backtest_client
 
 
@@ -122,7 +128,7 @@ def _fake_runner(config, config_raw, on_run_complete=None, on_run_error=None, **
 
 def test_build_backtest_config_expands_symbols_and_triggers_cartesian() -> None:
     config = build_backtest_config(
-        payload=BacktestCreateRequest.model_validate(
+        payload=validate_backtest_create_request(
             {
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-03",
@@ -156,7 +162,7 @@ def test_build_backtest_config_expands_symbols_and_triggers_cartesian() -> None:
 
 
 def test_build_backtest_config_includes_model_policy_per_run() -> None:
-    payload = BacktestCreateRequest.model_validate(
+    payload = validate_backtest_create_request(
         {
             "start_date": "2024-01-01",
             "end_date": "2024-01-03",
@@ -178,7 +184,7 @@ def test_build_backtest_config_includes_model_policy_per_run() -> None:
                 "max_risk_fraction": 0.002,
                 "allow_short": False,
             },
-        }
+        },
     )
 
     raw = build_backtest_config_raw(payload, "job123")
@@ -202,7 +208,7 @@ def test_build_backtest_config_uses_dataset_manifest_dates(tmp_path: Path) -> No
         encoding="utf-8",
     )
 
-    payload = BacktestCreateRequest.model_validate(
+    payload = validate_backtest_create_request(
         {
             "dataset_path": str(dataset_path),
             "dataset_manifest_path": str(manifest_path),
@@ -1335,7 +1341,7 @@ def test_delete_backtest_returns_404_for_unknown_id(tmp_path):
 
 def test_build_backtest_config_risk_auxiliary_enables_candidate_log() -> None:
     config = build_backtest_config(
-        payload=BacktestCreateRequest.model_validate(
+        payload=validate_backtest_create_request(
             {
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-03",
@@ -1357,6 +1363,105 @@ def test_build_backtest_config_risk_auxiliary_enables_candidate_log() -> None:
 
     assert config.runs[0].analyzers.include_risk_auxiliary is True
     assert config.runs[0].analyzers.include_candidate_log is True
+
+
+def test_create_vectorbt_backtest_submits_dedicated_argo_workflow(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path)
+    settings = client.app.state.deps.settings_service.load()
+    settings.platform_behavior.backtest_execution_backend = "argo"
+    client.app.state.deps.settings_service.save(settings)
+
+    submitter = client.app.state.deps.backtest_jobs.argo_submitter
+    submitter.config = ArgoWorkflowConfig(namespace="backtest-workflows", enabled=True, server_url="http://argo.test")
+    monkeypatch.setattr(submitter, "submit_vectorbt", lambda **_kwargs: ("vectorbt-wf", "backtest-workflows"))
+
+    dataset_path = tmp_path / "vectorbt.parquet"
+    dataset_path.write_text("dataset", encoding="utf-8")
+    manifest_path = tmp_path / "vectorbt.manifest.json"
+    manifest_path.write_text('{"start_date":"2024-01-01","end_date":"2024-01-31","symbols":["AAPL","MSFT"]}', encoding="utf-8")
+    risk_model_path = tmp_path / "risk-model.json"
+    risk_model_path.write_text('{"feature_columns":["x1"],"type":"linear"}', encoding="utf-8")
+
+    risk_repo = client.app.state.deps.risk_models_repo
+    risk_repo.create_group(
+        group_id="risk-1",
+        name="Risk model",
+        status="succeeded",
+        params={},
+        artifact_dir=str(tmp_path / "risk-artifacts"),
+        backtest_ids=[],
+        dataset_ids=[],
+    )
+    risk_repo.upsert_target(
+        group_id="risk-1",
+        target_key="stop_prob",
+        task_type="classification",
+        status="succeeded",
+        model_artifact_path=str(risk_model_path),
+        metrics={},
+        dataset_manifest_path=None,
+        feature_columns=["x1"],
+    )
+
+    response = client.post(
+        "/backtests",
+        json={
+            "backtest_type": "vectorbt",
+            "name": "Vector run",
+            "dataset_path": str(dataset_path),
+            "dataset_manifest_path": str(manifest_path),
+            "risk_model": {"group_id": "risk-1"},
+            "risk_threshold": 0.55,
+            "exit_style": "vwap",
+        },
+    )
+
+    assert response.status_code == 202
+    backtest_id = response.json()["backtest_id"]
+
+    detail = client.get(f"/backtests/{backtest_id}").json()
+    assert detail["metadata"]["backtest_type"] == "vectorbt"
+    assert detail["metadata"]["workflow_name"] == "vectorbt-wf"
+
+
+def test_create_vectorbt_backtest_allows_ungated_submission(tmp_path, monkeypatch) -> None:
+    client = _build_client(tmp_path)
+    settings = client.app.state.deps.settings_service.load()
+    settings.platform_behavior.backtest_execution_backend = "argo"
+    client.app.state.deps.settings_service.save(settings)
+
+    submitter = client.app.state.deps.backtest_jobs.argo_submitter
+    submitter.config = ArgoWorkflowConfig(namespace="backtest-workflows", enabled=True, server_url="http://argo.test")
+    monkeypatch.setattr(submitter, "submit_vectorbt", lambda **_kwargs: ("vectorbt-wf", "backtest-workflows"))
+
+    dataset_path = tmp_path / "vectorbt.parquet"
+    dataset_path.write_text("dataset", encoding="utf-8")
+    manifest_path = tmp_path / "vectorbt.manifest.json"
+    manifest_path.write_text('{"start_date":"2024-01-01","end_date":"2024-01-31","symbols":["AAPL","MSFT"]}', encoding="utf-8")
+
+    response = client.post(
+        "/backtests",
+        json={
+            "backtest_type": "vectorbt",
+            "name": "Ungated vector run",
+            "dataset_path": str(dataset_path),
+            "dataset_manifest_path": str(manifest_path),
+            "risk_model": None,
+            "risk_threshold": 0.55,
+            "exit_style": "vwap",
+        },
+    )
+
+    assert response.status_code == 202
+    backtest_id = response.json()["backtest_id"]
+
+    stored_request = client.app.state.deps.backtest_jobs.job_repository.get_request_payload(backtest_id)
+    assert stored_request["risk_model"] is None
+
+    request_file = tmp_path / "backtests" / backtest_id / "artifacts" / "vectorbt-request.json"
+    request_payload = json.loads(request_file.read_text(encoding="utf-8"))
+    assert request_payload["risk_model_group_id"] is None
+    assert request_payload["risk_model_artifact_path"] is None
 
 
 def _write_backtest_config(tmp_path: Path, backtest_id: str, config_raw: dict[str, object]) -> Path:

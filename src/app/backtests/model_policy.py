@@ -180,6 +180,22 @@ def _resolve_ref_from_repo(
     return Path(target_row.model_artifact_path), list(feature_columns), target_row.target_key
 
 
+def resolve_model_artifact_ref(
+    ref: ModelArtifactRef,
+    *,
+    family: ModelFamily,
+    session_factory: sessionmaker[Session] | None = None,
+) -> tuple[Path, list[str], str | None]:
+    if ref.group_id is not None:
+        return _resolve_ref_from_repo(ref, family=family, session_factory=session_factory)
+
+    if ref.model_artifact_path is None:
+        raise ValueError("model_artifact_path is required when group_id is not provided")
+
+    resolved_path = Path(ref.model_artifact_path)
+    return resolved_path, [], ref.target_key
+
+
 @dataclass(frozen=True)
 class LoadedModelArtifact:
     artifact_path: Path

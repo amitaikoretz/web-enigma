@@ -82,6 +82,7 @@ def _apply_dataset_retry_strategy(spec: dict[str, Any]) -> None:
 def _command_line(
     *,
     symbols: list[str],
+    max_symbols_per_shard: int,
     provider: str,
     resolution: str,
     start_date: str,
@@ -90,13 +91,17 @@ def _command_line(
     options_feed: str,
     output_dir: str,
 ) -> str:
-    return format_terminal_command(
+    command = [
+        "python",
+        "-m",
+        "app.standalone.datasets_download_argo",
+        "--symbol",
+        ",".join(symbols),
+        "--max-symbols-per-shard",
+        str(max_symbols_per_shard),
+    ]
+    command.extend(
         [
-            "python",
-            "-m",
-            "app.standalone.datasets_download_argo",
-            "--symbol",
-            ",".join(symbols),
             "--provider",
             provider,
             "--resolution",
@@ -112,11 +117,13 @@ def _command_line(
             output_dir,
         ]
     )
+    return format_terminal_command(command)
 
 
 def build_dataset_workflow_spec(
     *,
     symbols: list[str],
+    max_symbols_per_shard: int,
     provider: str,
     resolution: str,
     start_date: str,
@@ -129,6 +136,7 @@ def build_dataset_workflow_spec(
     template = load_yaml_template(_TEMPLATE_PATH)
     command_line = _command_line(
         symbols=symbols,
+        max_symbols_per_shard=max_symbols_per_shard,
         provider=provider,
         resolution=resolution,
         start_date=start_date,
@@ -145,6 +153,7 @@ def build_dataset_workflow_spec(
             "__WORKFLOW_RESULTS_MOUNT__": workflow_results_mount(),
             "__COMMAND_LINE__": command_line,
             "__SYMBOLS__": ",".join(symbols),
+            "__MAX_SYMBOLS_PER_SHARD__": str(max_symbols_per_shard),
             "__PROVIDER__": provider,
             "__RESOLUTION__": resolution,
             "__START_DATE__": start_date,

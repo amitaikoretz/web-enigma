@@ -9,6 +9,7 @@ import pytest
 
 from app.backtests.argo import ArgoWorkflowConfig, ArgoWorkflowSubmitter, load_argo_workflow_config
 from app.backtests.argo_workflow import WORKFLOW_TTL_SECONDS, build_backtest_workflow_spec, workflow_results_mount
+from app.backtests.vectorbt_workflow import build_vectorbt_workflow_spec
 
 
 def _submission_payload_from_record(record: logging.LogRecord) -> dict[str, object]:
@@ -122,6 +123,25 @@ def test_build_backtest_workflow_spec_has_no_pod_spec_patch() -> None:
         assert template["retryStrategy"] == {"limit": 3, "retryPolicy": "Always"}
         assert "podSpecPatch" not in template
         assert template["container"]["name"] == "main"
+
+
+def test_build_vectorbt_workflow_spec_includes_retry_and_error_outputs() -> None:
+    spec = build_vectorbt_workflow_spec(backtest_id="vec123", request_json_b64="eyJmb28iOiAiYmFyIn0=")
+
+    assert spec["entrypoint"] == "vectorbt-backtest"
+    parameters = {item["name"]: item["value"] for item in spec["arguments"]["parameters"]}
+    assert parameters["backtest-id"] == "vec123"
+    assert parameters["request-json-b64"] == "eyJmb28iOiAiYmFyIn0="
+    assert parameters["artifact-dir"].endswith("/vec123")
+
+    run_template = next(item for item in spec["templates"] if item["name"] == "run-vectorbt")
+    assert run_template["retryStrategy"]["limit"] == 3
+    assert run_template["retryStrategy"]["retryPolicy"] == "Always"
+    assert "podSpecPatch" in run_template
+    mount_paths = {item["mountPath"] for item in run_template["container"]["volumeMounts"]}
+    assert mount_paths == {"/data/backtest-results"}
+    outputs = {item["name"] for item in run_template["outputs"]["parameters"]}
+    assert {"terminal-command", "error-exception", "error-code-location", "error-call-stack", "error-traceback"} <= outputs
 
 
 def test_build_backtest_workflow_spec_uses_configured_service_account(
@@ -276,6 +296,34 @@ def test_submit_via_http_raises_on_error_response() -> None:
             split_by="symbol",
             backtest_id="abc123",
         )
+
+
+def test_submit_vectorbt_via_http_posts_workflow_to_argo_server() -> None:
+    submitter = ArgoWorkflowSubmitter(
+        ArgoWorkflowConfig(
+            namespace="backtest",
+            enabled=True,
+            server_url="https://argo.example:2746",
+        )
+    )
+    mock_client = MagicMock()
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.text = ""
+    mock_client.request.return_value = mock_response
+    submitter._http_client = mock_client
+
+    workflow_name, namespace = submitter.submit_vectorbt(
+        backtest_id="vec123",
+        request_json='{"backtest_id":"vec123"}',
+    )
+
+    assert namespace == "backtest"
+    assert workflow_name.startswith("vectorbt-vec123-")
+    body = mock_client.request.call_args.kwargs["json"]
+    workflow = body["workflow"]
+    assert workflow["metadata"]["labels"]["app.kubernetes.io/component"] == "backtest-vectorbt"
+    assert workflow["spec"]["entrypoint"] == "vectorbt-backtest"
 
 
 def test_get_workflow_phase_via_http() -> None:

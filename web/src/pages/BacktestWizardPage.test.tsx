@@ -1,38 +1,19 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
-import dayjs from 'dayjs'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+
 import { defaultPlatformSettings } from '../settings/defaults'
 
 const createBacktestMock = vi.hoisted(() => vi.fn())
-const fetchUniverseConstituentsMock = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/backtests', () => ({
   createBacktest: createBacktestMock,
   fetchBacktestInputConfig: vi.fn(),
-}))
-
-vi.mock('../api/universes', () => ({
-  fetchUniverses: vi.fn().mockResolvedValue([
-    {
-      key: 'sp500',
-      kind: 'registry',
-      name: 'S&P 500',
-      description: 'Large cap US equities',
-      provider: 'static',
-      provider_ref: { symbols: ['AAPL', 'MSFT', 'NVDA'] },
-      is_active: true,
-      latest_refresh_status: 'completed',
-      latest_refresh_started_at: null,
-      latest_refresh_as_of: null,
-    },
-  ]),
-  fetchUniverseConstituents: fetchUniverseConstituentsMock,
 }))
 
 vi.mock('../api/datasets', () => ({
@@ -66,12 +47,31 @@ vi.mock('../api/datasets', () => ({
   }),
 }))
 
+vi.mock('../api/riskModels', () => ({
+  fetchRiskModels: vi.fn().mockResolvedValue([
+    {
+      group_id: 'risk-1',
+      name: 'Risk model 1',
+      status: 'succeeded',
+      targets: ['stop_prob'],
+      targets_total: 1,
+      targets_done: 1,
+      created_at: '2024-02-01T00:00:00Z',
+      updated_at: '2024-02-01T00:00:00Z',
+      feature_run_id: null,
+      argo_namespace: null,
+      argo_workflow_name: null,
+      summary_metrics: null,
+    },
+  ]),
+}))
+
 vi.mock('../api/strategies', () => ({
   fetchStrategies: vi.fn().mockResolvedValue([
     {
       name: 'buy_and_hold',
       description: 'demo',
-      documentation: 'This trigger enters long on the first bar it sees.',
+      documentation: 'doc',
       parameters: {},
     },
   ]),
@@ -79,10 +79,15 @@ vi.mock('../api/strategies', () => ({
     {
       name: 'fixed_pct_oco',
       description: 'demo',
-      documentation: 'Exit rule docs',
+      documentation: 'doc',
       parameters: {},
     },
   ]),
+}))
+
+vi.mock('../api/universes', () => ({
+  fetchUniverses: vi.fn().mockResolvedValue([]),
+  fetchUniverseConstituents: vi.fn(),
 }))
 
 vi.mock('../settings/useSettings', () => ({
@@ -115,101 +120,136 @@ vi.mock('../settings/useSettings', () => ({
 
 import { BacktestWizardPage } from './BacktestWizardPage'
 
+function renderPage() {
+  render(
+    <MemoryRouter initialEntries={['/backtests/new']}>
+      <LocalizationProvider dateAdapter={AdapterDayjs}>
+        <Routes>
+          <Route path="/backtests/new" element={<BacktestWizardPage />} />
+        </Routes>
+      </LocalizationProvider>
+    </MemoryRouter>,
+  )
+}
+
 describe('BacktestWizardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.scrollTo = vi.fn()
+    Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('toggles between legacy selection and dataset-backed launch modes', async () => {
-    fetchUniverseConstituentsMock.mockResolvedValue({
-      key: 'sp500',
-      as_of: '2026-06-08',
-      symbols: ['MSFT', 'NVDA'],
-    })
-
-    render(
-      <MemoryRouter initialEntries={['/backtests/new']}>
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <Routes>
-            <Route path="/backtests/new" element={<BacktestWizardPage />} />
-          </Routes>
-        </LocalizationProvider>
-      </MemoryRouter>,
-    )
-
-    expect(screen.getByRole('link', { name: 'Back to results' })).toHaveAttribute('href', '/backtests')
-    expect(await screen.findByText('Legacy selection')).toBeInTheDocument()
-    expect(screen.getByLabelText('Universe')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sample from universe' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Symbols')).toBeInTheDocument()
-    expect(screen.getAllByText('Start date').length).toBeGreaterThan(0)
-    expect(screen.queryByLabelText('Existing dataset')).not.toBeInTheDocument()
-
-    fireEvent.mouseDown(screen.getByLabelText('Universe'))
-    fireEvent.click(await screen.findByText('S&P 500 (sp500)'))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Sample from universe' })).not.toBeDisabled())
-    fireEvent.click(screen.getByRole('button', { name: 'Sample from universe' }))
-
-    await waitFor(() =>
-      expect(fetchUniverseConstituentsMock).toHaveBeenCalledWith(
-        'sp500',
-        dayjs().subtract(30, 'day').format('YYYY-MM-DD'),
-      ),
-    )
-    await waitFor(() => expect(screen.getByText('MSFT')).toBeInTheDocument())
-    expect(screen.getByText('NVDA')).toBeInTheDocument()
-    expect(screen.queryByText('AAPL')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('switch', { name: 'Use legacy selection' }))
-
-    await waitFor(() => expect(screen.getByLabelText('Existing dataset')).toBeInTheDocument())
-    expect(screen.queryByLabelText('Symbols')).not.toBeInTheDocument()
-    expect(screen.queryByText('Start date')).not.toBeInTheDocument()
+  afterEach(() => {
+    cleanup()
   })
 
-  it('scrolls the error alert into view when backtest submission fails', async () => {
-    createBacktestMock.mockRejectedValueOnce(new Error('Launch failed'))
+  it('renders a multi-step wizard with classic and vector bt type choices', async () => {
+    renderPage()
 
-    render(
-      <MemoryRouter initialEntries={['/backtests/new']}>
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <Routes>
-            <Route path="/backtests/new" element={<BacktestWizardPage />} />
-          </Routes>
-        </LocalizationProvider>
-      </MemoryRouter>,
-    )
-
-    expect(screen.getAllByRole('heading', { name: 'Legacy selection' }).length).toBeGreaterThan(0)
-    await waitFor(() =>
-      expect(
-        screen.getAllByRole('button', { name: 'Launch backtest' }).some((button) => !button.hasAttribute('disabled')),
-      ).toBe(true),
-    )
-    fireEvent.click(screen.getAllByRole('button', { name: 'Launch backtest' }).find((button) => !button.hasAttribute('disabled'))!)
-
-    expect(await screen.findByRole('alert')).toBeVisible()
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+    expect(await screen.findByText('Backtest Wizard')).toBeInTheDocument()
+    expect(screen.getByText('Type')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Classic backtest/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Vector bt/i })).toBeInTheDocument()
   })
 
-  it('opens trigger documentation from the wizard', async () => {
-    render(
-      <MemoryRouter initialEntries={['/backtests/new']}>
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <Routes>
-            <Route path="/backtests/new" element={<BacktestWizardPage />} />
-          </Routes>
-        </LocalizationProvider>
-      </MemoryRouter>,
+  it('submits a classic payload through the review step', async () => {
+    createBacktestMock.mockResolvedValueOnce({ backtest_id: 'bt-1', status: 'pending', status_url: '/x', detail_url: '/y' })
+
+    renderPage()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByLabelText('Data source')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByLabelText('Triggers')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByText('Type: Classic backtest')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch backtest' }))
+
+    await waitFor(() => expect(createBacktestMock).toHaveBeenCalledTimes(1))
+    expect(createBacktestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backtest_type: 'classic',
+        resolution: '1d',
+        feed: 'iex',
+        triggers: expect.any(Array),
+        exit_rules: expect.any(Array),
+      }),
     )
+  })
 
-    const docsButton = await screen.findByRole('button', {
-      name: 'Open documentation for buy_and_hold',
-    })
-    fireEvent.click(docsButton)
+  it('submits a vector bt payload with dataset and risk model selections', async () => {
+    createBacktestMock.mockResolvedValueOnce({ backtest_id: 'bt-2', status: 'running', status_url: '/x', detail_url: '/y' })
 
-    expect(await screen.findByText('buy_and_hold documentation')).toBeInTheDocument()
-    expect(screen.getByText(/enters long on the first bar/i)).toBeInTheDocument()
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Vector bt/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+
+    const datasetField = await screen.findByLabelText('Completed dataset')
+    fireEvent.mouseDown(datasetField)
+    fireEvent.click(await screen.findByText(/ds-1/i))
+
+    const riskField = screen.getByLabelText('Risk model group')
+    fireEvent.mouseDown(riskField)
+    fireEvent.click(await screen.findByText('risk-1'))
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByText('Vector bt configuration')
+    fireEvent.change(screen.getByLabelText('Risk threshold'), { target: { value: '0.6' } })
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByText('Type: Vector bt')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch backtest' }))
+
+    await waitFor(() => expect(createBacktestMock).toHaveBeenCalledTimes(1))
+    expect(createBacktestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backtest_type: 'vectorbt',
+        dataset_id: 'ds-1',
+        risk_model: { group_id: 'risk-1' },
+        risk_threshold: 0.6,
+      }),
+    )
+  })
+
+  it('allows an ungated vector bt payload when no risk model is chosen', async () => {
+    createBacktestMock.mockResolvedValueOnce({ backtest_id: 'bt-3', status: 'running', status_url: '/x', detail_url: '/y' })
+
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Vector bt/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+
+    const datasetField = await screen.findByLabelText('Completed dataset')
+    fireEvent.mouseDown(datasetField)
+    fireEvent.click(await screen.findByText(/ds-1/i))
+
+    expect(screen.getByText(/will be submitted as an ungated vector bt backtest/i)).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByText('Vector bt configuration')
+    expect(screen.getByLabelText('Risk threshold')).toBeDisabled()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByText('Risk model: Ungated')
+    fireEvent.click(screen.getByRole('button', { name: 'Launch backtest' }))
+
+    await waitFor(() => expect(createBacktestMock).toHaveBeenCalledTimes(1))
+    expect(createBacktestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        backtest_type: 'vectorbt',
+        dataset_id: 'ds-1',
+        risk_model: null,
+      }),
+    )
+  })
+
+  it('blocks moving past vector bt data step until a dataset is chosen', async () => {
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: /Vector bt/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+    await screen.findByLabelText('Completed dataset')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Continue' })[0])
+
+    expect(await screen.findByText('Choose a completed dataset for the vector bt run.')).toBeInTheDocument()
   })
 })

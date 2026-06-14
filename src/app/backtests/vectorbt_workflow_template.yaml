@@ -1,0 +1,120 @@
+spec:
+  entrypoint: vectorbt-backtest
+  serviceAccountName: __SERVICE_ACCOUNT__
+  ttlStrategy:
+    secondsAfterCompletion: 604800
+  arguments:
+    parameters:
+      - name: backtest-id
+        value: __BACKTEST_ID__
+      - name: request-json-b64
+        value: __REQUEST_JSON_B64__
+      - name: artifact-dir
+        value: __ARTIFACT_DIR__
+      - name: command-line
+        value: __COMMAND_LINE__
+  volumes:
+    - name: backtest-results
+      persistentVolumeClaim:
+        claimName: backtest-results
+  templates:
+    - name: vectorbt-backtest
+      steps:
+        - - name: print-payload
+            template: print-payload
+            arguments:
+              parameters:
+                - name: command-line
+                  value: "{{workflow.parameters.command-line}}"
+        - - name: run-vectorbt
+            template: run-vectorbt
+            arguments:
+              parameters:
+                - name: backtest-id
+                  value: "{{workflow.parameters.backtest-id}}"
+                - name: request-json-b64
+                  value: "{{workflow.parameters.request-json-b64}}"
+                - name: artifact-dir
+                  value: "{{workflow.parameters.artifact-dir}}"
+
+    - name: print-payload
+      inputs:
+        parameters:
+          - name: command-line
+      container:
+        name: main
+        image: __WORKFLOW_IMAGE__
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "app.standalone.print_argo_command"]
+        args:
+          - "--terminal-command-out"
+          - "/tmp/terminal-command.txt"
+          - "--command-line"
+          - "{{inputs.parameters.command-line}}"
+        envFrom:
+          - secretRef:
+              name: __SECRET_NAME__
+      outputs:
+        parameters:
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt
+
+    - name: run-vectorbt
+      metadata:
+        annotations:
+          workflows.argoproj.io/progress: "0/100"
+      inputs:
+        parameters:
+          - name: backtest-id
+          - name: request-json-b64
+          - name: artifact-dir
+      container:
+        name: main
+        image: __WORKFLOW_IMAGE__
+        imagePullPolicy: IfNotPresent
+        command: ["python", "-m", "app.standalone.run_vectorbt_backtest_argo"]
+        args:
+          - "--terminal-command-out"
+          - "/tmp/terminal-command.txt"
+          - "--backtest-id"
+          - "{{inputs.parameters.backtest-id}}"
+          - "--request-json-b64"
+          - "{{inputs.parameters.request-json-b64}}"
+          - "--artifact-dir"
+          - "{{inputs.parameters.artifact-dir}}"
+        envFrom:
+          - secretRef:
+              name: __SECRET_NAME__
+        volumeMounts:
+          - name: backtest-results
+            mountPath: __WORKFLOW_RESULTS_MOUNT__
+      outputs:
+        parameters:
+          - name: terminal-command
+            valueFrom:
+              path: /tmp/terminal-command.txt
+          - name: error-exception
+            valueFrom:
+              path: /tmp/error-exception.txt
+          - name: error-code-location
+            valueFrom:
+              path: /tmp/error-code-location.txt
+          - name: error-call-stack
+            valueFrom:
+              path: /tmp/error-call-stack.txt
+          - name: error-traceback
+            valueFrom:
+              path: /tmp/error-traceback.txt

@@ -11,6 +11,7 @@ export interface DatasetOptionsRequest {
 export interface DatasetCreateRequest {
   symbol?: string | null
   symbols: string[]
+  max_symbols_per_shard?: number
   provider: DatasetProvider
   resolution: DatasetResolution
   start_date: string

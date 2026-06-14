@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ from kubernetes.client import ApiException
 from app.backtests.argo import ArgoWorkflowSubmitter
 
 _DEFAULT_SECRET_ENV_VARS = ("DATABASE_URL", "ALPACA_API_KEY", "ALPACA_SECRET_KEY")
+logger = logging.getLogger(__name__)
 
 
 class ArgoWorkflowInspectionError(RuntimeError):
@@ -211,6 +213,23 @@ def _pod_container_name(pod: Any) -> str | None:
     return preferred[0]
 
 
+def _api_exception_text(exc: ApiException) -> str:
+    parts = [getattr(exc, "reason", None), getattr(exc, "body", None), str(exc)]
+    return "\n".join(
+        part.strip() for part in parts if isinstance(part, str) and part.strip()
+    )
+
+
+def _is_missing_pod_log_path(exc: ApiException) -> bool:
+    text = _api_exception_text(exc).lower()
+    return (
+        "failed to try resolving symlinks in path" in text
+        or "no such file or directory" in text
+        or "file does not exist" in text
+        or ("not found" in text and "/var/log/pods" in text)
+    )
+
+
 @dataclass
 class ArgoWorkflowInspectionService:
     submitter: ArgoWorkflowSubmitter
@@ -345,10 +364,21 @@ class ArgoWorkflowInspectionService:
                 tail_lines=2000,
             )
         except ApiException as exc:
-            if exc.status == 404:
-                raise ArgoWorkflowPodNotFoundError(
-                    f"Logs for pod '{pod_name}' were not found in namespace '{target_namespace}'"
-                ) from exc
+            if exc.status == 404 or _is_missing_pod_log_path(exc):
+                logger.warning(
+                    "Pod logs unavailable for workflow '%s' pod '%s' in namespace '%s': %s",
+                    workflow_name,
+                    pod_name,
+                    target_namespace,
+                    _api_exception_text(exc),
+                )
+                return PodLogsResult(
+                    workflow_name=workflow_name,
+                    namespace=target_namespace,
+                    pod_name=pod_name,
+                    container_name=container_name,
+                    logs="",
+                )
             raise ArgoWorkflowInspectionError(
                 f"Failed to read logs for pod '{pod_name}' in namespace '{target_namespace}': {exc}"
             ) from exc

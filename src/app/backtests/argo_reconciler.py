@@ -102,26 +102,33 @@ def _reconcile_item(
     phase = _phase_from_workflow_resource(resolved_workflow) if resolved_workflow else None
     report_exists = _report_exists(item, artifact_store, job_repository)
     mapped_status = _map_workflow_phase(phase, report_exists=report_exists)
+    if phase is not None and phase.lower() == "succeeded" and item.backtest_type == "vectorbt":
+        mapped_status = "completed"
     if mapped_status is None:
         return item, False
 
     current = item.model_copy(deep=True)
     changed = False
 
-    if mapped_status == "completed" and report_exists:
-        paths = job_repository.get_paths(item.id)
-        report = _load_report_for_item(item, artifact_store, job_repository)
-        if report is not None and item.report_status is None:
-            current = finalize_job_from_report(
-                backtest_id=item.id,
-                report=report,
-                artifact_store=artifact_store,
-                job_repository=job_repository,
-                metadata=current,
-                write_artifacts=False,
-                artifact_paths=paths,
-            )
+    if mapped_status == "completed":
+        if item.backtest_type == "vectorbt" and not report_exists:
+            current = _mark_terminal(current, status="completed")
+            current.error_message = None
             changed = True
+        elif report_exists:
+            paths = job_repository.get_paths(item.id)
+            report = _load_report_for_item(item, artifact_store, job_repository)
+            if report is not None and item.report_status is None:
+                current = finalize_job_from_report(
+                    backtest_id=item.id,
+                    report=report,
+                    artifact_store=artifact_store,
+                    job_repository=job_repository,
+                    metadata=current,
+                    write_artifacts=False,
+                    artifact_paths=paths,
+                )
+                changed = True
     elif mapped_status == "failed":
         current = _mark_terminal(current, status="failed")
         current.error_message = f"Argo workflow phase={phase}"

@@ -40,7 +40,12 @@ from app.backtests.models import (
     BacktestSelectionSummary,
     BacktestTradeReplayResponse,
     BacktestStatusResponse,
+    ClassicBacktestCreateRequest,
+    VectorbtBacktestCreateRequest,
+    VectorbtWorkflowRequest,
+    validate_backtest_create_request,
 )
+from app.backtests.model_policy import resolve_model_artifact_ref
 from app.backtests.persistence import (
     BacktestArtifactPaths,
     SqlAlchemyBacktestJobRepository,
@@ -152,6 +157,8 @@ def config_to_yaml_text(config_raw: dict[str, Any]) -> str:
 
 
 def _build_selection_summary(payload: BacktestCreateRequest) -> BacktestSelectionSummary:
+    if not isinstance(payload, ClassicBacktestCreateRequest):
+        raise ValueError("Selection summary is only defined for classic backtests")
     start_date = payload.start_date
     end_date = payload.end_date
     symbols = payload.symbols
@@ -331,7 +338,7 @@ def _parse_date_like(value: Any) -> date | None:
             return None
 
 
-def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) -> dict[str, Any]:
+def build_backtest_config_raw(payload: ClassicBacktestCreateRequest, backtest_id: str) -> dict[str, Any]:
     broker = payload.broker or BrokerConfig()
     analyzers = payload.analyzers or AnalyzerConfig(
         include_equity_curve=True,
@@ -420,7 +427,7 @@ def build_backtest_config_raw(payload: BacktestCreateRequest, backtest_id: str) 
     return {"runs": runs}
 
 
-def build_backtest_config(payload: BacktestCreateRequest, backtest_id: str) -> BacktestConfig:
+def build_backtest_config(payload: ClassicBacktestCreateRequest, backtest_id: str) -> BacktestConfig:
     return BacktestConfig.model_validate(build_backtest_config_raw(payload, backtest_id))
 
 
@@ -714,7 +721,7 @@ class BacktestJobService:
             return PlatformSettings()
         return self.settings_service.load()
 
-    def _resolve_dataset_backed_payload(self, payload: BacktestCreateRequest) -> BacktestCreateRequest:
+    def _resolve_dataset_backed_payload(self, payload: Any) -> Any:
         if payload.dataset_id is None or self.dataset_repository is None:
             return payload
 
@@ -736,7 +743,7 @@ class BacktestJobService:
             }
         )
 
-    def _translate_dataset_path_for_argo(self, payload: BacktestCreateRequest) -> BacktestCreateRequest:
+    def _translate_dataset_path_for_argo(self, payload: Any) -> Any:
         if payload.dataset_id is None or payload.dataset_path is None or self.dataset_repository is None:
             return payload
 
@@ -754,19 +761,69 @@ class BacktestJobService:
 
         return payload.model_copy(update={"dataset_path": str(workflow_root / relative_path)})
 
+    def _resolve_vectorbt_workflow_request(
+        self,
+        payload: VectorbtBacktestCreateRequest,
+        *,
+        backtest_id: str,
+    ) -> VectorbtWorkflowRequest:
+        if payload.dataset_path is None or payload.dataset_manifest_path is None:
+            raise ValueError("vectorbt backtests require dataset_path and dataset_manifest_path")
+
+        risk_model_path: str | None = None
+        risk_model_group_id: str | None = None
+        if payload.risk_model is not None:
+            resolved_risk_model_path, _feature_columns, _target_key = resolve_model_artifact_ref(
+                payload.risk_model,
+                family="risk",
+                session_factory=getattr(self.job_repository, "_session_factory", None),
+            )
+            risk_model_path = str(resolved_risk_model_path)
+            risk_model_group_id = payload.risk_model.group_id
+        return VectorbtWorkflowRequest(
+            backtest_id=backtest_id,
+            name=payload.name,
+            dataset_path=payload.dataset_path,
+            dataset_manifest_path=payload.dataset_manifest_path,
+            risk_model_group_id=risk_model_group_id,
+            risk_model_artifact_path=risk_model_path,
+            from_date=payload.from_date,
+            max_symbols=payload.max_symbols,
+            volume_window=payload.volume_window,
+            min_volume_ratio=payload.min_volume_ratio,
+            entry_cutoff_minutes=payload.entry_cutoff_minutes,
+            risk_threshold=payload.risk_threshold,
+            exit_style=payload.exit_style,
+            min_hold_minutes=payload.min_hold_minutes,
+            atr_window=payload.atr_window,
+            atr_stop_mult=payload.atr_stop_mult,
+        )
+
     def submit(self, payload: BacktestCreateRequest) -> BacktestCreateResponse:
         platform_settings = self._platform_settings()
         execution_backend = platform_settings.platform_behavior.backtest_execution_backend
         backtest_id = uuid.uuid4().hex
         payload = self._resolve_dataset_backed_payload(payload)
+        if isinstance(payload, ClassicBacktestCreateRequest):
+            if execution_backend == "argo":
+                payload = self._translate_dataset_path_for_argo(payload)
+            config_raw = build_backtest_config_raw(payload, backtest_id)
+            return self._submit_from_config_raw(
+                config_raw,
+                backtest_id,
+                selection=_build_selection_summary(payload),
+                name=payload.name,
+                backtest_type="classic",
+                request_payload=payload.model_dump(mode="json"),
+            )
+
         if execution_backend == "argo":
             payload = self._translate_dataset_path_for_argo(payload)
-        config_raw = build_backtest_config_raw(payload, backtest_id)
-        return self._submit_from_config_raw(
-            config_raw,
-            backtest_id,
-            selection=_build_selection_summary(payload),
-            name=payload.name,
+        vectorbt_request = self._resolve_vectorbt_workflow_request(payload, backtest_id=backtest_id)
+        return self._submit_vectorbt_request(
+            backtest_id=backtest_id,
+            payload=payload,
+            workflow_request=vectorbt_request,
         )
 
     def retry_backtest(
@@ -782,6 +839,13 @@ class BacktestJobService:
         force = bool(payload.force) if payload is not None else False
         if source is not None and source.status in {"pending", "running"} and not force:
             raise BacktestJobActiveError(f"Backtest '{source_backtest_id}' is still active")
+
+        if source is not None and source.backtest_type == "vectorbt":
+            stored_request = self.job_repository.get_request_payload(source_backtest_id)
+            if stored_request is None:
+                raise ValueError(f"Backtest '{source_backtest_id}' does not contain a retryable request payload")
+            next_payload = validate_backtest_create_request(stored_request)
+            return self.submit(next_payload)
 
         if payload is not None and payload.config_text is not None:
             config_raw = _parse_inline_config(payload.config_text, payload.format)
@@ -821,6 +885,8 @@ class BacktestJobService:
         selection: BacktestSelectionSummary | None = None,
         source_backtest_id: str | None = None,
         name: str | None = None,
+        backtest_type: str = "classic",
+        request_payload: dict[str, Any] | None = None,
     ) -> BacktestCreateResponse:
         platform_settings = self._platform_settings()
         config = BacktestConfig.model_validate(config_raw)
@@ -828,6 +894,7 @@ class BacktestJobService:
         execution_backend = platform_settings.platform_behavior.backtest_execution_backend
         metadata = BacktestListItem(
             id=backtest_id,
+            backtest_type=backtest_type,  # type: ignore[arg-type]
             name=name,
             created_at=created_at,
             updated_at=created_at,
@@ -840,7 +907,7 @@ class BacktestJobService:
         if execution_backend == "argo":
             results_root = Path(workflow_results_mount())
         paths = default_artifact_paths(results_root, backtest_id)
-        self.job_repository.create(metadata, paths=paths)
+        self.job_repository.create(metadata, paths=paths, request_payload=request_payload)
         self.repository.save_config_yaml(backtest_id, config_raw)
 
         if execution_backend == "argo":
@@ -874,6 +941,64 @@ class BacktestJobService:
             status_url=f"/backtests/{backtest_id}/status",
             detail_url=f"/backtests/{backtest_id}",
             source_backtest_id=source_backtest_id,
+        )
+
+    def _submit_vectorbt_request(
+        self,
+        *,
+        backtest_id: str,
+        payload: VectorbtBacktestCreateRequest,
+        workflow_request: VectorbtWorkflowRequest,
+    ) -> BacktestCreateResponse:
+        if not self.argo_submitter.is_configured:
+            raise ArgoNotConfiguredError(
+                "Argo Workflows is not configured: set ARGO_SERVER_URL to the Argo server HTTP endpoint"
+            )
+
+        created_at = _utc_now()
+        metadata = BacktestListItem(
+            id=backtest_id,
+            backtest_type="vectorbt",
+            name=payload.name,
+            created_at=created_at,
+            updated_at=created_at,
+            status="pending",
+            total_runs=1,
+            selection=None,
+            execution_backend="argo",
+        )
+        workflow_results_root = Path(workflow_results_mount())
+        paths = default_artifact_paths(workflow_results_root, backtest_id)
+        self.job_repository.create(
+            metadata,
+            paths=paths,
+            request_payload=payload.model_dump(mode="json"),
+        )
+
+        artifact_dir = backtest_artifact_dir(self.repository.output_dir, backtest_id)
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "vectorbt-request.json").write_text(
+            workflow_request.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
+
+        self._ensure_argo_results_visible()
+        workflow_name, workflow_namespace = self.argo_submitter.submit_vectorbt(
+            backtest_id=backtest_id,
+            request_json=workflow_request.model_dump_json(),
+        )
+
+        current = metadata.model_copy(deep=True)
+        current.workflow_name = workflow_name
+        current.workflow_namespace = workflow_namespace
+        current = _mark_running(current)
+        self.job_repository.update(current)
+
+        return BacktestCreateResponse(
+            backtest_id=backtest_id,
+            status="running",
+            status_url=f"/backtests/{backtest_id}/status",
+            detail_url=f"/backtests/{backtest_id}",
         )
 
     def _resolve_dataset_path(self, dataset: object, path: Path) -> Path:
@@ -1270,6 +1395,19 @@ class BacktestJobService:
                 report,
                 report_path=report_path,
                 config_path=Path(paths.config_path) if paths and paths.config_path else None,
+            )
+        if metadata.backtest_type == "vectorbt":
+            artifacts = inventory_backtest_artifacts(
+                backtest_id,
+                self.repository.output_dir,
+                paths=paths,
+            )
+            metadata = self._attach_stored_artifacts(metadata)
+            return BacktestDetailResponse(
+                metadata=metadata,
+                output_path=None,
+                report=None,
+                artifacts=artifacts,
             )
         hydrate_paths = paths
         if report_path is not None:

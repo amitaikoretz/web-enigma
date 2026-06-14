@@ -1,6 +1,7 @@
 export type BacktestJobStatus = 'pending' | 'running' | 'completed' | 'failed'
 export type BacktestReportStatus = 'success' | 'partial_failure' | 'failure'
 export type BacktestFeed = 'iex' | 'sip' | 'otc'
+export type BacktestType = 'classic' | 'vectorbt'
 
 export interface HistogramBin {
   start: number
@@ -229,6 +230,7 @@ export type ArgoSplitBy = 'run' | 'symbol' | 'trigger' | 'symbol_trigger'
 
 export interface BacktestListItem {
   id: string
+  backtest_type?: BacktestType
   name?: string | null
   created_at: string
   updated_at: string
@@ -348,7 +350,8 @@ export interface BacktestModelPolicyInput {
   min_signal_score?: number
 }
 
-export interface BacktestCreateRequest {
+export interface ClassicBacktestCreateRequest {
+  backtest_type?: 'classic'
   name?: string | null
   start_date?: string
   end_date?: string
@@ -378,6 +381,27 @@ export interface BacktestCreateRequest {
     fill_model: 'close' | 'next_bar'
   }
 }
+
+export interface VectorbtBacktestCreateRequest {
+  backtest_type: 'vectorbt'
+  name?: string | null
+  dataset_id?: string | null
+  dataset_path?: string | null
+  dataset_manifest_path?: string | null
+  risk_model?: ModelArtifactRefInput | null
+  from_date?: string
+  max_symbols?: number | null
+  volume_window?: number
+  min_volume_ratio?: number
+  entry_cutoff_minutes?: number
+  risk_threshold?: number
+  exit_style?: 'vwap' | 'trailing'
+  min_hold_minutes?: number
+  atr_window?: number
+  atr_stop_mult?: number
+}
+
+export type BacktestCreateRequest = ClassicBacktestCreateRequest | VectorbtBacktestCreateRequest
 
 export interface BacktestUpdateRequest {
   name?: string | null

@@ -202,6 +202,7 @@ class DatasetService:
             "spec": {
                 **build_dataset_workflow_spec(
                     symbols=symbols,
+                    max_symbols_per_shard=payload.max_symbols_per_shard,
                     provider=payload.provider,
                     resolution=payload.resolution,
                     start_date=payload.start_date.isoformat(),
@@ -214,6 +215,10 @@ class DatasetService:
                 "arguments": {
                     "parameters": [
                         {"name": "symbols", "value": ",".join(symbols)},
+                        {
+                            "name": "max-symbols-per-shard",
+                            "value": str(payload.max_symbols_per_shard),
+                        },
                         {"name": "provider", "value": payload.provider},
                         {"name": "resolution", "value": payload.resolution},
                         {"name": "start-date", "value": payload.start_date.isoformat()},

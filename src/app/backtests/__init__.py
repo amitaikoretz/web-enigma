@@ -18,6 +18,9 @@ if TYPE_CHECKING:
         BacktestTradeReplayResponse,
         BacktestStatusResponse,
         BacktestUpdateRequest,
+        ClassicBacktestCreateRequest,
+        VectorbtBacktestCreateRequest,
+        validate_backtest_create_request,
     )
     from app.backtests.persistence import BacktestArtifactPaths, SqlAlchemyBacktestJobRepository
     from app.backtests.service import (
@@ -47,9 +50,12 @@ __all__ = [
     "BacktestTradeReplayResponse",
     "BacktestStatusResponse",
     "BacktestUpdateRequest",
+    "ClassicBacktestCreateRequest",
     "SqlAlchemyBacktestJobRepository",
+    "VectorbtBacktestCreateRequest",
     "build_backtest_config",
     "build_backtest_config_raw",
+    "validate_backtest_create_request",
 ]
 
 
@@ -73,9 +79,12 @@ def __getattr__(name: str) -> Any:
         "BacktestTradeReplayResponse",
         "BacktestStatusResponse",
         "BacktestUpdateRequest",
+        "ClassicBacktestCreateRequest",
         "SqlAlchemyBacktestJobRepository",
+        "VectorbtBacktestCreateRequest",
         "build_backtest_config",
         "build_backtest_config_raw",
+        "validate_backtest_create_request",
     }:
         from app.backtests.models import (
             BacktestArgoLaunchRequest,
@@ -92,6 +101,9 @@ def __getattr__(name: str) -> Any:
             BacktestTradeReplayResponse,
             BacktestStatusResponse,
             BacktestUpdateRequest,
+            ClassicBacktestCreateRequest,
+            VectorbtBacktestCreateRequest,
+            validate_backtest_create_request,
         )
         from app.backtests.persistence import BacktestArtifactPaths, SqlAlchemyBacktestJobRepository
         from app.backtests.service import (
@@ -121,8 +133,11 @@ def __getattr__(name: str) -> Any:
             "BacktestTradeReplayResponse": BacktestTradeReplayResponse,
             "BacktestStatusResponse": BacktestStatusResponse,
             "BacktestUpdateRequest": BacktestUpdateRequest,
+            "ClassicBacktestCreateRequest": ClassicBacktestCreateRequest,
             "SqlAlchemyBacktestJobRepository": SqlAlchemyBacktestJobRepository,
+            "VectorbtBacktestCreateRequest": VectorbtBacktestCreateRequest,
             "build_backtest_config": build_backtest_config,
             "build_backtest_config_raw": build_backtest_config_raw,
+            "validate_backtest_create_request": validate_backtest_create_request,
         }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

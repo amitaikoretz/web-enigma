@@ -34,6 +34,7 @@ import type { SymbolUniverse } from '../types/universes'
 
 const RESOLUTIONS: DatasetResolution[] = ['1m', '5m', '15m', '1h', '1d']
 const PROVIDERS: DatasetProvider[] = ['alpaca', 'yahoo']
+const DEFAULT_MAX_SYMBOLS_PER_SHARD = 10
 
 const fieldSx: SxProps<Theme> = { minWidth: 0 }
 
@@ -82,6 +83,7 @@ export function DatasetWizardPage() {
   const [resolution, setResolution] = useState<DatasetResolution>(platformSettings.backtest_defaults.resolution)
   const [includeOptions, setIncludeOptions] = useState(false)
   const [optionsFeed, setOptionsFeed] = useState<DatasetOptionsFeed>('indicative')
+  const [maxSymbolsPerShard, setMaxSymbolsPerShard] = useState<number>(DEFAULT_MAX_SYMBOLS_PER_SHARD)
   const [startDate, setStartDate] = useState<Dayjs | null>(dayjs().subtract(30, 'day'))
   const [endDate, setEndDate] = useState<Dayjs | null>(dayjs())
   const [error, setError] = useState<string | null>(null)
@@ -190,6 +192,10 @@ export function DatasetWizardPage() {
         const nextName = typeof params.name === 'string' ? params.name : ''
         const nextStartDate = typeof params.start_date === 'string' ? dayjs(params.start_date) : null
         const nextEndDate = typeof params.end_date === 'string' ? dayjs(params.end_date) : null
+        const nextMaxSymbolsPerShard =
+          typeof params.max_symbols_per_shard === 'number' && Number.isFinite(params.max_symbols_per_shard)
+            ? Math.max(1, Math.floor(params.max_symbols_per_shard))
+            : DEFAULT_MAX_SYMBOLS_PER_SHARD
         const nextOptions = isRecord(params.options) ? params.options : {}
         const nextIncludeOptions = Boolean(nextOptions.enabled)
         const nextOptionsFeed =
@@ -203,6 +209,7 @@ export function DatasetWizardPage() {
         setResolution(nextResolution)
         setIncludeOptions(nextIncludeOptions)
         setOptionsFeed(nextOptionsFeed)
+        setMaxSymbolsPerShard(nextMaxSymbolsPerShard)
         setStartDate(nextStartDate?.isValid() ? nextStartDate : null)
         setEndDate(nextEndDate?.isValid() ? nextEndDate : null)
         setPrefillSourceId(metadata.id)
@@ -287,6 +294,7 @@ export function DatasetWizardPage() {
       const response = await createDataset({
         symbol: primarySymbol,
         symbols,
+        max_symbols_per_shard: maxSymbolsPerShard,
         provider,
         resolution,
         start_date: startDate.format('YYYY-MM-DD'),
@@ -574,6 +582,9 @@ export function DatasetWizardPage() {
               <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.25 }}>
                 {startDate?.format('YYYY-MM-DD')} to {endDate?.format('YYYY-MM-DD')}
               </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.25, display: 'block' }}>
+                Max {maxSymbolsPerShard} symbols per shard
+              </Typography>
             </Box>
           </Stack>
         }
@@ -688,6 +699,19 @@ export function DatasetWizardPage() {
                 value={endDate}
                 onChange={setEndDate}
                 slotProps={{ textField: { fullWidth: true } }}
+              />
+              <TextField
+                fullWidth
+                sx={fieldSx}
+                label="Max symbols per shard"
+                type="number"
+                value={maxSymbolsPerShard}
+                onChange={(event) => {
+                  const parsed = Number.parseInt(event.target.value, 10)
+                  setMaxSymbolsPerShard(Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_SYMBOLS_PER_SHARD)
+                }}
+                slotProps={{ htmlInput: { min: 1, step: 1 } }}
+                helperText="Caps how many symbols a single worker downloads. Lower values reduce per-pod memory use."
               />
             </Box>
           </Stack>

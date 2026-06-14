@@ -428,6 +428,7 @@ class BacktestJob(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    backtest_type: Mapped[str] = mapped_column(String(32), nullable=False, default="classic", server_default="classic")
     name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -456,6 +457,7 @@ class BacktestJob(Base):
     labels_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     features_parquet_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     manifest_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    request_payload_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
 
 
 class WorkerEvent(Base):

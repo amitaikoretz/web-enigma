@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from math import isnan
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, field_validator, model_validator
 
-from app.config.models import AnalyzerConfig, BacktestExecutionConfig, BacktestModelPolicyConfig, BrokerConfig
+from app.config.models import (
+    AnalyzerConfig,
+    BacktestExecutionConfig,
+    BacktestModelPolicyConfig,
+    BrokerConfig,
+    ModelArtifactRef,
+)
 from app.output.models import BacktestReport
 from app.output.models import TradeRecord
 from app.strategies.exit_rules import ExitRulesSelection
@@ -17,6 +23,7 @@ SUPPORTED_RESOLUTIONS = ("1m", "5m", "15m", "1h", "1d")
 
 BacktestJobStatus = Literal["pending", "running", "completed", "failed"]
 BacktestExecutionBackend = Literal["local", "argo"]
+BacktestType = Literal["classic", "vectorbt"]
 ArgoSplitBy = Literal["run", "symbol", "trigger", "symbol_trigger"]
 
 
@@ -43,12 +50,37 @@ class BacktestTriggerSelection(TriggerSelection):
         return self
 
 
-class BacktestCreateRequest(BaseModel):
+class BacktestCreateRequestBase(BaseModel):
+    backtest_type: BacktestType
     name: str | None = Field(default=None, description="Optional display name for this backtest")
-    resolution: str = Field(description="Bar resolution such as 1m, 5m, 15m, 1h, or 1d")
     dataset_id: str | None = Field(default=None, description="Existing dataset to backtest against")
     dataset_path: str | None = Field(default=None, description="Resolved parquet path for an existing dataset")
     dataset_manifest_path: str | None = Field(default=None, description="Resolved manifest JSON path for an existing dataset")
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("name must be a string")
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 256:
+            raise ValueError("name must be at most 256 characters")
+        return trimmed
+
+    @model_validator(mode="after")
+    def validate_dataset_fields(self) -> "BacktestCreateRequestBase":
+        if self.dataset_path is not None and not self.dataset_manifest_path:
+            raise ValueError("Dataset-backed backtests must include dataset_manifest_path")
+        return self
+
+
+class ClassicBacktestCreateRequest(BacktestCreateRequestBase):
+    backtest_type: Literal["classic"] = "classic"
+    resolution: str = Field(description="Bar resolution such as 1m, 5m, 15m, 1h, or 1d")
     start_date: date | None = None
     end_date: date | None = None
     feed: Literal["iex", "sip", "otc"] = "iex"
@@ -81,12 +113,10 @@ class BacktestCreateRequest(BaseModel):
         return normalized
 
     @model_validator(mode="after")
-    def validate_dates(self) -> "BacktestCreateRequest":
+    def validate_dates(self) -> "ClassicBacktestCreateRequest":
         if self.dataset_id or self.dataset_path:
             if self.symbols:
                 raise ValueError("Dataset-backed backtests must not set symbols")
-            if self.dataset_path is not None and not self.dataset_manifest_path:
-                raise ValueError("Dataset-backed backtests must include dataset_manifest_path")
             return self
         if self.start_date is None or self.end_date is None:
             raise ValueError("start_date and end_date are required when dataset_id is not set")
@@ -96,19 +126,60 @@ class BacktestCreateRequest(BaseModel):
             raise ValueError("At least one symbol is required")
         return self
 
-    @field_validator("name", mode="before")
-    @classmethod
-    def normalize_name(cls, value: Any) -> str | None:
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            raise TypeError("name must be a string")
-        trimmed = value.strip()
-        if not trimmed:
-            return None
-        if len(trimmed) > 256:
-            raise ValueError("name must be at most 256 characters")
-        return trimmed
+
+class VectorbtBacktestCreateRequest(BacktestCreateRequestBase):
+    backtest_type: Literal["vectorbt"] = "vectorbt"
+    risk_model: ModelArtifactRef | None = None
+    from_date: date | None = None
+    max_symbols: int | None = Field(default=None, ge=1)
+    volume_window: int = Field(default=20, ge=1)
+    min_volume_ratio: float = Field(default=1.25, gt=0)
+    entry_cutoff_minutes: int = Field(default=0, ge=0)
+    risk_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    exit_style: Literal["vwap", "trailing"] = "vwap"
+    min_hold_minutes: float = Field(default=0.0, ge=0.0)
+    atr_window: int = Field(default=14, ge=2)
+    atr_stop_mult: float = Field(default=1.5, gt=0)
+
+    @model_validator(mode="after")
+    def validate_vectorbt_requirements(self) -> "VectorbtBacktestCreateRequest":
+        if not (self.dataset_id or self.dataset_path):
+            raise ValueError("vectorbt backtests require dataset_id or dataset_path")
+        return self
+
+
+BacktestCreateRequest = Annotated[
+    ClassicBacktestCreateRequest | VectorbtBacktestCreateRequest,
+    Field(discriminator="backtest_type"),
+]
+_BACKTEST_CREATE_REQUEST_ADAPTER = TypeAdapter(BacktestCreateRequest)
+
+
+def validate_backtest_create_request(data: Any) -> ClassicBacktestCreateRequest | VectorbtBacktestCreateRequest:
+    if isinstance(data, (ClassicBacktestCreateRequest, VectorbtBacktestCreateRequest)):
+        return data
+    if isinstance(data, dict) and "backtest_type" not in data:
+        data = {"backtest_type": "classic", **data}
+    return _BACKTEST_CREATE_REQUEST_ADAPTER.validate_python(data)
+
+
+class VectorbtWorkflowRequest(BaseModel):
+    backtest_id: str
+    name: str | None = None
+    dataset_path: str
+    dataset_manifest_path: str
+    risk_model_group_id: str | None = None
+    risk_model_artifact_path: str | None = None
+    from_date: date | None = None
+    max_symbols: int | None = Field(default=None, ge=1)
+    volume_window: int = Field(default=20, ge=1)
+    min_volume_ratio: float = Field(default=1.25, gt=0)
+    entry_cutoff_minutes: int = Field(default=0, ge=0)
+    risk_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    exit_style: Literal["vwap", "trailing"] = "vwap"
+    min_hold_minutes: float = Field(default=0.0, ge=0.0)
+    atr_window: int = Field(default=14, ge=2)
+    atr_stop_mult: float = Field(default=1.5, gt=0)
 
 
 class BacktestSelectionSummary(BaseModel):
@@ -159,6 +230,7 @@ class BacktestArtifactSummaryItem(BaseModel):
 
 class BacktestListItem(BaseModel):
     id: str
+    backtest_type: BacktestType = "classic"
     name: str | None = None
     created_at: datetime
     updated_at: datetime

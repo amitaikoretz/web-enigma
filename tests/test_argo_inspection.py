@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from kubernetes.client import ApiException
 
 from tests.conftest import build_backtest_client
 
@@ -180,3 +181,48 @@ def test_get_argo_workflow_pod_logs_returns_pod_logs(tmp_path, monkeypatch: pyte
     assert body["pod_name"] == "pod-1"
     assert body["container_name"] == "main"
     assert "step started" in body["logs"]
+
+
+def test_get_argo_workflow_pod_logs_returns_empty_logs_when_pod_log_path_is_missing(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = build_backtest_client(tmp_path)
+    submitter = client.app.state.deps.backtest_jobs.argo_submitter
+    submitter.get_workflow_response = lambda workflow_name, *, namespace=None: _FakeResponse(  # type: ignore[method-assign]
+        200,
+        _workflow_payload(),
+    )
+
+    class _FakeCoreV1Api:
+        def read_namespaced_pod(self, name: str, namespace: str) -> object:
+            return SimpleNamespace(
+                spec=SimpleNamespace(
+                    containers=[
+                        SimpleNamespace(name="main"),
+                        SimpleNamespace(name="wait"),
+                    ]
+                )
+            )
+
+        def read_namespaced_pod_log(
+            self,
+            name: str,
+            namespace: str,
+            container: str | None = None,
+            timestamps: bool = True,
+            tail_lines: int = 2000,
+        ) -> str:
+            exc = ApiException(status=500, reason="Internal Server Error")
+            exc.body = (
+                'failed to try resolving symlinks in path "/var/log/pods/backtest-workflows_vectorbt-123/main/0.log": '
+                'lstat /var/log/pods/backtest-workflows_vectorbt-123: no such file or directory'
+            )
+            raise exc
+
+    monkeypatch.setattr("app.argo_inspection._build_core_v1_api", lambda: _FakeCoreV1Api())
+    response = client.get("/argo/workflows/wf-1/pods/pod-1/logs")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["container_name"] == "main"
+    assert body["logs"] == ""
