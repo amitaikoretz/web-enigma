@@ -7,6 +7,8 @@ import pandas as pd
 import pytest
 from pandas.api.types import is_bool_dtype, is_numeric_dtype
 from pydantic import ValidationError
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from app.backtests.artifacts import persist_backtest_report, load_labels_from_parquet, load_rejections_from_parquet
 from app.config.models import CsvDataSource, DataCacheConfig
@@ -575,9 +577,24 @@ def test_dataset_download_parquet_schema_round_trip(tmp_path: Path, monkeypatch:
 
     dataset_df = pd.read_parquet(tmp_path / "AAPL-alpaca-5m.parquet")
     options_df = pd.read_parquet(tmp_path / "AAPL-alpaca-options-5m.parquet")
+    dataset_schema = pq.ParquetFile(tmp_path / "AAPL-alpaca-5m.parquet").schema_arrow
+    options_schema = pq.ParquetFile(tmp_path / "AAPL-alpaca-options-5m.parquet").schema_arrow
 
     assert DatasetParquetRow.model_validate(dataset_df.iloc[0].to_dict())
     assert DatasetParquetRow.model_validate(options_df.iloc[0].to_dict())
+    assert dataset_schema.field("timestamp").type == pa.timestamp("ns", tz="UTC")
+    assert dataset_schema.field("symbol").type == pa.string()
+    assert dataset_schema.field("Open").type == pa.float64()
+    assert dataset_schema.field("High").type == pa.float64()
+    assert dataset_schema.field("Low").type == pa.float64()
+    assert dataset_schema.field("Close").type == pa.float64()
+    assert dataset_schema.field("Volume").type == pa.int64()
+    assert options_schema.field("timestamp").type == pa.timestamp("ns", tz="UTC")
+    assert options_schema.field("Volume").type == pa.int64()
+    assert dataset_df["timestamp"].dt.second.eq(0).all()
+    assert options_df["timestamp"].dt.second.eq(0).all()
+    assert str(dataset_df["Volume"].dtype) == "int64"
+    assert str(options_df["Volume"].dtype) == "int64"
 
 
 def test_parquet_cache_round_trip_preserves_source_frame(tmp_path: Path) -> None:

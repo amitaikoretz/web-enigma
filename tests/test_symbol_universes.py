@@ -14,6 +14,7 @@ from app.db.models import SymbolUniverse, SymbolUniverseConstituent
 from datetime import UTC, datetime
 from app.universes.service import SymbolUniverseService
 from app.universes.registry import UNIVERSE_REGISTRY
+from app.universes.snp_etf import load_industry_etf_tickers
 
 
 def _build_client(tmp_path) -> tuple[TestClient, sessionmaker[Session]]:
@@ -49,7 +50,7 @@ def test_list_universes_includes_registry_seeded_universes(tmp_path):
     assert response.status_code == 200
     items = response.json()
     keys = {item["key"] for item in items}
-    assert {"sp500", "nasdaq100", "dow30", "bluechip_etfs"}.issubset(keys)
+    assert {"sp500", "nasdaq100", "dow30", "bluechip_etfs", "industry_etfs"}.issubset(keys)
 
 
 def test_sync_registry_seeds_bluechip_etfs_universe(tmp_path):
@@ -84,6 +85,75 @@ def test_bluechip_etfs_constituents_return_seed_symbols(tmp_path):
     assert body["key"] == "bluechip_etfs"
     assert body["as_of"] == date(2026, 5, 28).isoformat()
     assert body["symbols"] == ["DIA", "QQQ", "SCHD", "SPY", "VIG"]
+
+
+def test_sync_registry_seeds_industry_etfs_universe(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    service = SymbolUniverseService()
+    expected_symbols = list(load_industry_etf_tickers())
+
+    with session_factory() as session:
+        stats = service.sync_registry(session)
+        assert stats["created"] == len(UNIVERSE_REGISTRY)
+
+    response = client.get("/universes?active_only=false")
+    assert response.status_code == 200
+    items = response.json()
+    industry = next(item for item in items if item["key"] == "industry_etfs")
+    assert industry["name"] == "Industry ETF"
+    assert industry["description"] == "Sector and industry ETFs used as proxies for S&P 500 stocks."
+    assert industry["provider"] == "static"
+    assert industry["provider_ref"] == {"symbols": expected_symbols}
+    assert industry["is_active"] is True
+
+
+def test_industry_etfs_constituents_return_seed_symbols(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    service = SymbolUniverseService()
+    expected_symbols = list(load_industry_etf_tickers())
+
+    with session_factory() as session:
+        service.sync_registry(session)
+
+    response = client.get(f"/universes/industry_etfs/constituents?as_of={date(2026, 5, 28).isoformat()}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["key"] == "industry_etfs"
+    assert body["as_of"] == date(2026, 5, 28).isoformat()
+    assert body["symbols"] == expected_symbols
+
+
+def test_list_universes_reconciles_stale_registry_provider_ref(tmp_path):
+    client, session_factory = _build_client(tmp_path)
+    service = SymbolUniverseService()
+    expected_symbols = list(load_industry_etf_tickers())
+
+    with session_factory() as session:
+        session.add(
+            SymbolUniverse(
+                key="industry_etfs",
+                kind="registry",
+                name="Industry ETF",
+                description="Stale",
+                provider="static",
+                provider_ref={"symbols": []},
+                is_active=1,
+            )
+        )
+        session.commit()
+
+    response = client.get("/universes?active_only=false")
+    assert response.status_code == 200
+    industry = next(item for item in response.json() if item["key"] == "industry_etfs")
+    assert industry["provider_ref"] == {"symbols": expected_symbols}
+
+    constituents = client.get(f"/universes/industry_etfs/constituents?as_of={date(2026, 6, 14).isoformat()}")
+    assert constituents.status_code == 200
+    assert constituents.json()["symbols"] == expected_symbols
+
+    with session_factory() as session:
+        stats = service.sync_registry(session)
+        assert stats["updated"] >= 0
 
 
 def test_admin_create_and_patch_universe(tmp_path, monkeypatch):

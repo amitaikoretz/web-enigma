@@ -317,12 +317,13 @@ The canonical parquet remains the compatibility download target; the chunk files
 
 | Column | Type | Nullability | Notes |
 |---|---|---|---|
-| `timestamp` | string | required | UTC timestamp |
+| `timestamp` | datetime | required | UTC timestamp aligned to the minute |
+| `symbol` | string | required | Traded symbol |
 | `Open` | float | required | Bar open |
 | `High` | float | required | Bar high |
 | `Low` | float | required | Bar low |
 | `Close` | float | required | Bar close |
-| `Volume` | float | required | Bar volume |
+| `Volume` | int | required | Bar volume |
 
 **Ordering:** rows are sorted by timestamp ascending.  
 **Failure behavior:** rows without a timestamp or without OHLCV columns fail validation before parquet write.

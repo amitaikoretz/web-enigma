@@ -15,6 +15,7 @@ RUN mkdir -p src/app \
 
 COPY alembic.ini ./
 COPY alembic ./alembic
+COPY resources ./resources
 COPY src ./src
 
 RUN pip install --no-cache-dir -e . --no-deps

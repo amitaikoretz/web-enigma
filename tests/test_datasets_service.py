@@ -13,7 +13,7 @@ from app.datasets.argo_workflow import build_dataset_workflow_spec
 from app.datasets.models import DatasetListItem
 from app.datasets.persistence import SqlAlchemyDatasetRepository
 from app.datasets.service import DatasetService
-from app.datasets.sharding import build_dataset_shard_plan, write_json_file
+from app.datasets.sharding import DatasetArtifactManifest, DatasetChunkRecord, build_dataset_shard_plan, write_json_file
 from app.settings.service import PlatformSettingsService
 
 
@@ -363,6 +363,91 @@ def test_get_detail_falls_back_to_recorded_symbol_when_symbol_column_missing(tmp
     assert detail.symbol_options == ["AAPL"]
 
 
+def test_get_detail_includes_market_chunk_summary(tmp_path: Path) -> None:
+    artifact_dir = tmp_path / "datasets" / "2026-06-07" / "ds-1"
+    chunk_dir = artifact_dir / "chunks" / "market"
+    chunk_dir.mkdir(parents=True)
+    chunk_0 = chunk_dir / "part_000.parquet"
+    chunk_1 = chunk_dir / "part_001.parquet"
+    pd.DataFrame(
+        {
+            "symbol": ["AAPL"],
+            "timestamp": [pd.Timestamp("2026-06-01T00:00:00Z")],
+            "Open": [1.0],
+            "High": [1.0],
+            "Low": [1.0],
+            "Close": [1.0],
+            "Volume": [100],
+        }
+    ).to_parquet(chunk_0, index=False)
+    pd.DataFrame(
+        {
+            "symbol": ["MSFT"],
+            "timestamp": [pd.Timestamp("2026-06-01T00:00:00Z")],
+            "Open": [2.0],
+            "High": [2.0],
+            "Low": [2.0],
+            "Close": [2.0],
+            "Volume": [200],
+        }
+    ).to_parquet(chunk_1, index=False)
+
+    parquet_path = artifact_dir / "AAPL-alpaca-1d.parquet"
+    manifest_path = artifact_dir / "AAPL-alpaca-1d.manifest.json"
+    manifest = DatasetArtifactManifest(
+        dataset_kind="market",
+        dataset_id="ds-1",
+        symbols=["AAPL", "MSFT"],
+        provider="alpaca",
+        resolution="1d",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 6, 1),
+        output_path=str(parquet_path),
+        plan_path="",
+        estimated_total_work_units=2,
+        shard_count=1,
+        chunk_count=2,
+        total_row_count=2,
+        total_size_bytes=chunk_0.stat().st_size + chunk_1.stat().st_size,
+        chunks=[
+            DatasetChunkRecord(
+                path=str(chunk_0),
+                row_count=1,
+                size_bytes=chunk_0.stat().st_size,
+                chunk_index=0,
+                symbols=["AAPL"],
+            ),
+            DatasetChunkRecord(
+                path=str(chunk_1),
+                row_count=1,
+                size_bytes=chunk_1.stat().st_size,
+                chunk_index=1,
+                symbols=["MSFT"],
+            ),
+        ],
+    )
+    manifest_path.write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+
+    item = _dataset_item().model_copy(
+        update={
+            "status": "completed",
+            "output_dir": str(tmp_path / "datasets"),
+            "dataset_parquet_path": str(parquet_path),
+            "manifest_path": str(manifest_path),
+        }
+    )
+    repo = FakeDatasetRepository(item)
+    service = DatasetService(repo, FakeSettingsService(dataset_storage_root=str(tmp_path / "datasets")), argo_submitter=FakeArgoSubmitter())
+
+    detail = service.get_detail("ds-1")
+
+    assert detail is not None
+    assert detail.market_chunks is not None
+    assert detail.market_chunks.chunk_count == 2
+    assert detail.market_chunks.chunk_dir == str(chunk_dir)
+    assert detail.options_chunks is None
+
+
 def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     monkeypatch.setenv("BACKTEST_WORKFLOW_RESULTS_MOUNT", "/data/backtest-results")
 
@@ -396,6 +481,8 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     assert print_inputs == {"output-dir"}
     print_mounts = print_payload["container"]["volumeMounts"]
     assert print_mounts == [{"name": "datasets-results", "mountPath": "/data/backtest-results"}]
+    print_env = {item["name"]: item["value"] for item in print_payload["container"]["env"]}
+    assert print_env["TZ"] == "America/New_York"
     print_args = print_payload["container"]["args"]
     assert "__COMMAND_LINE__" not in print_args
     assert "--command-line" in print_args
@@ -403,6 +490,8 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     plan = next(template for template in spec["templates"] if template["name"] == "plan-shards")
     plan_mounts = plan["container"]["volumeMounts"]
     assert plan_mounts == [{"name": "datasets-results", "mountPath": "/data/backtest-results"}]
+    plan_env = {item["name"]: item["value"] for item in plan["container"]["env"]}
+    assert plan_env["TZ"] == "America/New_York"
     assert plan["retryStrategy"] == {
         "limit": 3,
         "retryPolicy": "Always",
@@ -423,10 +512,12 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     assert plan_output_names == ["plan-path", "work-dir", "shards", "terminal-command", "error-exception", "error-code-location", "error-call-stack", "error-traceback"]
 
     aggregate = next(template for template in spec["templates"] if template["name"] == "aggregate-progress")
-    assert aggregate["daemon"] is True
+    assert "daemon" not in aggregate
     aggregate_args = aggregate["container"]["args"]
     assert "aggregate-progress" in aggregate_args
     assert "{{inputs.parameters.plan-path}}" in aggregate_args
+    aggregate_env = {item["name"]: item["value"] for item in aggregate["container"]["env"]}
+    assert aggregate_env["TZ"] == "America/New_York"
     assert aggregate["retryStrategy"] == plan["retryStrategy"]
     assert aggregate["podSpecPatch"] == plan["podSpecPatch"]
 
@@ -435,15 +526,28 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
     assert "download-shard" in download_args
     assert "{{inputs.parameters.progress-total-units}}" in download_args
     assert "{{inputs.parameters.progress-symbol-units}}" in download_args
+    download_env = {item["name"]: item["value"] for item in download["container"]["env"]}
+    assert download_env["TZ"] == "America/New_York"
     assert download["retryStrategy"] == plan["retryStrategy"]
     assert download["podSpecPatch"] == plan["podSpecPatch"]
     assert download["metadata"]["annotations"]["workflows.argoproj.io/progress"] == "0/100"
+
+    download_group = next(
+        group for group in main_template["steps"] if any(step["name"] == "download-shards" for step in group)
+    )
+    download_group_names = [step["name"] for step in download_group]
+    assert download_group_names == ["aggregate-progress", "download-shards"]
+
+    main_download = next(step for step in download_group if step["name"] == "download-shards")
+    assert main_download["continueOn"] == {"failed": True, "error": True}
 
     combine = next(template for template in spec["templates"] if template["name"] == "combine-shards")
     combine_args = combine["container"]["args"]
     assert "combine-shards" in combine_args
     assert "{{inputs.parameters.plan-path}}" in combine_args
     assert "{{inputs.parameters.manifest-path-out}}" in combine_args
+    combine_env = {item["name"]: item["value"] for item in combine["container"]["env"]}
+    assert combine_env["TZ"] == "America/New_York"
     main_combine = next(step for group in main_template["steps"] for step in group if step["name"] == "combine")
     main_combine_args = [param["value"] for param in main_combine["arguments"]["parameters"]]
     assert "/tmp/manifest-path.txt" in main_combine_args

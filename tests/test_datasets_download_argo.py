@@ -45,6 +45,52 @@ def test_main_fails_when_alpaca_options_returns_403(tmp_path: Path, monkeypatch:
         )
 
 
+def test_download_shard_skips_missing_alpaca_symbol_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_market_feed(config, *args, **kwargs):
+        calls.append(config.symbol)
+        if config.symbol == "BAD":
+            raise RuntimeError("No Alpaca data found for symbol BAD")
+        return (
+            pd.DataFrame(
+                {
+                    "Open": [100.0, 101.0],
+                    "High": [101.0, 102.0],
+                    "Low": [99.0, 100.0],
+                    "Close": [100.5, 101.5],
+                    "Volume": [1_000.0, 1_100.0],
+                },
+                index=pd.to_datetime(["2026-06-01T14:30:00Z", "2026-06-01T14:35:00Z"], utc=True),
+            ),
+            "miss",
+        )
+
+    monkeypatch.setattr(module, "build_alpaca_data_feed_with_cache", fake_market_feed)
+
+    module.download_shard_command(
+        shard_id="shard-001",
+        symbols="AAPL,BAD,MSFT",
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 8).isoformat(),
+        end_date=date(2026, 6, 7).isoformat(),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=str(tmp_path),
+        progress_total_units=300,
+        progress_symbol_units=100,
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+    )
+
+    dataset = pd.read_parquet(tmp_path / "market.parquet")
+    assert dataset["symbol"].tolist() == ["AAPL", "AAPL", "MSFT", "MSFT"]
+    assert calls == ["AAPL", "BAD", "MSFT"]
+    assert (tmp_path / "market.manifest.json").exists()
+
+
 def test_main_writes_blank_options_outputs_when_disabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         module,
@@ -75,7 +121,7 @@ def test_main_writes_blank_options_outputs_when_disabled(tmp_path: Path, monkeyp
 
 def test_main_persists_timestamps_in_written_parquet(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     timestamps = pd.to_datetime(
-        ["2026-06-01T14:30:00Z", "2026-06-01T14:35:00Z"],
+        ["2026-06-01T14:30:45Z", "2026-06-01T14:35:30Z"],
         utc=True,
     )
     frame = pd.DataFrame(
@@ -118,8 +164,12 @@ def test_main_persists_timestamps_in_written_parquet(tmp_path: Path, monkeypatch
 
     assert "timestamp" in dataset.columns
     assert "timestamp" in options_dataset.columns
-    assert dataset["timestamp"].iloc[0] == timestamps[0]
-    assert options_dataset["timestamp"].iloc[0] == timestamps[0]
+    assert dataset["timestamp"].iloc[0] == pd.Timestamp("2026-06-01T14:30:00Z")
+    assert options_dataset["timestamp"].iloc[0] == pd.Timestamp("2026-06-01T14:30:00Z")
+    assert str(dataset["Open"].dtype) == "float64"
+    assert str(dataset["Volume"].dtype) == "int64"
+    assert str(options_dataset["Open"].dtype) == "float64"
+    assert str(options_dataset["Volume"].dtype) == "int64"
 
 
 def test_main_streams_symbol_frames_without_concat(
@@ -355,6 +405,62 @@ def test_combine_shards_command_streams_parquet_inputs(tmp_path: Path, monkeypat
     assert len(manifest["chunks"]) == 2
     assert manifest["chunks"][0]["chunk_index"] == 0
     assert manifest["chunks"][0]["split_key_values"]["symbol"] == "AAPL"
+
+
+def test_combine_shards_command_skips_missing_shards_and_finishes(tmp_path: Path) -> None:
+    plan = build_dataset_shard_plan(
+        dataset_id="ds-1",
+        symbols=["AAPL", "MSFT"],
+        provider="alpaca",
+        resolution="5m",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 3),
+        options_enabled=False,
+        options_feed="indicative",
+        output_dir=tmp_path / "ds-1",
+        max_shards=4,
+        max_pods=2,
+        target_work_units=1,
+    )
+    write_json_file(Path(plan.plan_path), plan)
+
+    first_shard = plan.shards[0]
+    shard_dir = Path(first_shard.output_dir)
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    frame = pd.DataFrame(
+        {
+            "timestamp": ["2026-05-01T00:00:00Z"],
+            "Open": [100.0],
+            "High": [101.0],
+            "Low": [99.0],
+            "Close": [100.5],
+            "Volume": [1_000.0],
+            "symbol": [first_shard.symbols[0]],
+        }
+    )
+    frame.to_parquet(first_shard.market_parquet_path, index=False)
+
+    module.combine_shards_command(
+        plan_path=plan.plan_path,
+        dataset_path_out=str(tmp_path / "dataset-path.txt"),
+        manifest_path_out=str(tmp_path / "manifest-path.txt"),
+        options_dataset_path_out=str(tmp_path / "options-dataset-path.txt"),
+        options_manifest_path_out=str(tmp_path / "options-manifest-path.txt"),
+        terminal_command_out=str(tmp_path / "terminal-command.txt"),
+    )
+
+    dataset_path = Path((tmp_path / "dataset-path.txt").read_text(encoding="utf-8").strip())
+    manifest_path = Path((tmp_path / "manifest-path.txt").read_text(encoding="utf-8").strip())
+    assert dataset_path.exists()
+    assert manifest_path.exists()
+
+    combined = pd.read_parquet(dataset_path)
+    assert combined["symbol"].tolist() == [first_shard.symbols[0]]
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["chunk_count"] == 1
+    assert len(manifest["chunks"]) == 1
+    assert manifest["chunks"][0]["split_key_values"]["symbol"] == first_shard.symbols[0]
 
 
 def test_combine_shards_command_deletes_shard_artifacts_after_combining(tmp_path: Path) -> None:
