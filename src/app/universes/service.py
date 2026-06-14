@@ -69,25 +69,60 @@ class SymbolUniverseService:
         normalized = key.strip().lower()
         return session.execute(select(SymbolUniverse).where(SymbolUniverse.key == normalized)).scalar_one_or_none()
 
+    def _reconcile_registry_record(self, record: SymbolUniverse, spec) -> bool:
+        if getattr(record, "kind", "registry") != "registry":
+            return False
+
+        changed = False
+        current_provider = (record.provider or "").strip().lower()
+        spec_provider = spec.provider.strip().lower()
+
+        if current_provider == "fmp":
+            record.provider = "wikipedia"
+            provider_ref = record.provider_ref or {}
+            if not isinstance(provider_ref.get("kind"), str) or not str(provider_ref.get("kind") or "").strip():
+                record.provider_ref = {**provider_ref, "kind": spec.key}
+            changed = True
+            current_provider = "wikipedia"
+
+        if current_provider != spec_provider:
+            return changed
+
+        if record.name != spec.name:
+            record.name = spec.name
+            changed = True
+        if record.description != spec.description:
+            record.description = spec.description
+            changed = True
+        desired_provider_ref = self._registry_provider_ref(spec)
+        if (record.provider_ref or {}) != desired_provider_ref:
+            record.provider_ref = desired_provider_ref
+            changed = True
+        return changed
+
     def _seed_registry_universes(self, session: Session) -> dict[str, int]:
         created = 0
+        updated = 0
         for key, spec in UNIVERSE_REGISTRY.items():
-            if self._get_universe_record(session, key=key) is not None:
+            record = self._get_universe_record(session, key=key)
+            if record is None:
+                record = SymbolUniverse(
+                    key=spec.key,
+                    kind="registry",
+                    name=spec.name,
+                    description=spec.description,
+                    provider=spec.provider,
+                    provider_ref=self._registry_provider_ref(spec),
+                    is_active=1,
+                )
+                session.add(record)
+                created += 1
                 continue
-            record = SymbolUniverse(
-                key=spec.key,
-                kind="registry",
-                name=spec.name,
-                description=spec.description,
-                provider=spec.provider,
-                provider_ref=self._registry_provider_ref(spec),
-                is_active=1,
-            )
-            session.add(record)
-            created += 1
-        if created:
+            if self._reconcile_registry_record(record, spec):
+                updated += 1
+        if created or updated:
             session.commit()
-        return {"created": created}
+        return {"created": created, "updated": updated}
 
     def list_universes(self, session: Session, *, active_only: bool) -> list[dict]:
         self._seed_registry_universes(session)

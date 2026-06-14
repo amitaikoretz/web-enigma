@@ -18,7 +18,7 @@ import typer
 from app.backtests.argo_step_errors import run_typer_app_with_argo_error_outputs
 from app.backtests.argo_workflow import workflow_results_mount
 from app.config.models import AlpacaDataSource, AlpacaOptionsDataSource, DataCacheConfig, YahooDataSource
-from app.datasets.models import validate_dataset_parquet_frame
+from app.datasets.models import dataset_parquet_schema, normalize_dataset_parquet_frame, validate_dataset_parquet_frame
 from app.datasets.sharding import (
     DatasetArtifactManifest,
     DatasetChunkRecord,
@@ -33,7 +33,7 @@ from app.data.loaders import (
     build_alpaca_options_data_feed_with_cache,
     build_yahoo_data_feed_with_cache,
 )
-from app.script_logging import emit_info, emit_terminal_command
+from app.script_logging import emit_info, emit_terminal_command, emit_warning
 from app.backtests.argo_progress import (
     ARGO_PROGRESS_TOTAL,
     ThrottledProgressWriter,
@@ -96,8 +96,21 @@ def _frame_with_timestamp_column(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _dataset_parquet_table(frame: pd.DataFrame) -> pa.Table:
+    normalized_frame = normalize_dataset_parquet_frame(frame)
+    validate_dataset_parquet_frame(normalized_frame)
+    return pa.Table.from_pandas(normalized_frame, schema=dataset_parquet_schema(), preserve_index=False)
+
+
 def _log(message: str) -> None:
     emit_info("dataset-download", message, script="datasets_download_argo")
+
+
+def _is_missing_alpaca_symbol_data_error(exc: RuntimeError) -> bool:
+    message = str(exc)
+    return message.startswith("No Alpaca data found for symbol ") or message.startswith(
+        "No Alpaca options data found for symbol "
+    )
 
 
 def _progress_file_for_shard(output_dir: str | Path) -> Path:
@@ -192,8 +205,7 @@ def _write_parquet_from_frames(
     try:
         for symbol in symbols:
             frame = frame_loader(symbol)
-            validate_dataset_parquet_frame(frame)
-            table = pa.Table.from_pandas(frame, preserve_index=False)
+            table = _dataset_parquet_table(frame)
             if writer is None:
                 writer = pq.ParquetWriter(temp_path, table.schema)
             writer.write_table(table)
@@ -297,11 +309,24 @@ def _write_shard_parquets(
     try:
         for symbol in symbols:
             _log(f"Loading market data for {shard_label}:{symbol}")
-            market_frame = market_frame_loader(symbol)
+            try:
+                market_frame = market_frame_loader(symbol)
+            except RuntimeError as exc:
+                if not _is_missing_alpaca_symbol_data_error(exc):
+                    raise
+                emit_warning(
+                    "dataset-download",
+                    f"Skipping {shard_label}:{symbol} after missing Alpaca market data",
+                    script="datasets_download_argo",
+                    error=str(exc),
+                )
+                completed_units += max(1, progress_symbol_units)
+                if progress_writer is not None:
+                    progress_writer.write(min(progress_total_units, completed_units))
+                continue
             market_frame = _frame_with_timestamp_column(market_frame)
             market_frame["symbol"] = symbol
-            validate_dataset_parquet_frame(market_frame)
-            market_table = pa.Table.from_pandas(market_frame, preserve_index=False)
+            market_table = _dataset_parquet_table(market_frame)
             if market_writer is None:
                 market_writer = pq.ParquetWriter(market_tmp, market_table.schema)
             market_writer.write_table(market_table)
@@ -314,11 +339,24 @@ def _write_shard_parquets(
                 continue
 
             _log(f"Loading options data for {shard_label}:{symbol}")
-            options_frame = options_frame_loader(symbol)
+            try:
+                options_frame = options_frame_loader(symbol)
+            except RuntimeError as exc:
+                if not _is_missing_alpaca_symbol_data_error(exc):
+                    raise
+                emit_warning(
+                    "dataset-download",
+                    f"Skipping options for {shard_label}:{symbol} after missing Alpaca options data",
+                    script="datasets_download_argo",
+                    error=str(exc),
+                )
+                completed_units += symbol_step_units
+                if progress_writer is not None:
+                    progress_writer.write(min(progress_total_units, completed_units))
+                continue
             options_frame = _frame_with_timestamp_column(options_frame)
             options_frame["symbol"] = symbol
-            validate_dataset_parquet_frame(options_frame)
-            options_table = pa.Table.from_pandas(options_frame, preserve_index=False)
+            options_table = _dataset_parquet_table(options_frame)
             if options_writer is None:
                 options_writer = pq.ParquetWriter(options_tmp, options_table.schema)  # type: ignore[arg-type]
             options_writer.write_table(options_table)
@@ -554,6 +592,7 @@ def _combine_dataset_kind(
     final_output_path: Path,
     final_manifest_path: Path,
     progress_file: str | None,
+    max_chunk_size_bytes: int,
 ) -> DatasetArtifactManifest | None:
     if dataset_kind == "options" and not shard_plan.options_enabled:
         return None
@@ -572,18 +611,57 @@ def _combine_dataset_kind(
         progress_writer.write_immediate(0)
 
     canonical_writer: pq.ParquetWriter | None = None
-    chunk_writers: dict[str, tuple[pq.ParquetWriter, Path, Path]] = {}
-    chunk_row_counts: dict[str, int] = {}
+    manifest_chunks: list[DatasetChunkRecord] = []
+
+    active_chunk_writer: pq.ParquetWriter | None = None
+    active_chunk_temp_path: Path | None = None
+    active_chunk_final_path: Path | None = None
+    active_chunk_row_count: int = 0
+    active_chunk_symbols: set[str] = set()
+    active_chunk_nbytes: int = 0
+    chunk_index: int = 0
+
+    def _close_active_chunk() -> None:
+        nonlocal active_chunk_writer, active_chunk_temp_path, active_chunk_final_path
+        nonlocal active_chunk_row_count, active_chunk_symbols, active_chunk_nbytes, chunk_index
+        if active_chunk_writer is not None and active_chunk_temp_path is not None and active_chunk_final_path is not None:
+            active_chunk_writer.close()
+            active_chunk_temp_path.replace(active_chunk_final_path)
+            manifest_chunks.append(
+                DatasetChunkRecord(
+                    path=str(active_chunk_final_path),
+                    row_count=active_chunk_row_count,
+                    size_bytes=active_chunk_final_path.stat().st_size,
+                    chunk_index=chunk_index,
+                    symbols=sorted(active_chunk_symbols),
+                )
+            )
+            chunk_index += 1
+        active_chunk_writer = None
+        active_chunk_temp_path = None
+        active_chunk_final_path = None
+        active_chunk_row_count = 0
+        active_chunk_nbytes = 0
+        active_chunk_symbols.clear()
+
     total_rows = 0
     total_size_bytes = 0
-    symbol_order = {symbol: index for index, symbol in enumerate(shard_plan.symbols)}
     completed_shards = 0
+    skipped_shards: list[str] = []
 
     try:
         for shard in shard_plan.shards:
             source_path = _source_parquet_path(shard.model_dump(), dataset_kind)
             if not source_path.exists():
-                raise FileNotFoundError(f"Missing shard parquet: {source_path}")
+                skipped_shards.append(str(source_path))
+                emit_warning(
+                    "missing-shard-parquet",
+                    f"Skipping missing {dataset_kind} shard parquet",
+                    script="datasets_download_argo",
+                    source_path=str(source_path),
+                    shard_id=shard.shard_id,
+                )
+                continue
             parquet_file = pq.ParquetFile(source_path)
             for batch in parquet_file.iter_batches(batch_size=4096):
                 table = pa.Table.from_batches([batch])
@@ -595,53 +673,38 @@ def _combine_dataset_kind(
                 frame = batch.to_pandas()
                 if "symbol" not in frame.columns:
                     raise ValueError(f"Shard parquet missing symbol column: {source_path}")
-                for symbol, symbol_frame in frame.groupby("symbol", sort=False):
-                    symbol_name = str(symbol).strip().upper()
-                    chunk_index = symbol_order.get(symbol_name, len(symbol_order))
-                    final_chunk_path = chunk_root / f"{chunk_index:03d}-{symbol_name.lower()}.parquet"
-                    if symbol_name not in chunk_writers:
-                        temp_chunk_path = final_chunk_path.with_suffix(final_chunk_path.suffix + ".tmp")
-                        if temp_chunk_path.exists():
-                            temp_chunk_path.unlink()
-                        chunk_table = pa.Table.from_pandas(symbol_frame, preserve_index=False)
-                        chunk_writers[symbol_name] = (
-                            pq.ParquetWriter(temp_chunk_path, chunk_table.schema),
-                            temp_chunk_path,
-                            final_chunk_path,
-                        )
-                        chunk_row_counts[symbol_name] = 0
-                    writer, _, _ = chunk_writers[symbol_name]
-                    chunk_table = pa.Table.from_pandas(symbol_frame, preserve_index=False)
-                    writer.write_table(chunk_table)
-                    chunk_row_counts[symbol_name] += len(symbol_frame)
+                
+                if active_chunk_writer is None:
+                    active_chunk_final_path = chunk_root / f"part_{chunk_index:03d}.parquet"
+                    active_chunk_temp_path = active_chunk_final_path.with_suffix(".tmp")
+                    if active_chunk_temp_path.exists():
+                        active_chunk_temp_path.unlink()
+                    active_chunk_writer = pq.ParquetWriter(active_chunk_temp_path, table.schema)
+                
+                active_chunk_writer.write_table(table)
+                active_chunk_row_count += table.num_rows
+                active_chunk_symbols.update(str(s).strip().upper() for s in frame["symbol"].unique() if pd.notna(s))
+                active_chunk_nbytes += table.nbytes
+
+                if active_chunk_nbytes >= max_chunk_size_bytes:
+                    _close_active_chunk()
 
             completed_shards += 1
             if progress_writer is not None:
                 progress_writer.write(completed_shards)
 
         if canonical_writer is None:
+            if skipped_shards:
+                raise RuntimeError(
+                    f"No rows were combined for {dataset_kind}; skipped missing shard parquets: "
+                    f"{', '.join(skipped_shards)}"
+                )
             raise RuntimeError(f"No rows were combined for {dataset_kind}")
 
-        manifest_chunks: list[DatasetChunkRecord] = []
-        for symbol_name, (writer, temp_chunk_path, final_chunk_path) in sorted(
-            chunk_writers.items(),
-            key=lambda item: symbol_order.get(item[0], len(symbol_order)),
-        ):
-            writer.close()
-            temp_chunk_path.replace(final_chunk_path)
-            manifest_chunks.append(
-                DatasetChunkRecord(
-                    path=str(final_chunk_path),
-                    row_count=chunk_row_counts[symbol_name],
-                    size_bytes=final_chunk_path.stat().st_size,
-                    chunk_index=symbol_order.get(symbol_name, len(symbol_order)),
-                    split_key_values={"symbol": symbol_name},
-                )
-            )
+        _close_active_chunk()
 
         canonical_writer.close()
         canonical_writer = None
-        chunk_writers.clear()
         temp_output.replace(final_output_path)
         total_size_bytes = sum(chunk.size_bytes for chunk in manifest_chunks)
         manifest = DatasetArtifactManifest(
@@ -654,7 +717,7 @@ def _combine_dataset_kind(
             end_date=shard_plan.end_date,
             output_path=str(final_output_path),
             plan_path=shard_plan.plan_path,
-            primary_split_keys=shard_plan.primary_split_keys,
+            primary_split_keys=[],
             fallback_split_keys=shard_plan.fallback_split_keys,
             estimated_total_work_units=shard_plan.estimated_total_work_units,
             shard_count=shard_plan.shard_count,
@@ -898,6 +961,7 @@ def combine_shards_command(
     manifest_path_out: str = typer.Option("/tmp/manifest-path.txt", "--manifest-path-out"),
     options_dataset_path_out: str = typer.Option("/tmp/options-dataset-path.txt", "--options-dataset-path-out"),
     options_manifest_path_out: str = typer.Option("/tmp/options-manifest-path.txt", "--options-manifest-path-out"),
+    max_chunk_size_bytes: int = typer.Option(20 * 1024 * 1024, "--max-chunk-size-bytes", help="Maximum chunk size in bytes"),
     terminal_command_out: str = typer.Option("/tmp/terminal-command.txt", "--terminal-command-out"),
 ) -> None:
     emit_terminal_command(sys.argv, terminal_command_out=terminal_command_out, script="datasets_download_argo")
@@ -914,6 +978,7 @@ def combine_shards_command(
         final_output_path=Path(shard_plan.dataset_output_path),
         final_manifest_path=Path(shard_plan.dataset_manifest_path),
         progress_file=progress_file,
+        max_chunk_size_bytes=max_chunk_size_bytes,
     )
     if market_manifest is None:
         raise RuntimeError("Market dataset combine unexpectedly returned no manifest")
@@ -928,6 +993,7 @@ def combine_shards_command(
             final_output_path=Path(shard_plan.options_output_path),
             final_manifest_path=Path(shard_plan.options_manifest_path),
             progress_file=progress_file,
+            max_chunk_size_bytes=max_chunk_size_bytes,
         )
         if options_manifest is not None:
             _write_text(options_dataset_path_out, str(shard_plan.options_output_path))

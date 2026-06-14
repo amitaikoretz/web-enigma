@@ -67,6 +67,9 @@ export function SymbolUniversesAdmin() {
     symbolsText: '',
   })
 
+  const [constituentSymbols, setConstituentSymbols] = useState<string[]>([])
+  const [loadingConstituents, setLoadingConstituents] = useState(false)
+
   const [userCreateDraft, setUserCreateDraft] = useState({
     name: '',
     description: '',
@@ -97,7 +100,10 @@ export function SymbolUniversesAdmin() {
   }, [])
 
   useEffect(() => {
-    if (!selected) return
+    if (!selected) {
+      setConstituentSymbols([])
+      return
+    }
 
     setEditDraft((prev) => ({
       ...prev,
@@ -108,15 +114,21 @@ export function SymbolUniversesAdmin() {
       symbolsText: selected.kind === 'user' ? prev.symbolsText : '',
     }))
 
-    if (selected.kind !== 'user') return
-
     const today = new Date().toISOString().slice(0, 10)
+    setLoadingConstituents(true)
     void fetchUniverseConstituents(selected.key, today)
       .then((result) => {
-        setEditDraft((prev) => ({ ...prev, symbolsText: result.symbols.join('\n') }))
+        setConstituentSymbols(result.symbols)
+        if (selected.kind === 'user') {
+          setEditDraft((prev) => ({ ...prev, symbolsText: result.symbols.join('\n') }))
+        }
       })
       .catch((err) => {
+        setConstituentSymbols([])
         setError(err instanceof Error ? err.message : 'Failed to load universe constituents')
+      })
+      .finally(() => {
+        setLoadingConstituents(false)
       })
   }, [selected])
 
@@ -584,6 +596,22 @@ export function SymbolUniversesAdmin() {
                   minRows={6}
                   disabled={loading || selected.kind === 'user'}
                 />
+                {selected.kind !== 'user' && (
+                  <TextField
+                    label="Constituents"
+                    value={constituentSymbols.join(', ')}
+                    multiline
+                    minRows={3}
+                    disabled
+                    helperText={
+                      loadingConstituents
+                        ? 'Loading constituents…'
+                        : constituentSymbols.length === 0
+                          ? 'No symbols are available for this universe yet.'
+                          : `${constituentSymbols.length} symbols`
+                    }
+                  />
+                )}
                 {selected.kind === 'user' && (
                   <Stack spacing={1}>
                     <TextField

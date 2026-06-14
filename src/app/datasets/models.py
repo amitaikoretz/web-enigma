@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import Literal
 
 import pandas as pd
+import pyarrow as pa
 from pydantic import BaseModel, Field, TypeAdapter, ConfigDict, field_validator, model_validator
 
 SUPPORTED_DATASET_RESOLUTIONS = ("1m", "5m", "15m", "1h", "1d")
@@ -123,14 +124,87 @@ class DatasetParquetRow(BaseModel):
     high: float = Field(alias="High")
     low: float = Field(alias="Low")
     close: float = Field(alias="Close")
-    volume: float = Field(alias="Volume")
+    volume: int = Field(alias="Volume")
+
+    @field_validator("timestamp")
+    @classmethod
+    def normalize_timestamp(cls, value: datetime) -> datetime:
+        timestamp = pd.Timestamp(value)
+        if timestamp.tz is None:
+            timestamp = timestamp.tz_localize("UTC")
+        else:
+            timestamp = timestamp.tz_convert("UTC")
+        if any((timestamp.second, timestamp.microsecond, timestamp.nanosecond)):
+            raise ValueError("timestamp must be aligned to the minute")
+        return timestamp.to_pydatetime()
 
 
 _DATASET_PARQUET_ROWS = TypeAdapter(list[DatasetParquetRow])
+_DATASET_PARQUET_SCHEMA = pa.schema(
+    [
+        pa.field("timestamp", pa.timestamp("ns", tz="UTC")),
+        pa.field("symbol", pa.string()),
+        pa.field("Open", pa.float64()),
+        pa.field("High", pa.float64()),
+        pa.field("Low", pa.float64()),
+        pa.field("Close", pa.float64()),
+        pa.field("Volume", pa.int64()),
+    ]
+)
+
+
+def dataset_parquet_schema() -> pa.Schema:
+    return _DATASET_PARQUET_SCHEMA
+
+
+def normalize_dataset_parquet_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+
+    if "timestamp" not in out.columns:
+        if "datetime" in out.columns:
+            out = out.rename(columns={"datetime": "timestamp"})
+        else:
+            index_name = out.index.name or "index"
+            out = out.reset_index().rename(columns={index_name: "timestamp"})
+
+    if "timestamp" not in out.columns:
+        raise ValueError("Dataset parquet frame must include a timestamp column")
+
+    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True, errors="raise").dt.floor("min")
+
+    required_float_columns = ("Open", "High", "Low", "Close")
+    for column in required_float_columns:
+        if column not in out.columns:
+            raise ValueError(f"Dataset parquet frame missing required column '{column}'")
+        out[column] = pd.to_numeric(out[column], errors="raise").astype("float64")
+
+    if "Volume" not in out.columns:
+        raise ValueError("Dataset parquet frame missing required column 'Volume'")
+    volume = pd.to_numeric(out["Volume"], errors="raise")
+    if volume.isna().any():
+        raise ValueError("Dataset parquet Volume column must not contain null values")
+    if not volume.eq(volume.round()).all():
+        raise ValueError("Dataset parquet Volume column must contain whole numbers")
+    out["Volume"] = volume.astype("int64")
+
+    if "symbol" not in out.columns:
+        raise ValueError("Dataset parquet frame missing required column 'symbol'")
+
+    extra_columns = [
+        column
+        for column in out.columns
+        if column not in {"timestamp", "symbol", "Open", "High", "Low", "Close", "Volume"}
+    ]
+    if extra_columns:
+        raise ValueError(f"Dataset parquet frame has unexpected columns: {sorted(extra_columns)}")
+
+    ordered_columns = ["timestamp", "symbol", "Open", "High", "Low", "Close", "Volume"]
+    return out[ordered_columns]
 
 
 def validate_dataset_parquet_frame(frame: pd.DataFrame) -> None:
-    _DATASET_PARQUET_ROWS.validate_python(frame.to_dict(orient="records"))
+    normalized = normalize_dataset_parquet_frame(frame)
+    _DATASET_PARQUET_ROWS.validate_python(normalized.to_dict(orient="records"))
 
 
 from app.datasets.sharding import (  # noqa: E402  (re-export shard manifest models)
@@ -160,9 +234,16 @@ class DatasetCreateResponse(BaseModel):
     detail_url: str
 
 
+class DatasetArtifactChunkSummary(BaseModel):
+    chunk_count: int = Field(ge=1)
+    chunk_dir: str = Field(min_length=1)
+
+
 class DatasetDetailResponse(BaseModel):
     metadata: DatasetListItem
     symbol_options: list[str] = Field(default_factory=list)
+    market_chunks: DatasetArtifactChunkSummary | None = None
+    options_chunks: DatasetArtifactChunkSummary | None = None
 
 
 class DatasetWorkflowErrorResponse(BaseModel):

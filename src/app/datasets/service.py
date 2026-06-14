@@ -14,6 +14,7 @@ from app.backtests.argo_workflow import workflow_results_mount
 from app.datasets.argo_workflow import build_dataset_workflow_spec
 from app.datasets.argo_progress_status import compute_dataset_progress_pct
 from app.datasets.models import (
+    DatasetArtifactChunkSummary,
     DatasetCreateRequest,
     DatasetCreateResponse,
     DatasetDetailResponse,
@@ -23,6 +24,7 @@ from app.datasets.models import (
     DatasetWorkflowErrorResponse,
 )
 from app.datasets.persistence import SqlAlchemyDatasetRepository
+from app.datasets.reader import DatasetArtifactReader
 from app.risk.workflow_errors import extract_workflow_error_details
 from app.settings.service import PlatformSettingsService
 
@@ -49,9 +51,10 @@ def _normalize_symbols(symbols: list[str], fallback_symbol: str | None = None) -
 
 
 def _artifact_slug(item: DatasetListItem) -> str:
+    from app.datasets.sharding import dataset_slug
     symbols = item.symbols or ([item.symbol] if item.symbol.strip() else [])
     normalized = _normalize_symbols(symbols, item.symbol)
-    return "-".join(normalized) if normalized else (item.symbol.strip().upper() or item.id)
+    return dataset_slug(normalized) if normalized else (item.symbol.strip().upper() or item.id)
 
 
 class DatasetService:
@@ -254,7 +257,20 @@ class DatasetService:
         item = self.repository.get(dataset_id)
         if item is None:
             return None
-        return DatasetDetailResponse(metadata=item, symbol_options=self._resolve_symbol_options(item))
+        market_manifest_path = self._resolve_dataset_manifest_path(item)
+        options_manifest_path = self._resolve_options_dataset_manifest_path(item)
+        return DatasetDetailResponse(
+            metadata=item,
+            symbol_options=self._resolve_symbol_options(item),
+            market_chunks=self._chunk_summary_from_manifest(
+                market_manifest_path,
+                dataset_path=self._resolve_dataset_parquet_path(item),
+            ),
+            options_chunks=self._chunk_summary_from_manifest(
+                options_manifest_path,
+                dataset_path=self._resolve_options_dataset_parquet_path(item),
+            ),
+        )
 
     def get_status(self, dataset_id: str) -> DatasetStatusResponse | None:
         item = self.repository.get(dataset_id)
@@ -673,6 +689,31 @@ class DatasetService:
         if not isinstance(phase, str):
             return None
         return phase
+
+    def _chunk_summary_from_manifest(
+        self,
+        manifest_path: Path | None,
+        *,
+        dataset_path: Path | None,
+    ) -> DatasetArtifactChunkSummary | None:
+        if manifest_path is None or not manifest_path.is_file():
+            return None
+        try:
+            reader = DatasetArtifactReader.from_manifest_path(
+                manifest_path,
+                dataset_path=dataset_path,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        if reader.chunk_count < 1 or not reader.chunk_records:
+            return None
+        first_chunk_path = reader.resolve_chunk_path(reader.chunk_records[0])
+        if not first_chunk_path.parent.is_dir():
+            return None
+        return DatasetArtifactChunkSummary(
+            chunk_count=reader.chunk_count,
+            chunk_dir=str(first_chunk_path.parent),
+        )
 
     def _resolve_symbol_options(self, item: DatasetListItem) -> list[str]:
         options: list[str] = []

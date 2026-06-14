@@ -1,0 +1,134 @@
+{
+  "XLC": {
+    "classification": "Narrow",
+    "description": "Tracks the Communication Services Select Sector Index of the S&P 500, giving targeted exposure to telecom, media, entertainment and interactive-media companies."
+  },
+  "VOX": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Communication Services 25/50 Index; includes large-, mid-, and small-cap communication services stocks."
+  },
+  "FCOM": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI USA IMI Communication Services 25/50 Index and holds roughly 100 stocks, including small caps, for diversified exposure."
+  },
+  "XLY": {
+    "classification": "Narrow",
+    "description": "Replicates the Consumer Discretionary Select Sector Index of the S&P 500, targeting industries like retail, leisure and autos."
+  },
+  "VCR": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Consumer Discretionary 25/50 Index with multicap exposure across the sector."
+  },
+  "FDIS": {
+    "classification": "Broad",
+    "description": "Follows the MSCI USA IMI Consumer Discretionary 25/50 Index and invests at least 80% of assets in U.S. consumer discretionary stocks."
+  },
+  "XLP": {
+    "classification": "Narrow",
+    "description": "Replicates the Consumer Staples Select Sector Index, targeting S&P 500 staples such as food, beverages, household products and personal care."
+  },
+  "VDC": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Consumer Staples 25/50 Index, offering broad multicap exposure to staples producers."
+  },
+  "IYK": {
+    "classification": "Broad",
+    "description": "Tracks the Russell 1000 Consumer Staples RIC 22.5/45 Capped Index for diversified exposure to U.S. food, beverage and household goods producers."
+  },
+  "XLE": {
+    "classification": "Narrow",
+    "description": "Replicates the Energy Select Sector Index of the S&P 500, providing targeted exposure to oil, gas, consumable fuels and energy equipment & services."
+  },
+  "VDE": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Energy 25/50 Index across large-, mid- and small-cap U.S. energy companies."
+  },
+  "IXC": {
+    "classification": "Broad",
+    "description": "Follows a global energy index, giving diversified exposure to energy stocks worldwide."
+  },
+  "XLF": {
+    "classification": "Narrow",
+    "description": "Replicates the Financial Select Sector Index, targeting S&P 500 financials including banks, insurers, capital markets and consumer finance."
+  },
+  "VFH": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Financials 25/50 Index with multicap coverage of U.S. financial companies."
+  },
+  "IYF": {
+    "classification": "Broad",
+    "description": "Tracks an index of U.S. financials equities, offering diversified exposure to banks, insurers and credit card companies."
+  },
+  "XLV": {
+    "classification": "Narrow",
+    "description": "Replicates the Health Care Select Sector Index, targeting S&P 500 health care firms including pharmaceuticals, medical devices, providers and biotech."
+  },
+  "VHT": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Health Care 25/50 Index with broad multicap exposure to the U.S. health care sector."
+  },
+  "IXJ": {
+    "classification": "Broad",
+    "description": "Tracks a global health care index and provides diversified exposure to pharmaceutical, biotechnology and medical device companies worldwide."
+  },
+  "XLI": {
+    "classification": "Narrow",
+    "description": "Replicates the Industrial Select Sector Index, targeting S&P 500 industrials such as aerospace & defense, machinery and transportation."
+  },
+  "VIS": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Industrials 25/50 Index across large-, mid- and small-cap industrial companies."
+  },
+  "IYJ": {
+    "classification": "Broad",
+    "description": "Tracks a U.S. industrials index to provide diversified access to manufacturing, services and transportation companies."
+  },
+  "XLK": {
+    "classification": "Narrow",
+    "description": "Replicates the Technology Select Sector Index, giving targeted exposure to hardware, software, communications equipment, semiconductors and IT services."
+  },
+  "VGT": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Information Technology 25/50 Index, offering multicap exposure across technology software, hardware and semiconductor companies."
+  },
+  "FTEC": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI USA IMI Information Technology 25/50 Index, providing diversified exposure to U.S. IT companies across market caps."
+  },
+  "XLB": {
+    "classification": "Narrow",
+    "description": "Tracks the S&P Materials Select Sector Index, giving targeted exposure to materials stocks within the S&P 500."
+  },
+  "VAW": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Materials 25/50 Index and offers multicap exposure to U.S. materials companies in chemicals, construction materials, metals, and more."
+  },
+  "IYM": {
+    "classification": "Broad",
+    "description": "Tracks a U.S. basic materials index, providing diversified exposure to companies producing raw materials such as metals, chemicals and forestry products."
+  },
+  "VNQ": {
+    "classification": "Broad",
+    "description": "Provides broad exposure to the U.S. real estate market by investing in REITs across diverse property sectors."
+  },
+  "IYR": {
+    "classification": "Broad",
+    "description": "Provides comprehensive coverage of U.S. real estate companies and REITs."
+  },
+  "SCHH": {
+    "classification": "Broad",
+    "description": "Tracks a market-cap-weighted index of U.S. REITs, offering broad real estate exposure at a low expense ratio."
+  },
+  "XLU": {
+    "classification": "Narrow",
+    "description": "Replicates the Utilities Select Sector Index, targeting S&P 500 utilities such as electric, water and multi-utilities, power producers and gas companies."
+  },
+  "VPU": {
+    "classification": "Broad",
+    "description": "Tracks the MSCI US Investable Market Utilities 25/50 Index, providing multicap exposure to electric, gas and water utilities as well as independent power producers."
+  },
+  "IDU": {
+    "classification": "Broad",
+    "description": "Tracks an index of U.S. utilities equities, offering diversified exposure to companies supplying electricity, gas and water."
+  }
+}

@@ -1,0 +1,9056 @@
+[
+  {
+    "symbol": "MMM",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AOS",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ABT",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ABBV",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ACN",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ADBE",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMD",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AES",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AFL",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "A",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "APD",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ABNB",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AKAM",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ALB",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ARE",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ALGN",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ALLE",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LNT",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ALL",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GOOGL",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GOOG",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MO",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMZN",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMCR",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AEE",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AEP",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AXP",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AIG",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMT",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AWK",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMP",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AME",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMGN",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "APH",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ADI",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AON",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "APA",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "APO",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AAPL",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AMAT",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "APP",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "APTV",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ACGL",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ADM",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ARES",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ANET",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AJG",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AIZ",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "T",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ATO",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ADSK",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ADP",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AZO",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AVB",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AVY",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AXON",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BKR",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BALL",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BAC",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BAX",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BDX",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BRK.B",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BBY",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TECH",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BIIB",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BLK",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BX",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "XYZ",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BNY",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BA",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BKNG",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BSX",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BMY",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "AVGO",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BRO",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BF.B",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BLDR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BG",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BXP",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CHRW",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CDNS",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CPT",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CPB",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COF",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CAH",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CCL",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CARR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CVNA",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CASY",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CAT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CBOE",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CBRE",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CDW",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COR",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CNC",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CNP",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CF",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CRL",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SCHW",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CHTR",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CVX",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CMG",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CB",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CHD",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CIEN",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CI",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CINF",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CTAS",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CSCO",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "C",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CFG",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CLX",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CME",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CMS",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KO",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CTSH",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COHR",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COIN",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CL",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CMCSA",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FIX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CAG",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COP",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ED",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "STZ",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CEG",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COO",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CPRT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GLW",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CPAY",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CTVA",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CSGP",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "COST",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CRH",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CRWD",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CCI",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CSX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CMI",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CVS",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DHR",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DRI",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DDOG",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DVA",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DECK",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DE",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DELL",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DAL",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DVN",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DXCM",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FANG",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DLR",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DG",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DLTR",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "D",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DPZ",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DASH",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DOV",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DOW",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DHI",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DTE",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DUK",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DD",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ETN",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EBAY",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SATS",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ECL",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EIX",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EW",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EA",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ELV",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EME",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EMR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ETR",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EOG",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EQT",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EFX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EQIX",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EQR",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ERIE",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ESS",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EL",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EG",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EVRG",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ES",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EXC",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EXE",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EXPE",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EXPD",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "EXR",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "XOM",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FFIV",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FDS",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FICO",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FAST",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FRT",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FDX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FDXF",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FIS",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FITB",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FSLR",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FE",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FISV",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "F",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FTNT",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FTV",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FOXA",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FOX",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "BEN",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "FCX",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GRMN",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IT",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GE",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GEHC",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GEV",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GEN",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GNRC",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GD",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GIS",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GM",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GPC",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GILD",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GPN",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GL",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GDDY",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GS",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HAL",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HIG",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HAS",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HCA",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DOC",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HSIC",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HSY",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HPE",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HLT",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HD",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HON",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HRL",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HST",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HWM",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HPQ",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HUBB",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HUM",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HBAN",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HII",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IBM",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IEX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IDXX",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ITW",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "INCY",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PODD",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "INTC",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IBKR",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ICE",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IFF",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IP",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "INTU",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ISRG",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IVZ",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "INVH",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IQV",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "IRM",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "JBHT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "JBL",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "JKHY",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "J",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "JNJ",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "JCI",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "JPM",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KVUE",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KDP",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KEY",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KEYS",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KMB",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KIM",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KMI",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KKR",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KLAC",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KHC",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "KR",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LHX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LH",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LRCX",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LVS",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LDOS",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LEN",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LII",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LLY",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LIN",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LYV",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LMT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "L",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LOW",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LULU",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LITE",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LYB",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MTB",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MPC",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MAR",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MRSH",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MLM",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MAS",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MA",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MKC",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MCD",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MCK",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MDT",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MRK",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "META",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MET",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MTD",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MGM",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MCHP",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MU",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MSFT",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MAA",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MRNA",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TAP",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MDLZ",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MPWR",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MNST",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MCO",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MS",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MOS",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MSI",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "MSCI",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NDAQ",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NTAP",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NFLX",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NEM",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NWSA",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NWS",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NEE",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NKE",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NI",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NDSN",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NSC",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NTRS",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NOC",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NCLH",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NRG",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NUE",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NVDA",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NVR",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NXPI",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ORLY",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "OXY",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ODFL",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "OMC",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ON",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "OKE",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ORCL",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "OTIS",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PCAR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PKG",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PLTR",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PANW",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PSKY",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PH",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PAYX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PYPL",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PNR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PEP",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PFE",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PCG",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PM",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PSX",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PNW",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PNC",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "POOL",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PPG",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PPL",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PFG",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PG",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PGR",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PLD",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PRU",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PEG",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PTC",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PSA",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PHM",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "PWR",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "QCOM",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DGX",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "Q",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RL",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RJF",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RTX",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "O",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "REG",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "REGN",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RF",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RSG",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RMD",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RVTY",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "HOOD",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ROK",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ROL",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ROP",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ROST",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "RCL",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SPGI",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "CRM",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SNDK",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SBAC",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SLB",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "STX",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SRE",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "NOW",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SHW",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SPG",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SWKS",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SJM",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SW",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SNA",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SOLV",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SO",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "LUV",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SWK",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SBUX",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "STT",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "STLD",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "STE",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SYK",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SMCI",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SYF",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SNPS",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "SYY",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TMUS",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TROW",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TTWO",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TPR",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TRGP",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TGT",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TEL",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TDY",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TER",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TSLA",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TXN",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TPL",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TXT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TMO",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TJX",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TKO",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TTD",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TSCO",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TDG",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TRV",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TRMB",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TFC",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TYL",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "TSN",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "USB",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UBER",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UDR",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ULTA",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UNP",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UAL",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UPS",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "URI",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UNH",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "UHS",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VLO",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VEEV",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VTR",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VLTO",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VRSN",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VRSK",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VZ",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VRTX",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VRT",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VTRS",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VICI",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "V",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VST",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "VMC",
+    "industry": "Materials",
+    "topETFs": [
+      {
+        "ticker": "XLB",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VAW",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WRB",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "GWW",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WAB",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WMT",
+    "industry": "Consumer Staples",
+    "topETFs": [
+      {
+        "ticker": "XLP",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDC",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYK",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "DIS",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WBD",
+    "industry": "Communication Services",
+    "topETFs": [
+      {
+        "ticker": "XLC",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VOX",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FCOM",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WM",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WAT",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WEC",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WFC",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WELL",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WST",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WDC",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WY",
+    "industry": "Real Estate",
+    "topETFs": [
+      {
+        "ticker": "VNQ",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "SCHH",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WSM",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WMB",
+    "industry": "Energy",
+    "topETFs": [
+      {
+        "ticker": "XLE",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VDE",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WTW",
+    "industry": "Financials",
+    "topETFs": [
+      {
+        "ticker": "XLF",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VFH",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYF",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WDAY",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "WYNN",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "XEL",
+    "industry": "Utilities",
+    "topETFs": [
+      {
+        "ticker": "XLU",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VPU",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IDU",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "XYL",
+    "industry": "Industrials",
+    "topETFs": [
+      {
+        "ticker": "XLI",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VIS",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IYJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "YUM",
+    "industry": "Consumer Discretionary",
+    "topETFs": [
+      {
+        "ticker": "XLY",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VCR",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FDIS",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ZBRA",
+    "industry": "Information Technology",
+    "topETFs": [
+      {
+        "ticker": "XLK",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VGT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "FTEC",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ZBH",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  },
+  {
+    "symbol": "ZTS",
+    "industry": "Health Care",
+    "topETFs": [
+      {
+        "ticker": "XLV",
+        "classification": "Narrow"
+      },
+      {
+        "ticker": "VHT",
+        "classification": "Broad"
+      },
+      {
+        "ticker": "IXJ",
+        "classification": "Broad"
+      }
+    ]
+  }
+]

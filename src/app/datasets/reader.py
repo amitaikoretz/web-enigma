@@ -76,18 +76,37 @@ class DatasetArtifactReader:
 
     @property
     def chunk_paths(self) -> list[Path]:
-        return [Path(entry.path) for entry in self._manifest.chunks]
+        return [self.resolve_chunk_path(entry) for entry in self._manifest.chunks]
+
+    def resolve_chunk_path(self, entry: DatasetChunkRecord) -> Path:
+        raw_path = Path(entry.path)
+        if raw_path.is_file():
+            return raw_path
+        
+        parts = raw_path.parts
+        if "chunks" in parts:
+            idx = parts.index("chunks")
+            relative_chunk_path = Path(*parts[idx:])
+            candidate = self._manifest_path.parent / relative_chunk_path
+            if candidate.is_file():
+                return candidate
+
+        candidate_direct = self._manifest_path.parent / raw_path.name
+        if candidate_direct.is_file():
+            return candidate_direct
+
+        return raw_path
 
     def iter_chunks(self) -> Iterator[tuple[DatasetChunkRecord, pd.DataFrame]]:
         for entry in self._manifest.chunks:
-            yield entry, pd.read_parquet(entry.path)
+            yield entry, pd.read_parquet(self.resolve_chunk_path(entry))
 
     def load_chunk(self, chunk_index: int) -> pd.DataFrame:
         try:
             entry = self._manifest.chunks[chunk_index]
         except IndexError as exc:
             raise IndexError(f"Chunk index {chunk_index} out of range") from exc
-        return pd.read_parquet(entry.path)
+        return pd.read_parquet(self.resolve_chunk_path(entry))
 
     def _candidate_dataset_paths(self) -> list[Path]:
         candidates: list[Path] = []
@@ -116,7 +135,7 @@ class DatasetArtifactReader:
         frames: list[pd.DataFrame] = []
         missing_chunk_paths: list[str] = []
         for entry in self._manifest.chunks:
-            chunk_path = Path(entry.path)
+            chunk_path = self.resolve_chunk_path(entry)
             if not chunk_path.is_file():
                 missing_chunk_paths.append(str(chunk_path))
                 continue
@@ -133,3 +152,21 @@ class DatasetArtifactReader:
         raise FileNotFoundError(
             f"Unable to load dataset artifact from {self.manifest_path}: {'; '.join(missing_parts)}"
         )
+
+    def downsample(self, max_rows: int = 2_000) -> pd.DataFrame:
+        if max_rows < 1:
+            raise ValueError("max_rows must be at least 1")
+
+        dataset = self.load()
+        if len(dataset) <= max_rows:
+            return dataset
+        if max_rows == 1:
+            return dataset.iloc[:1].reset_index(drop=True)
+        if max_rows == 2:
+            return dataset.iloc[[0, len(dataset) - 1]].reset_index(drop=True)
+
+        sampled_indices = [
+            round(index * (len(dataset) - 1) / (max_rows - 1))
+            for index in range(max_rows)
+        ]
+        return dataset.iloc[sampled_indices].reset_index(drop=True)

@@ -61,9 +61,16 @@ export interface DatasetListPageResponse {
   page_size: number
 }
 
+export interface DatasetArtifactChunkSummary {
+  chunk_count: number
+  chunk_dir: string
+}
+
 export interface DatasetDetailResponse {
   metadata: DatasetListItem
   symbol_options: string[]
+  market_chunks?: DatasetArtifactChunkSummary | null
+  options_chunks?: DatasetArtifactChunkSummary | null
 }
 
 export interface DatasetWorkflowErrorResponse {

@@ -55,8 +55,11 @@ spec:
               parameters:
                 - name: plan-path
                   value: "{{steps.plan.outputs.parameters.plan-path}}"
-        - - name: download-shards
+          - name: download-shards
             template: download-shard
+            continueOn:
+              failed: true
+              error: true
             arguments:
               parameters:
                 - name: shard-id
@@ -116,6 +119,8 @@ spec:
         env:
           - name: ARGO_PROGRESS_FILE
             value: "{{inputs.parameters.output-dir}}/argo-progress.txt"
+          - name: TZ
+            value: America/New_York
         volumeMounts:
           - name: datasets-results
             mountPath: __WORKFLOW_RESULTS_MOUNT__
@@ -182,6 +187,8 @@ spec:
         env:
           - name: ARGO_PROGRESS_FILE
             value: "{{workflow.parameters.output-dir}}/combine-progress.txt"
+          - name: TZ
+            value: America/New_York
         volumeMounts:
           - name: datasets-results
             mountPath: __WORKFLOW_RESULTS_MOUNT__
@@ -212,7 +219,6 @@ spec:
             valueFrom:
               path: /tmp/error-traceback.txt
     - name: aggregate-progress
-      daemon: true
       inputs:
         parameters:
           - name: plan-path
@@ -232,6 +238,8 @@ spec:
         env:
           - name: ARGO_PROGRESS_FILE
             value: /tmp/argo-progress.txt
+          - name: TZ
+            value: America/New_York
         volumeMounts:
           - name: datasets-results
             mountPath: __WORKFLOW_RESULTS_MOUNT__
@@ -304,6 +312,8 @@ spec:
         env:
           - name: ARGO_PROGRESS_FILE
             value: /tmp/argo-progress.txt
+          - name: TZ
+            value: America/New_York
         volumeMounts:
           - name: datasets-results
             mountPath: __WORKFLOW_RESULTS_MOUNT__
@@ -359,6 +369,8 @@ spec:
         env:
           - name: ARGO_PROGRESS_FILE
             value: /tmp/argo-progress.txt
+          - name: TZ
+            value: America/New_York
         volumeMounts:
           - name: datasets-results
             mountPath: __WORKFLOW_RESULTS_MOUNT__

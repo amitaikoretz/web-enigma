@@ -1,4 +1,5 @@
 from .models import (
+    DatasetArtifactChunkSummary,
     DatasetCreateRequest,
     DatasetCreateResponse,
     DatasetDetailResponse,
@@ -21,6 +22,7 @@ __all__ = [
     "DatasetCreateRequest",
     "DatasetCreateResponse",
     "DatasetDetailResponse",
+    "DatasetArtifactChunkSummary",
     "DatasetListItem",
     "DatasetListPageResponse",
     "DatasetArtifactManifest",

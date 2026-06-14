@@ -30,6 +30,7 @@ class DatasetChunkRecord(BaseModel):
     row_count: int = Field(ge=0)
     size_bytes: int = Field(ge=0)
     chunk_index: int = Field(ge=0)
+    symbols: list[str] = Field(default_factory=list)
     split_key_values: dict[str, str] = Field(default_factory=dict)
 
 

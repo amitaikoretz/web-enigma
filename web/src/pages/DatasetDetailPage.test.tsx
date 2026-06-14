@@ -443,6 +443,82 @@ describe('DatasetDetailPage', () => {
     expect(screen.getByText('/tmp/datasets/aapl-options.manifest.json')).toBeInTheDocument()
   })
 
+  it('shows market and options chunk counts and folders when available', async () => {
+    fetchDatasetDetailMock.mockResolvedValue({
+      metadata: {
+        id: 'ds-chunks',
+        name: 'Chunked dataset',
+        symbol: 'AAPL',
+        provider: 'alpaca',
+        resolution: '5m',
+        start_date: '2026-05-01',
+        end_date: '2026-06-01',
+        created_at: '2026-06-07T00:00:00Z',
+        updated_at: '2026-06-07T00:00:00Z',
+        status: 'completed',
+        argo_namespace: null,
+        argo_workflow_name: null,
+        params_json: {},
+        output_dir: '/tmp/datasets',
+        dataset_parquet_path: '/tmp/datasets/aapl.parquet',
+        manifest_path: '/tmp/datasets/aapl.manifest.json',
+        options_parquet_path: '/tmp/datasets/aapl-options.parquet',
+        options_manifest_path: '/tmp/datasets/aapl-options.manifest.json',
+        error_message: null,
+        progress_pct: 100,
+      },
+      symbol_options: ['AAPL'],
+      market_chunks: {
+        chunk_count: 219,
+        chunk_dir: '/tmp/datasets/chunks/market',
+      },
+      options_chunks: {
+        chunk_count: 12,
+        chunk_dir: '/tmp/datasets/chunks/options',
+      },
+    })
+    fetchDatasetStatusMock.mockResolvedValue({
+      id: 'ds-chunks',
+      name: 'Chunked dataset',
+      symbol: 'AAPL',
+      provider: 'alpaca',
+      resolution: '5m',
+      start_date: '2026-05-01',
+      end_date: '2026-06-01',
+      created_at: '2026-06-07T00:00:00Z',
+      updated_at: '2026-06-07T00:00:00Z',
+      status: 'completed',
+      argo_namespace: null,
+      argo_workflow_name: null,
+      params_json: {},
+      output_dir: '/tmp/datasets',
+      dataset_parquet_path: '/tmp/datasets/aapl.parquet',
+      manifest_path: '/tmp/datasets/aapl.manifest.json',
+      options_parquet_path: '/tmp/datasets/aapl-options.parquet',
+      options_manifest_path: '/tmp/datasets/aapl-options.manifest.json',
+      error_message: null,
+      progress_pct: 100,
+      is_terminal: true,
+    })
+
+    render(
+      <MemoryRouter initialEntries={['/backtests/datasets/ds-chunks']}>
+        <SettingsProvider>
+          <Routes>
+            <Route path="/backtests/datasets/:datasetId" element={<DatasetDetailPage />} />
+          </Routes>
+        </SettingsProvider>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Market chunks')).toBeInTheDocument()
+    expect(screen.getByText('219')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/datasets/chunks/market')).toBeInTheDocument()
+    expect(screen.getByText('Options chunks')).toBeInTheDocument()
+    expect(screen.getByText('12')).toBeInTheDocument()
+    expect(screen.getByText('/tmp/datasets/chunks/options')).toBeInTheDocument()
+  })
+
   it('allows download even when the parquet path is not stored explicitly', async () => {
     fetchDatasetDetailMock.mockResolvedValue({
       metadata: {

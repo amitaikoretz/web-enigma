@@ -49,18 +49,37 @@ class RiskDatasetReader:
 
     @property
     def chunk_paths(self) -> list[Path]:
-        return [Path(entry.path) for entry in self._manifest.files]
+        return [self.resolve_chunk_path(entry) for entry in self._manifest.files]
+
+    def resolve_chunk_path(self, entry: RiskDatasetChunkRecord) -> Path:
+        raw_path = Path(entry.path)
+        if raw_path.is_file():
+            return raw_path
+        
+        parts = raw_path.parts
+        if "chunks" in parts:
+            idx = parts.index("chunks")
+            relative_chunk_path = Path(*parts[idx:])
+            candidate = self._manifest_path.parent / relative_chunk_path
+            if candidate.is_file():
+                return candidate
+
+        candidate_direct = self._manifest_path.parent / raw_path.name
+        if candidate_direct.is_file():
+            return candidate_direct
+
+        return raw_path
 
     def iter_chunks(self) -> Iterator[tuple[RiskDatasetChunkRecord, pd.DataFrame]]:
         for entry in self._manifest.files:
-            yield entry, pd.read_parquet(entry.path)
+            yield entry, pd.read_parquet(self.resolve_chunk_path(entry))
 
     def load_chunk(self, chunk_index: int) -> pd.DataFrame:
         try:
             entry = self._manifest.files[chunk_index]
         except IndexError as exc:
             raise IndexError(f"Chunk index {chunk_index} out of range") from exc
-        return pd.read_parquet(entry.path)
+        return pd.read_parquet(self.resolve_chunk_path(entry))
 
     def load(self) -> pd.DataFrame:
         frames = [frame for _, frame in self.iter_chunks()]
@@ -81,6 +100,6 @@ class RiskDatasetReader:
         entries = self.find_chunks(**split_key_values)
         if not entries:
             raise KeyError(f"No dataset chunks match split key values: {split_key_values}")
-        frames = [pd.read_parquet(entry.path) for entry in entries]
+        frames = [pd.read_parquet(self.resolve_chunk_path(entry)) for entry in entries]
         return pd.concat(frames, ignore_index=True) if len(frames) > 1 else frames[0]
 

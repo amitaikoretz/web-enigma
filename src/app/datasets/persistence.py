@@ -30,9 +30,10 @@ def _normalize_symbols_from_item(item: DatasetListItem) -> list[str]:
 
 
 def _artifact_slug(item: DatasetListItem) -> str:
+    from app.datasets.sharding import dataset_slug
     symbols = item.symbols or ([item.symbol] if item.symbol.strip() else [])
     normalized = _normalize_symbols_from_item(item) if symbols else []
-    return "-".join(normalized) if normalized else (item.symbol.strip().upper() or item.id)
+    return dataset_slug(normalized) if normalized else (item.symbol.strip().upper() or item.id)
 
 
 def _artifact_directories(item: DatasetListItem, root: Path) -> list[Path]:

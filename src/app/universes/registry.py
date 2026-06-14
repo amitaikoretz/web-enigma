@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.universes.snp_etf import load_industry_etf_tickers
+
 
 @dataclass(frozen=True)
 class UniverseSpec:
@@ -37,5 +39,12 @@ UNIVERSE_REGISTRY: dict[str, UniverseSpec] = {
         description="Curated large-cap and dividend-quality ETF basket.",
         provider="static",
         symbols=("SPY", "DIA", "QQQ", "SCHD", "VIG"),
+    ),
+    "industry_etfs": UniverseSpec(
+        key="industry_etfs",
+        name="Industry ETF",
+        description="Sector and industry ETFs used as proxies for S&P 500 stocks.",
+        provider="static",
+        symbols=load_industry_etf_tickers(),
     ),
 }

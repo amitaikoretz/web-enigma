@@ -86,6 +86,61 @@ function ArtifactPathRow({
   )
 }
 
+function ChunkLayoutSummary({
+  label,
+  chunkCount,
+  chunkDir,
+}: {
+  label: string
+  chunkCount: number
+  chunkDir: string
+}) {
+  const [copied, setCopied] = useState(false)
+  const fileLabel = chunkCount === 1 ? 'parquet file' : 'parquet files'
+
+  return (
+    <Stack
+      spacing={1.5}
+      sx={{
+        p: 1.5,
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2,
+        bgcolor: 'background.default',
+      }}
+    >
+      <Stack spacing={0.5}>
+        <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+          {label}
+        </Typography>
+        <Typography>
+          <Typography component="span" sx={{ fontWeight: 600 }}>
+            {chunkCount.toLocaleString()}
+          </Typography>{' '}
+          {fileLabel} in
+        </Typography>
+        <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-word' }}>{chunkDir}</Typography>
+      </Stack>
+      <Button
+        variant="outlined"
+        size="small"
+        sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(chunkDir)
+            setCopied(true)
+            window.setTimeout(() => setCopied(false), 1200)
+          } catch {
+            // Clipboard access may be unavailable in some environments.
+          }
+        }}
+      >
+        {copied ? 'Copied' : 'Copy folder path'}
+      </Button>
+    </Stack>
+  )
+}
+
 function CopyDatasetCodeButton({
   manifestPath,
   datasetParquetPath,
@@ -192,7 +247,10 @@ export function DatasetDetailPage() {
           const nextDetail = await fetchDatasetDetail(datasetId)
           if (!cancelled) {
             setDetail(nextDetail)
-            setStatus((current) => current ?? nextDetail.metadata)
+            setStatus((current) => current ?? {
+              ...nextDetail.metadata,
+              is_terminal: nextDetail.metadata.status === 'completed' || nextDetail.metadata.status === 'failed',
+            })
             setLoading(false)
           }
           return true
@@ -232,7 +290,6 @@ export function DatasetDetailPage() {
   }, [datasetId, refreshIntervalMs])
 
   const metadata = detail?.metadata ? { ...detail.metadata, ...(status ?? {}) } : status
-  const isActive = metadata?.status === 'pending' || metadata?.status === 'running'
   const canRetry = metadata?.status === 'failed'
   const symbols = metadata?.symbols ?? (metadata?.symbol ? [metadata.symbol] : [])
 
@@ -439,8 +496,8 @@ export function DatasetDetailPage() {
               <Stack spacing={0.5}>
                 <Typography variant="h6">Artifact outputs</Typography>
                 <Typography color="text.secondary">
-                  The combined parquet output is the canonical dataset file. The manifest JSON records the
-                  final chunk layout and row counts used to build it.
+                  The combined parquet is the canonical download target. Chunk files are the sharded
+                  outputs listed in the manifest and are what downstream readers should iterate over.
                 </Typography>
               </Stack>
               <CopyDatasetCodeButton
@@ -450,10 +507,24 @@ export function DatasetDetailPage() {
             </Stack>
             <ArtifactPathRow label="Combined parquet" value={metadata?.dataset_parquet_path} />
             <ArtifactPathRow label="Manifest JSON" value={metadata?.manifest_path} />
+            {detail?.market_chunks ? (
+              <ChunkLayoutSummary
+                label="Market chunks"
+                chunkCount={detail.market_chunks.chunk_count}
+                chunkDir={detail.market_chunks.chunk_dir}
+              />
+            ) : null}
             {metadata?.options_parquet_path || metadata?.options_manifest_path ? (
               <>
                 <ArtifactPathRow label="Options parquet" value={metadata?.options_parquet_path} />
                 <ArtifactPathRow label="Options manifest JSON" value={metadata?.options_manifest_path} />
+                {detail?.options_chunks ? (
+                  <ChunkLayoutSummary
+                    label="Options chunks"
+                    chunkCount={detail.options_chunks.chunk_count}
+                    chunkDir={detail.options_chunks.chunk_dir}
+                  />
+                ) : null}
               </>
             ) : null}
             {!metadata?.dataset_parquet_path && !metadata?.manifest_path && (
