@@ -27,7 +27,7 @@ import { resolveVisibleColumns } from '../backtests/resultsTableColumns'
 import { deleteBacktest, fetchBacktests, retryBacktest, retryBacktestForce } from '../api/backtests'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useSettings } from '../settings/useSettings'
-import type { BacktestListItem } from '../types/backtests'
+import type { BacktestListItem, BacktestType } from '../types/backtests'
 import { canRetryBacktest } from '../utils/backtestConfigPrefill'
 import { familyWizardPath } from './modelLaunchRoutes'
 
@@ -59,6 +59,13 @@ function searchParamsFromPagination(page: number, pageSize: number): URLSearchPa
     params.set('page_size', String(pageSize))
   }
   return params
+}
+
+function formatBacktestType(backtestType: BacktestType | undefined): string {
+  if (backtestType === 'vectorbt') {
+    return 'Vector bt'
+  }
+  return 'Classic'
 }
 
 export function BacktestsListPage() {
@@ -375,6 +382,7 @@ export function BacktestsListPage() {
                       onChange={(_event, checked) => toggleSelectAllOnPage(checked)}
                     />
                   </TableCell>
+                  <TableCell sx={{ minWidth: 120 }}>Type</TableCell>
                   {visibleColumns.map((column) => (
                     <TableCell
                       key={column.id}
@@ -415,6 +423,9 @@ export function BacktestsListPage() {
                           onClick={(event) => event.stopPropagation()}
                           onChange={(_event, checked) => toggleRowSelection(item.id, checked)}
                         />
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 120 }}>
+                        {formatBacktestType(item.backtest_type)}
                       </TableCell>
                       {visibleColumns.map((column) => (
                         <TableCell

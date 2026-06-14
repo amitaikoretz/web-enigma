@@ -5,13 +5,13 @@ templates:
     steps:
       - - name: print-payload
           template: print-payload
-      - - name: refresh
+        - name: refresh
           template: refresh
   - name: sync-registry-workflow
     steps:
       - - name: print-payload
           template: print-payload
-      - - name: sync-registry
+        - name: sync-registry
           template: sync-registry
   - name: print-payload
     retryStrategy: {limit: 3, retryPolicy: Always}

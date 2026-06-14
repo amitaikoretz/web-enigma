@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 
-import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 
 const fetchBacktestsMock = vi.hoisted(() => vi.fn())
@@ -41,19 +41,32 @@ function LocationProbe() {
 }
 
 describe('BacktestsListPage', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     fetchBacktestsMock.mockResolvedValue({
       items: [
         {
           id: 'bt-1',
+          backtest_type: 'classic',
           created_at: '2026-06-01T12:00:00.000Z',
           updated_at: '2026-06-01T12:01:00.000Z',
           status: 'succeeded',
           selection: null,
         },
+        {
+          id: 'bt-2',
+          backtest_type: 'vectorbt',
+          created_at: '2026-06-02T12:00:00.000Z',
+          updated_at: '2026-06-02T12:01:00.000Z',
+          status: 'succeeded',
+          selection: null,
+        },
       ],
-      total: 1,
+      total: 2,
     })
   })
 
@@ -85,6 +98,22 @@ describe('BacktestsListPage', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('"selectedCount":1')
   })
 
+  it('renders a backtest type column with readable labels', async () => {
+    render(
+      <MemoryRouter initialEntries={['/backtests']}>
+        <Routes>
+          <Route path="/backtests" element={<BacktestsListPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    await screen.findByLabelText('Select backtest bt-1')
+
+    expect(screen.getByRole('columnheader', { name: 'Type' })).toBeInTheDocument()
+    expect(screen.getByText('Classic')).toBeInTheDocument()
+    expect(screen.getByText('Vector bt')).toBeInTheDocument()
+  })
+
   it('deep-links selected backtests into the return forecast wizard route', async () => {
     render(
       <MemoryRouter initialEntries={['/backtests']}>
@@ -99,9 +128,8 @@ describe('BacktestsListPage', () => {
     clickBacktestSelection('bt-1')
     fireEvent.click(screen.getByRole('button', { name: /train return forecast/i }))
 
-    const locations = screen.getAllByTestId('location')
-    expect(locations[1]).toHaveTextContent('/models/returns/new')
-    expect(locations[1]).toHaveTextContent('"sourceKind":"backtest"')
-    expect(locations[1]).toHaveTextContent('"selectedCount":1')
+    expect(await screen.findByTestId('location')).toHaveTextContent('/models/returns/new')
+    expect(screen.getByTestId('location')).toHaveTextContent('"sourceKind":"backtest"')
+    expect(screen.getByTestId('location')).toHaveTextContent('"selectedCount":1')
   })
 })

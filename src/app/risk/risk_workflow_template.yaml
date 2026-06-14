@@ -32,7 +32,7 @@ templates:
     steps:
       - - name: print-payload
           template: print-payload
-      - - name: build-dataset
+        - name: build-dataset
           template: build-dataset
           arguments:
             parameters:

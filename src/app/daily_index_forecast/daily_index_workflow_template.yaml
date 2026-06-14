@@ -24,7 +24,7 @@ templates:
     steps:
       - - name: print-payload
           template: print-payload
-      - - name: extract-features
+        - name: extract-features
           template: extract-features
           arguments:
             parameters:

@@ -11,7 +11,7 @@ from app.terminal_command import format_terminal_command
 _TEMPLATE_PATH = Path(__file__).with_name("vectorbt_workflow_template.yaml")
 _RETRY_LIMIT = 3
 _RETRY_BACKOFF = {"duration": "10s", "factor": 2, "maxDuration": "2m"}
-_RETRY_MEMORY_TIERS = ("512Mi", "1Gi", "2Gi", "4Gi")
+_RETRY_MEMORY_TIERS = ("1Gi", "2Gi", "4Gi", "8Gi")
 
 
 def _workflow_image() -> str:

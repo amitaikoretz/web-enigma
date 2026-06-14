@@ -31,8 +31,9 @@ def test_build_market_overview_workflow_spec_uses_valid_container_resources() ->
     ]
 
     workflow = next(item for item in spec["templates"] if item["name"] == "market-overview")
-    step_names = [step["name"] for group in workflow["steps"] for step in group]
-    assert step_names == ["print-payload", "generate-snapshot", "reconcile-snapshot"]
+    assert [step["name"] for step in workflow["steps"][0]] == ["print-payload", "generate-snapshot"]
+    step_names = [step["name"] for group in workflow["steps"][1:] for step in group]
+    assert step_names == ["reconcile-snapshot"]
 
     print_payload = next(item for item in spec["templates"] if item["name"] == "print-payload")
     args = print_payload["container"]["args"]

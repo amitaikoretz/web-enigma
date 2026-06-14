@@ -21,8 +21,9 @@ def test_risk_workflow_templates_have_terminal_and_error_outputs() -> None:
     )
 
     main = _extract_template(spec, "main")
-    step_names = [step["name"] for group in main["steps"] for step in group]
-    assert step_names == ["print-payload", "build-dataset", "train-stop", "train-mae", "register-results"]
+    assert [step["name"] for step in main["steps"][0]] == ["print-payload", "build-dataset"]
+    step_names = [step["name"] for group in main["steps"][1:] for step in group]
+    assert step_names == ["train-stop", "train-mae", "register-results"]
 
     print_payload = _extract_template(spec, "print-payload")
     args = print_payload["container"]["args"]

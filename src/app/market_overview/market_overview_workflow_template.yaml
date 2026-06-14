@@ -17,7 +17,7 @@ templates:
     steps:
       - - name: print-payload
           template: print-payload
-      - - name: generate-snapshot
+        - name: generate-snapshot
           template: generate-snapshot
           arguments:
             parameters:

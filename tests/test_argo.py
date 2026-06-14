@@ -50,17 +50,19 @@ def test_build_backtest_workflow_spec_inlines_batch_definition() -> None:
     }
 
     batch_template = next(item for item in spec["templates"] if item["name"] == "backtest-batch")
-    step_names = [step["name"] for group in batch_template["steps"] for step in group]
-    assert step_names == ["print-payload", "plan", "run-shards", "merge"]
+    first_group = batch_template["steps"][0]
+    assert [step["name"] for step in first_group] == ["print-payload", "plan"]
+    step_names = [step["name"] for group in batch_template["steps"][1:] for step in group]
+    assert step_names == ["run-shards", "merge"]
     assert spec["parallelism"] == 8
     run_shards_step = batch_template["steps"][2][0]
     assert "parallelism" not in run_shards_step
 
-    merge_step = batch_template["steps"][3][0]
+    merge_step = batch_template["steps"][2][0]
     merge_params = {item["name"]: item["value"] for item in merge_step["arguments"]["parameters"]}
     assert merge_params["manifest-path"] == "{{steps.plan.outputs.parameters.manifest-path}}"
 
-    plan_step = batch_template["steps"][1][0]
+    plan_step = batch_template["steps"][0][1]
     plan_params = {item["name"]: item["value"] for item in plan_step["arguments"]["parameters"]}
     assert plan_params["config-path"] == "{{workflow.parameters.config-path}}"
 
@@ -134,10 +136,16 @@ def test_build_vectorbt_workflow_spec_includes_retry_and_error_outputs() -> None
     assert parameters["request-json-b64"] == "eyJmb28iOiAiYmFyIn0="
     assert parameters["artifact-dir"].endswith("/vec123")
 
+    workflow = next(item for item in spec["templates"] if item["name"] == "vectorbt-backtest")
+    first_group = workflow["steps"][0]
+    assert [step["name"] for step in first_group] == ["print-payload", "run-vectorbt"]
+
     run_template = next(item for item in spec["templates"] if item["name"] == "run-vectorbt")
     assert run_template["retryStrategy"]["limit"] == 3
     assert run_template["retryStrategy"]["retryPolicy"] == "Always"
     assert "podSpecPatch" in run_template
+    assert '"1Gi"' in run_template["podSpecPatch"]
+    assert '"8Gi"' in run_template["podSpecPatch"]
     mount_paths = {item["mountPath"] for item in run_template["container"]["volumeMounts"]}
     assert mount_paths == {"/data/backtest-results"}
     outputs = {item["name"] for item in run_template["outputs"]["parameters"]}

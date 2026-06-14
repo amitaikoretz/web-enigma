@@ -31,7 +31,7 @@ spec:
               parameters:
                 - name: output-dir
                   value: "{{workflow.parameters.output-dir}}"
-        - - name: plan
+          - name: plan
             template: plan-shards
             arguments:
               parameters:

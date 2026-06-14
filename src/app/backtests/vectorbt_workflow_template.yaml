@@ -26,7 +26,7 @@ spec:
               parameters:
                 - name: command-line
                   value: "{{workflow.parameters.command-line}}"
-        - - name: run-vectorbt
+          - name: run-vectorbt
             template: run-vectorbt
             arguments:
               parameters:

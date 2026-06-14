@@ -32,8 +32,7 @@ def test_universe_refresh_workflow_uses_terminal_command_output() -> None:
 
     assert spec["entrypoint"] == "refresh-workflow"
     workflow = _template(spec, "refresh-workflow")
-    step_names = [step["name"] for group in workflow["steps"] for step in group]
-    assert step_names == ["print-payload", "refresh"]
+    assert [step["name"] for step in workflow["steps"][0]] == ["print-payload", "refresh"]
 
     print_payload = _template(spec, "print-payload")
     args = print_payload["container"]["args"]
@@ -50,8 +49,7 @@ def test_universe_registry_sync_workflow_uses_terminal_command_output() -> None:
 
     assert spec["entrypoint"] == "sync-registry-workflow"
     workflow = _template(spec, "sync-registry-workflow")
-    step_names = [step["name"] for group in workflow["steps"] for step in group]
-    assert step_names == ["print-payload", "sync-registry"]
+    assert [step["name"] for step in workflow["steps"][0]] == ["print-payload", "sync-registry"]
 
     names = _output_names(spec, "sync-registry")
     assert "terminal-command" in names

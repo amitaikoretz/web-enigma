@@ -471,8 +471,9 @@ def test_dataset_workflow_spec_mounts_shared_results(monkeypatch) -> None:
         }
     ]
     main_template = next(template for template in spec["templates"] if template["name"] == "main")
-    step_names = [step["name"] for group in main_template["steps"] for step in group]
-    assert step_names == ["print-payload", "plan", "aggregate-progress", "download-shards", "combine"]
+    assert [step["name"] for step in main_template["steps"][0]] == ["print-payload", "plan"]
+    step_names = [step["name"] for group in main_template["steps"][1:] for step in group]
+    assert step_names == ["aggregate-progress", "download-shards", "combine"]
     print_step = main_template["steps"][0][0]
     print_params = {item["name"]: item["value"] for item in print_step["arguments"]["parameters"]}
     assert print_params == {"output-dir": "{{workflow.parameters.output-dir}}"}

@@ -30,8 +30,7 @@ def test_daily_index_forecast_workflow_passes_group_id_to_all_steps() -> None:
     assert "workspace" in volume_names
     assert "backtest-results" in volume_names
 
-    step_names = [step["name"] for group in main["steps"] for step in group]
-    assert step_names[0] == "print-payload"
+    assert [step["name"] for step in main["steps"][0]] == ["print-payload", "extract-features"]
 
     for step_group in main["steps"][1:]:
         step = step_group[0]

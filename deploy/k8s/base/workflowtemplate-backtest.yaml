@@ -62,7 +62,7 @@ spec:
                   value: "{{workflow.parameters.backtest-id}}"
                 - name: output-path
                   value: "{{workflow.parameters.output-path}}"
-        - - name: plan
+          - name: plan
             template: plan-shards
             arguments:
               parameters:
